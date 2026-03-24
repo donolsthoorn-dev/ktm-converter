@@ -2,23 +2,52 @@
 
 Compatibel met het importformaat zoals [Metafields Manager](https://metafieldsmanager.thebestagency.com/docs) gebruikt voor product-metafields (`fits_on`, `fits_on_year`, `fits_on_make`, `fits_on_model`, `ymm_summary`, enz.).
 
-## Stappen
+## Stappenplan
 
-1. **Eerst** Product Id’s vullen (zelfde bron als YMM):
+### Aanbevolen: alleen delta (na import van nieuwe producten)
+
+Kleine bestanden, minder kans op time-outs in YMM-/Metafields-apps.
+
+1. **Delta-CSV** met kolom `Handle`: `main.py` schrijft die naar `output/shopify/shopify_export_delta_<timestamp>.csv`. Neem het bestand van de run waarmee je de betreffende producten hebt geëxporteerd (of de nieuwste delta als die set klopt).
+
+2. **YMM + Product Id’s (delta)** — cache verversen na een grote import:
 
    ```bash
-   python3 -u scripts/export_product_ids_and_ymm.py
+   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+     --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv
    ```
 
-2. **Daarna** Metafields-CSV genereren:
+   Output o.a.: `output/reports/product_ids_from_xml_delta.csv`, `output/reports/ymm_APP_import_DELTA.csv` (eventueel gesplitst in `_part_00x`).
+
+3. **Metafields (delta)** — optioneel expliciet dezelfde `product_ids`-delta meegeven:
 
    ```bash
-   python3 -u scripts/export_product_metafields.py
+   python3 -u scripts/export_product_metafields.py \
+     --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv \
+     --product-ids output/reports/product_ids_from_xml_delta.csv
    ```
+
+   Output: `output/reports/product_metafields_metafields_manager_delta.csv`.
+
+   In plaats van `--delta-handles-csv` kun je `--delta-handles-file pad/naar/handles.txt` gebruiken (één handle per regel, `#` = commentaar).
+
+**Alternatief (geen nieuwe generatie):** heb je al de **volledige** YMM + metafields-CSV’s in `output/reports/`, filter dan met:
+
+```bash
+python3 scripts/export_delta_app_imports.py
+```
+
+Dat leest de **laatste** `output/shopify/shopify_export_delta_*.csv` en schrijft o.a. `ymm_APP_import_delta_latest.csv` en `product_metafields_delta_latest.csv`.
+
+### Hele catalogus (grote bestanden)
+
+1. `python3 -u scripts/export_product_ids_and_ymm.py` (optioneel `--refresh-shopify-cache`)
+2. `python3 -u scripts/export_product_metafields.py`
 
 ## Output
 
-- Standaard: `output/reports/product_metafields_metafields_manager.csv`
+- Volledig: `output/reports/product_metafields_metafields_manager.csv`
+- Delta: `output/reports/product_metafields_metafields_manager_delta.csv`
 
 ## Opties
 

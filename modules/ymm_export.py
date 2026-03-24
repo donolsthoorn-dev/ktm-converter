@@ -539,6 +539,7 @@ def export_ymm_fitment(
     product_rows: list[dict] | None = None,
     sku_to_shopify_product_id: dict[str, str] | None = None,
     xml_file: str | None = None,
+    filter_handles: set[str] | None = None,
 ) -> int:
     """
     Full YMM rows for app bulk insert template:
@@ -589,6 +590,8 @@ def export_ymm_fitment(
                 product_id = _lookup_product_id_by_variant_sku(
                     sku, sku_to_shopify_product_id
                 )
+            if filter_handles is not None and handle not in filter_handles:
+                continue
             for make, model, year in sorted(ymm_set, key=lambda t: (t[0], t[1], t[2])):
                 sig = (handle, make, model, year)
                 if sig in seen_rows:
@@ -676,6 +679,7 @@ def build_handle_to_product_id(product_ids_path: str) -> dict[str, str]:
 def run_exports(
     product_ids_path: str | None = None,
     ymm_path: str | None = None,
+    filter_handles: set[str] | None = None,
 ) -> tuple[str, str, int]:
     print("XML inlezen (kan even duren, geen output tot dit klaar is)...", flush=True)
     structure_index, relations = stream_xml_for_export()
@@ -684,10 +688,29 @@ def run_exports(
         flush=True,
     )
     product_rows = build_product_rows(structure_index, relations)
-    product_ids_path = product_ids_path or os.path.join(
-        REPORT_OUTPUT_DIR, "product_ids_from_xml.csv"
-    )
-    ymm_path = ymm_path or os.path.join(REPORT_OUTPUT_DIR, "ymm_APP_import_ALL.csv")
+    if filter_handles is not None:
+        if len(filter_handles) == 0:
+            raise ValueError("filter_handles is leeg")
+        before = len(product_rows)
+        product_rows = [
+            p for p in product_rows if (p.get("handle") or "").strip() in filter_handles
+        ]
+        print(
+            f"Delta filter: {before} → {len(product_rows)} productregels "
+            f"({len(filter_handles)} handles in filter).",
+            flush=True,
+        )
+
+    if product_ids_path is None:
+        product_ids_path = os.path.join(
+            REPORT_OUTPUT_DIR,
+            "product_ids_from_xml_delta.csv" if filter_handles else "product_ids_from_xml.csv",
+        )
+    if ymm_path is None:
+        ymm_path = os.path.join(
+            REPORT_OUTPUT_DIR,
+            "ymm_APP_import_DELTA.csv" if filter_handles else "ymm_APP_import_ALL.csv",
+        )
     shopify_index = None
     sku_to_shopify_product_id: dict[str, str] = {}
     fallback_csv = find_latest_product_ids_csv()
@@ -725,6 +748,7 @@ def run_exports(
         handle_to_product_id=handle_to_product_id,
         product_rows=product_rows,
         sku_to_shopify_product_id=sku_to_shopify_product_id,
+        filter_handles=filter_handles,
     )
     ymm_files = split_csv_max_bytes_with_header(
         ymm_path, max_bytes=YMM_MAX_FILE_SIZE_BYTES

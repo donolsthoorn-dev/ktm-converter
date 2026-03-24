@@ -105,3 +105,24 @@ Systeem werkt voor:
 
 ---
 
+## Workflow: YMM + metafields (alleen delta)
+
+Na `main.py` staat de delta-CSV onder `output/shopify/shopify_export_delta_<timestamp>.csv`.
+
+**Aanbevolen commando’s** (pas het pad naar je nieuwste delta-CSV aan):
+
+```bash
+python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+  --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+
+python3 -u scripts/export_product_metafields.py \
+  --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv \
+  --product-ids output/reports/product_ids_from_xml_delta.csv
+```
+
+Uitvoer o.a.: `ymm_APP_import_DELTA.csv`, `product_metafields_metafields_manager_delta.csv`.
+
+Details en alternatieven (volledige catalogus, filter-script zonder opnieuw te genereren): **`docs/metafields_manager_export.md`**.
+
+---
+

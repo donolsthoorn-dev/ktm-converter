@@ -326,6 +326,7 @@ def export_product_metafields_csv(
     handle_to_product_id: dict[str, str],
     shopify_merge: dict[str, dict[str, str]] | None = None,
     xml_file: str | None = None,
+    filter_handles: set[str] | None = None,
 ) -> tuple[int, int]:
     """
     Write one row per unique product handle from product_rows **plus** handles only in shopify_merge.
@@ -365,6 +366,8 @@ def export_product_metafields_csv(
         w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
         w.writerow(METAFIELDS_HEADER)
         for handle in handles_sorted:
+            if filter_handles is not None and handle not in filter_handles:
+                continue
             merge_row = shopify_merge.get(handle, {})
             title = handle_to_title.get(handle, "") or merge_row.get("title", "")
             product_id = (
@@ -453,12 +456,18 @@ def run_metafields_export(
     product_ids_path: str | None = None,
     output_path: str | None = None,
     shopify_merge_csv: str | None = None,
+    filter_handles: set[str] | None = None,
 ) -> tuple[str, int]:
     product_ids_path = product_ids_path or os.path.join(
         REPORT_OUTPUT_DIR, "product_ids_from_xml.csv"
     )
     output_path = output_path or os.path.join(
-        REPORT_OUTPUT_DIR, "product_metafields_metafields_manager.csv"
+        REPORT_OUTPUT_DIR,
+        (
+            "product_metafields_metafields_manager_delta.csv"
+            if filter_handles
+            else "product_metafields_metafields_manager.csv"
+        ),
     )
     merge_map = load_shopify_product_merge_csv(shopify_merge_csv)
     if merge_map:
@@ -469,6 +478,18 @@ def run_metafields_export(
     print("XML inlezen voor Metafields-export (1e pass: structuur)…", flush=True)
     structure_index, relations = stream_xml_for_export()
     product_rows = build_product_rows(structure_index, relations)
+    if filter_handles is not None:
+        if len(filter_handles) == 0:
+            raise ValueError("filter_handles is leeg")
+        before = len(product_rows)
+        product_rows = [
+            p for p in product_rows if (p.get("handle") or "").strip() in filter_handles
+        ]
+        print(
+            f"Delta filter: {before} → {len(product_rows)} productregels "
+            f"({len(filter_handles)} handles in filter).",
+            flush=True,
+        )
     handle_to_product_id = build_handle_to_product_id(product_ids_path)
     print(
         "Tweede XML-pass (ZBH2BIKE) voor fits_on / YMM…",
@@ -481,6 +502,7 @@ def run_metafields_export(
         product_rows,
         handle_to_product_id,
         shopify_merge=merge_map,
+        filter_handles=filter_handles,
     )
     print(
         f"Metafields: {n} productregels, waarvan {n_fits} met fits_on "

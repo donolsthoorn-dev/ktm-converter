@@ -65,11 +65,49 @@ def first_text(nodes):
             return n.text.strip()
     return ""
 
+
+def first_textart_any_culture(elem, textart_name: str) -> str:
+    """Prefer CULTURE; many PP/structure nodes only ship BEZEICHNUNG as DE-AT."""
+    t = first_text(
+        elem.xpath(
+            f'.//TEXTART[@name="{textart_name}"]/TEXT[@culture="{CULTURE}"]'
+        )
+    )
+    if t:
+        return t
+    for node in elem.xpath(f'.//TEXTART[@name="{textart_name}"]/TEXT'):
+        if node is not None and node.text and node.text.strip():
+            return node.text.strip()
+    return ""
+
+
+def structure_display_title(elem, name_attr: str) -> str:
+    """Title for STRUKTUR_ELEMENT: BEZEICHNUNG (any culture), else MODELLNAME_GEN, else name."""
+    for textart in ("BEZEICHNUNG", "MODELLNAME_GEN"):
+        t = first_textart_any_culture(elem, textart)
+        if t:
+            return t
+    return name_attr
+
+
 def get_html_textart(elem, name):
     raw = first_text(elem.xpath(
         f'.//TEXTART[@name="{name}"]/TEXT[@culture="{CULTURE}"]'
     ))
     return html.unescape(raw) if raw else ""
+
+
+def get_html_textart_any_culture(elem, name: str) -> str:
+    raw = first_text(elem.xpath(
+        f'.//TEXTART[@name="{name}"]/TEXT[@culture="{CULTURE}"]'
+    ))
+    if raw:
+        return html.unescape(raw)
+    for node in elem.xpath(f'.//TEXTART[@name="{name}"]/TEXT'):
+        val = (node.text or "").strip()
+        if val:
+            return html.unescape(val)
+    return ""
 
 
 def textart_lines(elem, name):
@@ -78,13 +116,27 @@ def textart_lines(elem, name):
         val = (t.text or "").strip()
         if val:
             lines.append(html.unescape(val))
+    if lines:
+        return lines
+    # Other culture: use the first language block in file order (do not mix DE + EN lines).
+    nodes = elem.xpath(f'.//TEXTART[@name="{name}"]/TEXT')
+    first_culture = None
+    for t in nodes:
+        val = (t.text or "").strip()
+        if not val:
+            continue
+        c = (t.get("culture") or "").strip()
+        if first_culture is None:
+            first_culture = c
+        if c == first_culture:
+            lines.append(html.unescape(val))
     return lines
 
 
 def build_description(elem):
-    # Prefer the richest HTML fields first.
+    # Prefer the richest HTML fields first (any culture if EN-GB missing).
     for name in ("BESCHRTEXT_ALG", "BESCHRTEXT_GEN_D", "BESCHRTEXT_GEN"):
-        text = get_html_textart(elem, name)
+        text = get_html_textart_any_culture(elem, name)
         if text:
             return text
 
@@ -386,6 +438,7 @@ def load_products():
     structure_index = {}
     relations = defaultdict(list)
     sku_attrs = {}
+    sku_descriptions = {}
     image_map = defaultdict(list)
 
     context = etree.iterparse(
@@ -405,12 +458,7 @@ def load_products():
 
             if name:
 
-                title = (
-                    first_text(elem.xpath(
-                        f'.//TEXTART[@name="BEZEICHNUNG"]/TEXT[@culture="{CULTURE}"]'
-                    ))
-                    or name
-                )
+                title = structure_display_title(elem, name)
 
                 description = build_description(elem)
                 parent_name = elem.findtext("PARENT_NAME")
@@ -477,6 +525,10 @@ def load_products():
                 if attrs:
                     sku_attrs[sku.strip()] = attrs
 
+                desc = build_description(elem)
+                if desc.strip():
+                    sku_descriptions[sku.strip()] = desc
+
         elem.clear()
 
     # -----------------------------------------------------
@@ -492,7 +544,13 @@ def load_products():
             continue
 
         title = se["title"]
-        description = se["description"]
+        description = (se["description"] or "").strip()
+        if not description:
+            for sku in skus:
+                d = (sku_descriptions.get(sku) or "").strip()
+                if d:
+                    description = d
+                    break
         parent_name = se["parent_name"]
 
         # family handle

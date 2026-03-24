@@ -32,9 +32,14 @@ def setcol(row, name, value):
 def normalize_image_url(path: str) -> str:
     if not path:
         return ""
-    filename = os.path.basename(path)
+    # Al een volledige CDN-URL (bijv. na ensure_image / fileCreate): niet herschrijven.
     if path.startswith("http://") or path.startswith("https://"):
+        p = path.split("?", 1)[0].strip()
+        if p.lower().startswith(IMAGE_BASE_URL.lower().rstrip("/")) or "/cdn/shop/files/" in p:
+            return path.strip()
         filename = os.path.basename(path.split("?", 1)[0])
+    else:
+        filename = os.path.basename(path)
     if not filename:
         return ""
     return IMAGE_BASE_URL + filename

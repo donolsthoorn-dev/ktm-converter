@@ -17,10 +17,15 @@ from __future__ import annotations
 import csv
 import glob
 import os
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from modules.delta_handles import load_handles_from_shopify_export_csv  # noqa: E402
 
 REPORTS_DIR = Path("output/reports")
 SHOPIFY_DIR = Path("output/shopify")
@@ -32,17 +37,6 @@ def _latest(path_glob: str) -> str:
         return ""
     files.sort(key=lambda p: os.path.getmtime(p))
     return files[-1]
-
-
-def _read_delta_handles(delta_csv: str) -> set[str]:
-    out: set[str] = set()
-    with open(delta_csv, newline="", encoding="utf-8-sig") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            h = (row.get("Handle") or "").strip()
-            if h:
-                out.add(h)
-    return out
 
 
 def _read_handle_to_product_id(path: str) -> dict[str, str]:
@@ -139,7 +133,7 @@ def main() -> int:
         print("Geen YMM bronbestand gevonden (ymm_APP_import_ALL.csv of part-files).")
         return 1
 
-    delta_handles = _read_delta_handles(delta_csv)
+    delta_handles = load_handles_from_shopify_export_csv(delta_csv)
     handle_to_pid = _read_handle_to_product_id(product_ids_csv)
     delta_product_ids = {handle_to_pid[h] for h in delta_handles if h in handle_to_pid}
 

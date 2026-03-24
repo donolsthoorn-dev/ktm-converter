@@ -4,11 +4,28 @@ ULTRA KORTE VERSIE
 1) Zet nieuwe XML + 0150 prijs CSV + images in input/
 2) Run: python3 -u main.py
 3) Upload eerst in Shopify: output/shopify/shopify_export_delta_*.csv (wacht tot import klaar is)
-4) Run pas daarna: python3 -u scripts/export_product_ids_and_ymm.py
-5) Run daarna: python3 -u scripts/export_product_metafields.py
-6) Upload:
-   - YMM app: output/reports/ymm_APP_import_ALL_part_*.csv (in delen, max 10MB per file)
-   - Metafields Manager: output/reports/product_metafields_metafields_manager.csv
+4) YMM + metafields — AANBEVOLEN (alleen delta, kleine bestanden, minder time-outs):
+   Vervang JJJJMMDD_HHMMSS door de timestamp van jouw delta-bestand.
+
+   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+     --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+
+   python3 -u scripts/export_product_metafields.py \
+     --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv \
+     --product-ids output/reports/product_ids_from_xml_delta.csv
+
+5) Upload apps:
+   - YMM: output/reports/ymm_APP_import_DELTA.csv (of _part_*.csv als gesplitst)
+   - Metafields Manager: output/reports/product_metafields_metafields_manager_delta.csv
+
+ALTERNATIEF — hele catalogus (grote exports, o.a. eerste keer of volledige resync):
+   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache
+   python3 -u scripts/export_product_metafields.py
+   Upload: ymm_APP_import_ALL_part_*.csv + product_metafields_metafields_manager.csv
+
+FILTER ZONDER OPNIEUW TE GENEREREN (als volledige rapporten al bestaan):
+   python3 scripts/export_delta_app_imports.py
+   -> schrijft o.a. ymm_APP_import_delta_latest.csv en product_metafields_delta_latest.csv
 
 ==================================================
 UITGEBREIDE VERSIE
@@ -88,13 +105,31 @@ BELANGRIJK:
 --------------------------------------------------
 3. YMM + PRODUCT IDS RAPPORT MAKEN
 --------------------------------------------------
-Run:
+
+--- Aanbevolen: alleen delta (na stap 2 + Shopify-import) ---
+
+Gebruik dezelfde delta-CSV als in stap 2 (kolom Handle). Vervang de bestandsnaam door jouw echte timestamp.
+
+  python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+    --delta-handles-csv output/shopify/shopify_export_delta_YYYYMMDD_HHMMSS.csv
+
+Output (delta):
+- output/reports/product_ids_from_xml_delta.csv
+- output/reports/ymm_APP_import_DELTA.csv
+  of gesplitst: ymm_APP_import_DELTA_part_001.csv, ...
+
+Optioneel: handles uit een tekstbestand (één handle per regel, # = commentaar):
+  python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+    --delta-handles-file pad/naar/handles.txt
+
+--- Hele catalogus (grote run) ---
+
   python3 -u scripts/export_product_ids_and_ymm.py
 
 Optioneel cache forceren:
   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache
 
-Output:
+Output (volledig):
 - output/reports/product_ids_from_xml.csv
 - output/reports/ymm_APP_import_ALL.csv (alleen als <= 10MB)
 - of automatisch gesplitst:
@@ -102,13 +137,32 @@ Output:
   output/reports/ymm_APP_import_ALL_part_002.csv
   ...
 
+--- Alleen filteren (volledige YMM/metafields bestonden al) ---
+
+  python3 scripts/export_delta_app_imports.py
+
+Leest de nieuwste output/shopify/shopify_export_delta_*.csv en schrijft compacte bestanden
+o.a. ymm_APP_import_delta_latest.csv (zie console).
+
 Controle:
   ls output/reports
 
 --------------------------------------------------
 4. METAFIELDS MANAGER CSV MAKEN
 --------------------------------------------------
-Eerst stap 3 doen (product_ids_from_xml.csv moet bestaan), dan:
+Eerst stap 3 doen. Kies het product_ids-bestand dat bij je run hoort.
+
+--- Delta (past bij sectie 3 delta) ---
+
+  python3 -u scripts/export_product_metafields.py \
+    --delta-handles-csv output/shopify/shopify_export_delta_YYYYMMDD_HHMMSS.csv \
+    --product-ids output/reports/product_ids_from_xml_delta.csv
+
+Output:
+- output/reports/product_metafields_metafields_manager_delta.csv
+
+--- Volledig ---
+
   python3 -u scripts/export_product_metafields.py
 
 Output:
@@ -116,6 +170,8 @@ Output:
 
 Optionele merge met Shopify CSV (als fits_on buiten XML bestaat):
   python3 -u scripts/export_product_metafields.py --merge-from-shopify-csv /PAD/NAAR/shopify_products_export.csv
+
+Meer uitleg: docs/metafields_manager_export.md
 
 --------------------------------------------------
 5. CONTROLE EN VALIDATIE
@@ -126,8 +182,10 @@ A) Snelle YMM-check voor 1 SKU:
 B) Belangrijke outputs nalopen:
 - output/shopify/shopify_export_delta_*.csv
 - output/shopify/shopify_export_all_*.csv
-- output/reports/ymm_APP_import_ALL.csv of output/reports/ymm_APP_import_ALL_part_*.csv
-- output/reports/product_metafields_metafields_manager.csv
+- Delta YMM: ymm_APP_import_DELTA.csv of ymm_APP_import_DELTA_part_*.csv
+- Volledig YMM: ymm_APP_import_ALL.csv of ymm_APP_import_ALL_part_*.csv
+- Delta metafields: product_metafields_metafields_manager_delta.csv
+- Volledig metafields: product_metafields_metafields_manager.csv
 
 C) Controleer dat kolommen vanaf fits_on inhoud in hoofdletters hebben
   (zoals afgesproken exportstijl).
@@ -143,16 +201,16 @@ A) Shopify productimport
 
 B) YMM app import
 1. Open YMM app (bijv. C: Year Make Model Search).
-2. Upload YMM in delen:
-   - output/reports/ymm_APP_import_ALL_part_001.csv
-   - daarna part_002, part_003, ...
+2. Bij delta-run: upload output/reports/ymm_APP_import_DELTA.csv (of _part_*.csv in volgorde).
+3. Bij volledige run: upload ymm_APP_import_ALL_part_001.csv, daarna part_002, ...
    (elk deel heeft header en is max 10MB)
-3. Start import per deel en wacht op verwerking.
-4. Doe dit pas nadat nieuwe producten al in Shopify staan.
+4. Start import per deel en wacht op verwerking.
+5. Doe dit pas nadat nieuwe producten al in Shopify staan.
 
 C) Metafields Manager import
 1. Open Metafields Manager.
-2. Upload: output/reports/product_metafields_metafields_manager.csv
+2. Delta: product_metafields_metafields_manager_delta.csv
+   Volledig: product_metafields_metafields_manager.csv
 3. Controleer preview (id/handle/fits_on/ymm_summary), daarna import.
 
 --------------------------------------------------
@@ -170,15 +228,23 @@ C) Metafields Manager import
 - Shopify API/caching issues
   -> Probeer stap 3 met --refresh-shopify-cache.
 
+- YMM/metafields-import duurt lang of time-out
+  -> Gebruik de delta-variant (sectie 3/4) met --delta-handles-csv i.p.v. volledige ALL-export.
+
 --------------------------------------------------
 8. SNELLE DAGELIJKSE CHECKLIST
 --------------------------------------------------
 1) Nieuwe XML + 0150 CSV + images in input zetten
 2) python3 -u main.py
 3) Shopify: upload output/shopify/shopify_export_delta_*.csv (wacht tot klaar)
-4) python3 -u scripts/export_product_ids_and_ymm.py
-5) python3 -u scripts/export_product_metafields.py
+4) python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+     --delta-handles-csv output/shopify/shopify_export_delta_<jouw_timestamp>.csv
+5) python3 -u scripts/export_product_metafields.py \
+     --delta-handles-csv output/shopify/shopify_export_delta_<jouw_timestamp>.csv \
+     --product-ids output/reports/product_ids_from_xml_delta.csv
 6) Outputbestanden controleren
-7) Uploaden YMM (in delen) + Metafields Manager
+7) Uploaden: ymm_APP_import_DELTA* + product_metafields_metafields_manager_delta.csv
+
+(Eerste keer of volledige resync: zonder --delta-handles-csv; upload ALL/YMM-parts + volledige metafields.)
 
 Einde.

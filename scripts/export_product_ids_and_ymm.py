@@ -21,16 +21,37 @@ def main():
         action="store_true",
         help="Shopify-cache opnieuw ophalen (zelfde als KTM_FORCE_REFRESH_SHOPIFY_CACHE=1).",
     )
+    h = parser.add_mutually_exclusive_group()
+    h.add_argument(
+        "--delta-handles-csv",
+        metavar="PATH",
+        help="Alleen deze producthandles (kolom Handle), bijv. output/shopify/shopify_export_delta_….csv",
+    )
+    h.add_argument(
+        "--delta-handles-file",
+        metavar="PATH",
+        help="Tekstbestand: één handle per regel (# = commentaar).",
+    )
     args = parser.parse_args()
     if args.refresh_shopify_cache:
         os.environ["KTM_FORCE_REFRESH_SHOPIFY_CACHE"] = "1"
 
+    filter_handles = None
+    if args.delta_handles_csv:
+        from modules.delta_handles import load_handles_from_shopify_export_csv
+
+        filter_handles = load_handles_from_shopify_export_csv(args.delta_handles_csv)
+    elif args.delta_handles_file:
+        from modules.delta_handles import load_handles_from_text_file
+
+        filter_handles = load_handles_from_text_file(args.delta_handles_file)
+
     from modules.ymm_export import run_exports
 
     print("Start export (werkmap:", os.getcwd(), ")…", flush=True)
-    p1, p2, n = run_exports()
+    p1, p2, n = run_exports(filter_handles=filter_handles)
     print("Product-Ids template:", p1)
-    print("YMM app import (all rows):", p2, f"({n} data rows)")
+    print("YMM app import:", p2, f"({n} data rows)")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ exists with Product Id + handle mapping (or pass --product-ids).
 
 Output default:
   output/reports/product_metafields_metafields_manager.csv
+  (of …_delta.csv bij --delta-handles-csv / --delta-handles-file)
 """
 
 import argparse
@@ -45,12 +46,34 @@ def main():
         help="Shopify product-export (CSV) met kolom Handle + fits_on/Fits on: vult ontbrekende "
         "fits_on en voegt producten toe die niet in de KTM-XML staan.",
     )
+    dh = p.add_mutually_exclusive_group()
+    dh.add_argument(
+        "--delta-handles-csv",
+        metavar="PATH",
+        help="Alleen regels voor handles uit deze CSV (kolom Handle).",
+    )
+    dh.add_argument(
+        "--delta-handles-file",
+        metavar="PATH",
+        help="Eén handle per regel (# = commentaar).",
+    )
     args = p.parse_args()
+
+    filter_handles = None
+    if args.delta_handles_csv:
+        from modules.delta_handles import load_handles_from_shopify_export_csv
+
+        filter_handles = load_handles_from_shopify_export_csv(args.delta_handles_csv)
+    elif args.delta_handles_file:
+        from modules.delta_handles import load_handles_from_text_file
+
+        filter_handles = load_handles_from_text_file(args.delta_handles_file)
 
     out, n = run_metafields_export(
         product_ids_path=args.product_ids,
         output_path=args.output,
         shopify_merge_csv=args.merge_from_shopify_csv,
+        filter_handles=filter_handles,
     )
     print("Metafields Manager CSV:", out, f"({n} regels; zie console voor aantal mét fits_on)", flush=True)
 
