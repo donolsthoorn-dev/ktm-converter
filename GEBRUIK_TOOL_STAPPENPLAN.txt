@@ -1,0 +1,171 @@
+KTM TOOL - STAPPENPLAN
+
+ULTRA KORTE VERSIE
+1) Zet nieuwe XML + 0150 prijs CSV + images in input/
+2) Run: python3 -u main.py
+3) Run: python3 -u scripts/export_product_ids_and_ymm.py
+4) Run: python3 -u scripts/export_product_metafields.py
+5) Controleer output in output/shopify en output/reports
+6) Upload:
+   - Shopify: output/shopify/shopify_export_delta_*.csv
+   - YMM app: output/reports/ymm_APP_import_ALL.csv
+   - Metafields Manager: output/reports/product_metafields_metafields_manager.csv
+
+==================================================
+UITGEBREIDE VERSIE
+==================================================
+
+Dit document beschrijft de dagelijkse flow:
+1) bronbestanden ophalen en in input zetten
+2) terminal-commando's draaien
+3) output controleren
+4) bestanden uploaden/importeren in Shopify / apps
+
+--------------------------------------------------
+0. VOORBEREIDING
+--------------------------------------------------
+- Open Cursor in projectmap: /Users/donolsthoorn/Documents/ktm_project
+- Open terminal in de root van het project.
+- Gebruik commando's zonder inline # commentaar op dezelfde regel.
+
+Snel checken dat je in de juiste map zit:
+  pwd
+  ls
+
+--------------------------------------------------
+1. BRONBESTANDEN OPHALEN EN IN input/ ZETTEN
+--------------------------------------------------
+Benodigd voor een volledige run:
+
+A) KTM XML feed
+- Verwachte naam (default):
+  input/CBEXPDN_KTM-DN-3008-0.xml
+
+B) Prijsbestand (0150 ... .csv)
+- In input/, bijvoorbeeld:
+  input/0150_00_Z1_EUR_EN_csv.csv
+
+C) Product-Ids fallback CSV (optioneel, maar aanbevolen)
+- In input/, bijvoorbeeld:
+  input/Product-Ids-ktm-shop-nl.myshopify.com-....csv
+
+D) Handle overrides (optioneel)
+- input/handle-overrides.json
+
+E) Afbeeldingen
+- Zet alle beschikbare imagebestanden onder input/ (submappen mogen).
+- Script scant input/ recursief op bestandsnaam.
+
+Snelle input-check:
+  ls input
+
+--------------------------------------------------
+2. SHOPIFY CSV EXPORT MAKEN (ALL + DELTA)
+--------------------------------------------------
+Run:
+  python3 -u main.py
+
+Wat dit doet:
+- XML products laden
+- Shopify SKU's ophalen
+- prijzen/barcodes koppelen
+- images valideren/uploaden
+- 2 CSV's schrijven:
+  output/shopify/shopify_export_delta_YYYYMMDD_HHMMSS.csv
+  output/shopify/shopify_export_all_YYYYMMDD_HHMMSS.csv
+
+Na run controleren:
+  ls output/shopify | tail -n 5
+
+Gebruik:
+- DELTA CSV: normale update/import van nieuwe of gewijzigde producten
+- ALL CSV: volledige heropbouw / controle run
+
+--------------------------------------------------
+3. YMM + PRODUCT IDS RAPPORT MAKEN
+--------------------------------------------------
+Run:
+  python3 -u scripts/export_product_ids_and_ymm.py
+
+Optioneel cache forceren:
+  python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache
+
+Output:
+- output/reports/product_ids_from_xml.csv
+- output/reports/ymm_APP_import_ALL.csv
+
+Controle:
+  ls output/reports
+
+--------------------------------------------------
+4. METAFIELDS MANAGER CSV MAKEN
+--------------------------------------------------
+Eerst stap 3 doen (product_ids_from_xml.csv moet bestaan), dan:
+  python3 -u scripts/export_product_metafields.py
+
+Output:
+- output/reports/product_metafields_metafields_manager.csv
+
+Optionele merge met Shopify CSV (als fits_on buiten XML bestaat):
+  python3 -u scripts/export_product_metafields.py --merge-from-shopify-csv /PAD/NAAR/shopify_products_export.csv
+
+--------------------------------------------------
+5. CONTROLE EN VALIDATIE
+--------------------------------------------------
+A) Snelle YMM-check voor 1 SKU:
+  python3 scripts/check_ymm_sku.py 00010000318
+
+B) Belangrijke outputs nalopen:
+- output/shopify/shopify_export_delta_*.csv
+- output/shopify/shopify_export_all_*.csv
+- output/reports/ymm_APP_import_ALL.csv
+- output/reports/product_metafields_metafields_manager.csv
+
+C) Controleer dat kolommen vanaf fits_on inhoud in hoofdletters hebben
+  (zoals afgesproken exportstijl).
+
+--------------------------------------------------
+6. UPLOAD / IMPORT
+--------------------------------------------------
+A) Shopify productimport
+1. Ga naar Shopify Admin -> Products -> Import.
+2. Kies meestal: output/shopify/shopify_export_delta_*.csv
+3. Controleer sample en start import.
+4. Voor volledige herimport alleen bewust ALL-bestand gebruiken.
+
+B) YMM app import
+1. Open YMM app (bijv. C: Year Make Model Search).
+2. Upload: output/reports/ymm_APP_import_ALL.csv
+3. Start import en wacht op verwerking.
+
+C) Metafields Manager import
+1. Open Metafields Manager.
+2. Upload: output/reports/product_metafields_metafields_manager.csv
+3. Controleer preview (id/handle/fits_on/ymm_summary), daarna import.
+
+--------------------------------------------------
+7. VEELVOORKOMENDE PROBLEMEN
+--------------------------------------------------
+- "0150 prijsbestand niet gevonden"
+  -> Zet 0150...csv in input/.
+
+- Weinig of geen fits_on
+  -> Controleer juiste XML is gebruikt en run stap 3 + 4 opnieuw.
+
+- Veel missende images
+  -> Controleer dat imagebestanden echt onder input/ staan.
+
+- Shopify API/caching issues
+  -> Probeer stap 3 met --refresh-shopify-cache.
+
+--------------------------------------------------
+8. SNELLE DAGELIJKSE CHECKLIST
+--------------------------------------------------
+1) Nieuwe XML + 0150 CSV + images in input zetten
+2) python3 -u main.py
+3) python3 -u scripts/export_product_ids_and_ymm.py
+4) python3 -u scripts/export_product_metafields.py
+5) Outputbestanden controleren
+6) Uploaden in Shopify + YMM + Metafields Manager
+
+Einde.

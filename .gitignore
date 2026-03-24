@@ -1,0 +1,62 @@
+# ------------------------------
+# OS / Editor noise
+# ------------------------------
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ------------------------------
+# Python
+# ------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# ------------------------------
+# Local secrets / machine config
+# ------------------------------
+.env
+.env.*
+!.env.example
+
+# ------------------------------
+# Runtime caches and logs
+# ------------------------------
+cache/*.json
+output/logs/
+*.log
+
+# Keep cache helper code if needed
+!cache/upload_shopify.py
+
+# ------------------------------
+# Generated exports / reports
+# ------------------------------
+output/shopify/*.csv
+output/reports/*.csv
+
+# ------------------------------
+# Optional heavy local inputs
+# (uncomment if you do NOT want to version them)
+# ------------------------------
+input/
+# input/DOK/
+# input/*.xml
+# input/*0150*.csv
+
