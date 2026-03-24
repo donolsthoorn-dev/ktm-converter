@@ -28,7 +28,7 @@ from modules.xml_loader import build_handle, build_hierarchy_titles
 
 # Complete motor (ERP) in XML: spare parts linked via ZBH2BIKE lists on the bike PRODUKT.
 BIKE_KLASSE = "$KL-ARTICLE_BIKES"
-YMM_MAX_FILE_SIZE_BYTES = 19 * 1024 * 1024
+YMM_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
 def _first_text(nodes):
@@ -731,7 +731,7 @@ def run_exports(
     )
     if len(ymm_files) > 1:
         print(
-            f"YMM CSV gesplitst in {len(ymm_files)} delen (max 19MB): {ymm_files[0]} … {ymm_files[-1]}",
+            f"YMM CSV gesplitst in {len(ymm_files)} delen (max 10MB): {ymm_files[0]} … {ymm_files[-1]}",
             flush=True,
         )
         return product_ids_path, ymm_files[0], n_ymm
