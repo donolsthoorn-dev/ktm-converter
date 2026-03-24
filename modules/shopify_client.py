@@ -11,6 +11,7 @@ Shopify REST-caches onder cache/:
 
 - KTM_SHOPIFY_CACHE_MAX_AGE_DAYS — als gezet (bijv. 7), worden bestanden ouder dan zoveel
   dagen bij de eerstvolgende run automatisch opnieuw opgehaald (geen handmatig wissen).
+  Geldt o.a. voor shopify_skus.json, shopify_products_index.json, shopify_sku_to_product_id.json.
 - KTM_FORCE_REFRESH_SHOPIFY_CACHE=1 — altijd opnieuw ophalen en cache overschrijven.
 - KTM_SKIP_SHOPIFY_API=1 — nooit netwerk; alleen bestaande cache (handig offline).
 
@@ -67,25 +68,27 @@ def _http_session() -> requests.Session:
     return _session
 
 
-def get_all_shopify_skus():
+def _normalize_sku_set(raw: list) -> set[str]:
+    """Uppercase + trim voor betrouwbare delta-vergelijking (XML vs Shopify)."""
+    out: set[str] = set()
+    for x in raw:
+        s = (x or "").strip().upper()
+        if s:
+            out.add(s)
+    return out
 
-    if os.path.exists(CACHE_FILE):
-        print("Shopify SKU cache laden...")
-        with open(CACHE_FILE, "r") as f:
-            return set(json.load(f))
 
-    print("Shopify API scannen...")
-
-    skus = set()
-    url = f"https://{SHOP}/admin/api/2024-01/variants.json?limit=250"
-
-    headers = {
-        "X-Shopify-Access-Token": TOKEN
-    }
+def _fetch_all_shopify_skus_from_api() -> set[str]:
+    print("Shopify variant-SKU's ophalen (API, kan even duren)...", flush=True)
+    skus: set[str] = set()
+    url = (
+        f"https://{SHOP}/admin/api/2024-01/variants.json"
+        "?limit=250&fields=sku"
+    )
+    headers = {"X-Shopify-Access-Token": TOKEN}
     sess = _http_session()
 
     while url:
-
         r = sess.get(
             url,
             headers=headers,
@@ -94,47 +97,79 @@ def get_all_shopify_skus():
         )
 
         if r.status_code == 429:
-            print("Rate limit, wachten...")
+            print("Rate limit SKU's, wachten...", flush=True)
             time.sleep(2)
             continue
 
         if r.status_code >= 500:
-            print("Shopify server fout, retry...")
+            print("Shopify server fout SKU's, retry...", flush=True)
             time.sleep(3)
             continue
 
-        try:
-            data = r.json()
-        except Exception:
-            print("JSON parse fout, retry...")
-            time.sleep(2)
-            continue
+        r.raise_for_status()
+        data = r.json()
 
-        for v in data["variants"]:
-            if v["sku"]:
-                skus.add(v["sku"])
+        for v in data.get("variants", []):
+            s = (v.get("sku") or "").strip().upper()
+            if s:
+                skus.add(s)
 
-        print("SKU count:", len(skus))
+        print("SKU count:", len(skus), flush=True)
 
         link = r.headers.get("Link")
-
         next_url = None
-
         if link:
             parts = link.split(",")
             for p in parts:
                 if 'rel="next"' in p:
                     next_url = p.split(";")[0].strip().replace("<", "").replace(">", "")
-
         url = next_url
-
         time.sleep(0.5)
 
-    print("Shopify SKUs totaal:", len(skus))
+    return skus
 
-    with open(CACHE_FILE, "w") as f:
-        json.dump(list(skus), f)
 
+def get_all_shopify_skus() -> set[str]:
+    """
+    Alle variant-SKU's in de shop. Cache-gedrag gelijk aan andere Shopify caches:
+    TTL via KTM_SHOPIFY_CACHE_MAX_AGE_DAYS, force via KTM_FORCE_REFRESH_SHOPIFY_CACHE.
+    """
+    if _shopify_skip_api():
+        if os.path.exists(CACHE_FILE):
+            print(
+                "KTM_SKIP_SHOPIFY_API=1: Shopify SKU-cache laden (geen live API)...",
+                flush=True,
+            )
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                return _normalize_sku_set(json.load(f))
+        print(
+            "KTM_SKIP_SHOPIFY_API=1: geen shopify_skus.json — lege SKU-set (delta onbetrouwbaar).",
+            flush=True,
+        )
+        return set()
+
+    max_age = _shopify_cache_max_age_days()
+    force_refresh = _env_truthy("KTM_FORCE_REFRESH_SHOPIFY_CACHE")
+
+    if not force_refresh and os.path.exists(CACHE_FILE):
+        if max_age is not None and _cache_file_stale(CACHE_FILE, max_age):
+            print(
+                f"Shopify SKU-cache ouder dan {max_age} dagen — opnieuw ophalen...",
+                flush=True,
+            )
+        else:
+            print("Shopify SKU-cache laden...", flush=True)
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                return _normalize_sku_set(json.load(f))
+
+    if force_refresh and os.path.exists(CACHE_FILE):
+        print("Shopify SKU-cache geforceerd verversen...", flush=True)
+
+    skus = _fetch_all_shopify_skus_from_api()
+    os.makedirs(os.path.dirname(CACHE_FILE) or ".", exist_ok=True)
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(sorted(skus), f)
+    print("Shopify SKUs totaal (live):", len(skus), flush=True)
     return skus
 
 

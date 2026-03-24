@@ -143,6 +143,22 @@ def export(products, filename):
                 if option1_value == "Default Title":
                     option1_name = "Title"
 
+                # Shopify: elke variant moet een unieke optie-combinatie hebben. Bij meerdere artikelen
+                # onder dezelfde handle (bundle) staan ze vaak allemaal op "Default Title" — dat geeft
+                # duplicate "Title / Default Title" en faalt import ("variant Default Title already exists").
+                default_title_count = sum(
+                    1
+                    for x in items
+                    if (x.get("variant") or "Default Title") == "Default Title"
+                )
+                if (
+                    len(items) > 1
+                    and default_title_count > 1
+                    and (p.get("variant") or "Default Title") == "Default Title"
+                ):
+                    option1_name = "Article"
+                    option1_value = (p.get("sku") or "").strip() or "UNKNOWN"
+
                 setcol(row, "Option1 Name", option1_name)
                 setcol(row, "Option1 Value", option1_value)
                 setcol(row, "Variant Inventory Tracker", "shopify")

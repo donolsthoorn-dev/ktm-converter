@@ -2,7 +2,8 @@
 
 ## Wat gebeurt er standaard?
 
-- Bestanden onder `cache/` (`shopify_products_index.json`, `shopify_sku_to_product_id.json`, …) worden **hergebruikt** zodat elke run niet opnieuw de hele Shopify-catalogus hoeft te downloaden.
+- Bestanden onder `cache/` (`shopify_products_index.json`, `shopify_skus.json`, `shopify_sku_to_product_id.json`, …) worden **hergebruikt** zodat elke run niet opnieuw de hele Shopify-catalogus hoeft te downloaden.
+- Dezelfde omgevingsvariabelen (`KTM_SHOPIFY_CACHE_MAX_AGE_DAYS`, `KTM_FORCE_REFRESH_SHOPIFY_CACHE`, `KTM_SKIP_SHOPIFY_API`) gelden voor **alle** Shopify-caches, inclusief de SKU-lijst die delta-export gebruikt.
 - **Handmatig** cache wissen is niet nodig als je onderstaande opties gebruikt.
 
 ## Automatisch “vers genoeg” houden (TTL)

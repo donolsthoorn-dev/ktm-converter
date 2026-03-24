@@ -3,7 +3,9 @@ from modules.xml_loader import load_products
 from modules.pricing_loader import load_price_index
 from modules.exporter import export
 from modules.image_manager import ensure_image, load_cache, save_cache
+from modules.image_resolve import build_basename_index, resolve_local_image
 
+import os
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -74,9 +76,10 @@ for handle, items in products_by_handle.items():
     for p in items:
 
         sku = p["sku"]
+        sku_norm = (sku or "").strip().upper()
 
         if (
-            sku not in shopify_skus
+            sku_norm not in shopify_skus
             and float(price_index.get(sku, 0)) > 0
             and p.get("type") not in excluded_types
             and status_index.get(sku) != "80"
@@ -114,29 +117,36 @@ cache = load_cache()
 
 print("Lokale images indexeren...")
 
-image_index = {}
-
-for p in Path("input").rglob("*"):
-
-    if p.is_file():
-        image_index[p.name] = p
-
-print(f"{len(image_index)} images gevonden op disk")
+input_root = Path("input")
+by_basename_exact, by_basename_lower = build_basename_index(input_root)
+files_on_disk = sum(len(v) for v in by_basename_exact.values())
+print(
+    f"{files_on_disk} bestanden onder input/, "
+    f"{len(by_basename_exact)} unieke bestandsnamen"
+)
 
 
 # -----------------------------------------------------
-# unieke image filenames verzamelen
+# unieke image-paden uit XML (volledige ref, niet alleen basename)
 # -----------------------------------------------------
 
-image_filenames = set()
+image_refs = set()
 
 for p in delta_products:
 
     for img in p.get("images", []):
-        filename = Path(img).name
-        image_filenames.add(filename)
+        s = (img or "").strip()
+        if s:
+            image_refs.add(s)
 
-print(f"{len(image_filenames)} unieke images referenced")
+print(f"{len(image_refs)} unieke image-referenties in delta (uit XML)")
+
+
+def _norm_ref_key(s: str) -> str:
+    return s.strip().replace("\\", "/").lower()
+
+
+image_url_by_norm: dict[str, str] = {}
 
 
 # -----------------------------------------------------
@@ -145,41 +155,60 @@ print(f"{len(image_filenames)} unieke images referenced")
 
 image_url_map = {}
 
-images_found = 0
-images_missing = 0
+images_resolved = 0
+images_no_file = 0
+images_local_failed = 0
 images_uploaded = 0
 
 
-def process_image(filename):
+def process_image(ref: str):
 
-    local_path = image_index.get(filename)
+    local_path = resolve_local_image(ref, input_root, by_basename_exact, by_basename_lower)
 
     if not local_path:
-        return ("missing", filename, None)
+        return ("no_file", ref)
 
-    url = ensure_image(filename, local_path, cache)
+    cache_name = local_path.name
+    url, did_upload = ensure_image(cache_name, local_path, cache, strict_delta=True)
 
-    return ("ok", filename, url)
+    if url:
+        return ("resolved", ref, url, did_upload)
+    return ("failed", ref)
 
 
-with ThreadPoolExecutor(max_workers=20) as executor:
+# GraphQL file-upload is rate-limited; te veel parallel = THROTTLED
+try:
+    _image_workers = max(1, min(8, int(os.environ.get("KTM_IMAGE_UPLOAD_WORKERS", "2").strip() or "2")))
+except ValueError:
+    _image_workers = 2
 
-    futures = [executor.submit(process_image, f) for f in image_filenames]
+print(f"Afbeelding-upload workers (parallel): {_image_workers}", flush=True)
+
+with ThreadPoolExecutor(max_workers=_image_workers) as executor:
+
+    futures = [executor.submit(process_image, r) for r in image_refs]
 
     for future in as_completed(futures):
         try:
-            status, filename, url = future.result()
+            result = future.result()
         except Exception as e:
             # Keep the run alive when Shopify/media API is unreachable.
-            images_missing += 1
+            images_local_failed += 1
             print(f"Image verwerking fout: {e}")
             continue
 
-        if status == "missing":
-            images_missing += 1
+        kind = result[0]
+        if kind == "no_file":
+            images_no_file += 1
+        elif kind == "failed":
+            images_local_failed += 1
         else:
-            images_found += 1
-            image_url_map[filename] = url
+            _, ref, url, did_upload = result
+            images_resolved += 1
+            if did_upload:
+                images_uploaded += 1
+            image_url_map[ref] = url
+            image_url_by_norm[_norm_ref_key(ref)] = url
 
 
 save_cache(cache)
@@ -206,8 +235,10 @@ for handle, items in products_by_handle.items():
 
         for img in p.get("images", []):
 
-            filename = Path(img).name
-            url = image_url_map.get(filename)
+            raw = (img or "").strip()
+            url = image_url_map.get(raw) if raw else None
+            if not url and raw:
+                url = image_url_by_norm.get(_norm_ref_key(raw))
 
             if url:
                 new_images.append(url)
@@ -232,10 +263,11 @@ delta_products = filtered_delta
 
 print("\nImage processing summary")
 print("------------------------")
-print(f"unique images referenced: {len(image_filenames)}")
-print(f"images found locally: {images_found}")
-print(f"images uploaded: {images_uploaded}")
-print(f"images missing locally: {images_missing}")
+print(f"unique image references (XML paths): {len(image_refs)}")
+print(f"met geldige URL (CDN/cache of na upload): {images_resolved}")
+print(f"nieuw geüpload naar Shopify in deze run: {images_uploaded}")
+print(f"geen bestand op schijf onder input/: {images_no_file}")
+print(f"lokaal wel bestand, maar geen geldige URL: {images_local_failed}")
 
 
 # -----------------------------------------------------

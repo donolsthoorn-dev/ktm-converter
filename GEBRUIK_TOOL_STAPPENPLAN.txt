@@ -3,12 +3,11 @@ KTM TOOL - STAPPENPLAN
 ULTRA KORTE VERSIE
 1) Zet nieuwe XML + 0150 prijs CSV + images in input/
 2) Run: python3 -u main.py
-3) Run: python3 -u scripts/export_product_ids_and_ymm.py
-4) Run: python3 -u scripts/export_product_metafields.py
-5) Controleer output in output/shopify en output/reports
+3) Upload eerst in Shopify: output/shopify/shopify_export_delta_*.csv (wacht tot import klaar is)
+4) Run pas daarna: python3 -u scripts/export_product_ids_and_ymm.py
+5) Run daarna: python3 -u scripts/export_product_metafields.py
 6) Upload:
-   - Shopify: output/shopify/shopify_export_delta_*.csv
-   - YMM app: output/reports/ymm_APP_import_ALL.csv
+   - YMM app: output/reports/ymm_APP_import_ALL_part_*.csv (in delen, max 10MB per file)
    - Metafields Manager: output/reports/product_metafields_metafields_manager.csv
 
 ==================================================
@@ -81,6 +80,11 @@ Gebruik:
 - DELTA CSV: normale update/import van nieuwe of gewijzigde producten
 - ALL CSV: volledige heropbouw / controle run
 
+BELANGRIJK:
+- Als er nieuwe producten in je delta zitten, importeer je eerst de DELTA CSV in Shopify.
+- Wacht tot Shopify import klaar is, zodat Product IDs bestaan.
+- Pas daarna stap 3 (YMM + Product IDs) en stap 4 (Metafields) uitvoeren.
+
 --------------------------------------------------
 3. YMM + PRODUCT IDS RAPPORT MAKEN
 --------------------------------------------------
@@ -92,7 +96,11 @@ Optioneel cache forceren:
 
 Output:
 - output/reports/product_ids_from_xml.csv
-- output/reports/ymm_APP_import_ALL.csv
+- output/reports/ymm_APP_import_ALL.csv (alleen als <= 10MB)
+- of automatisch gesplitst:
+  output/reports/ymm_APP_import_ALL_part_001.csv
+  output/reports/ymm_APP_import_ALL_part_002.csv
+  ...
 
 Controle:
   ls output/reports
@@ -118,7 +126,7 @@ A) Snelle YMM-check voor 1 SKU:
 B) Belangrijke outputs nalopen:
 - output/shopify/shopify_export_delta_*.csv
 - output/shopify/shopify_export_all_*.csv
-- output/reports/ymm_APP_import_ALL.csv
+- output/reports/ymm_APP_import_ALL.csv of output/reports/ymm_APP_import_ALL_part_*.csv
 - output/reports/product_metafields_metafields_manager.csv
 
 C) Controleer dat kolommen vanaf fits_on inhoud in hoofdletters hebben
@@ -135,8 +143,12 @@ A) Shopify productimport
 
 B) YMM app import
 1. Open YMM app (bijv. C: Year Make Model Search).
-2. Upload: output/reports/ymm_APP_import_ALL.csv
-3. Start import en wacht op verwerking.
+2. Upload YMM in delen:
+   - output/reports/ymm_APP_import_ALL_part_001.csv
+   - daarna part_002, part_003, ...
+   (elk deel heeft header en is max 10MB)
+3. Start import per deel en wacht op verwerking.
+4. Doe dit pas nadat nieuwe producten al in Shopify staan.
 
 C) Metafields Manager import
 1. Open Metafields Manager.
@@ -163,9 +175,10 @@ C) Metafields Manager import
 --------------------------------------------------
 1) Nieuwe XML + 0150 CSV + images in input zetten
 2) python3 -u main.py
-3) python3 -u scripts/export_product_ids_and_ymm.py
-4) python3 -u scripts/export_product_metafields.py
-5) Outputbestanden controleren
-6) Uploaden in Shopify + YMM + Metafields Manager
+3) Shopify: upload output/shopify/shopify_export_delta_*.csv (wacht tot klaar)
+4) python3 -u scripts/export_product_ids_and_ymm.py
+5) python3 -u scripts/export_product_metafields.py
+6) Outputbestanden controleren
+7) Uploaden YMM (in delen) + Metafields Manager
 
 Einde.

@@ -486,17 +486,6 @@ def load_products():
     products = []
 
     for key, skus in relations.items():
-        
-        # DEBUG: controleer rare SKU groepen
-
-        if len(skus) > 1:
-
-            prefixes = {s[:-1] for s in skus if len(s) > 1}
-
-            if len(prefixes) > 3:  # veel verschillende prefixes = waarschijnlijk verkeerde grouping
-                print("\nWAARSCHUWING: mogelijke verkeerde groepering")
-                print("STRUCTURE KEY:", key)
-                print("SKUS:", skus[:20])
 
         se = structure_index.get(key)
         if not se:
