@@ -2,13 +2,13 @@ import csv
 import os
 import re
 import html
-from modules.category_mapper import map_category
+from modules.category_mapper import map_category, map_shopify_product_category
 
 IMAGE_BASE_URL = "https://cdn.shopify.com/s/files/1/0511/7820/9461/files/"
 EXCLUDED_TYPES = {"Bikes", "Pricelists", "Archiv", "Arhive"}
 
 HEADER = [
-    "Handle", "Title", "Body (HTML)", "Vendor", "Type", "Tags", "Published",
+    "Handle", "Title", "Body (HTML)", "Vendor", "Product category", "Type", "Tags", "Published",
     "Option1 Name", "Option1 Value", "Option2 Name", "Option2 Value", "Option3 Name", "Option3 Value",
     "Variant SKU", "Variant Grams", "Variant Inventory Tracker", "Variant Inventory Qty",
     "Variant Inventory Policy", "Variant Fulfillment Service", "Variant Price", "Variant Compare At Price",
@@ -130,6 +130,8 @@ def export(products, filename):
                 setcol(row, "Title", title if idx == 0 else "")
                 setcol(row, "Body (HTML)", body_html)
                 setcol(row, "Vendor", "KTM")
+                if idx == 0:
+                    setcol(row, "Product category", map_shopify_product_category(category))
                 setcol(row, "Type", type_value if idx == 0 else "")
                 setcol(row, "Tags", tags_value if idx == 0 else "")
                 published = "FALSE" if str(p.get("article_status", "")).strip() == "80" else "TRUE"

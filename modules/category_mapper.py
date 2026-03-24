@@ -1,5 +1,21 @@
 DEFAULT_CATEGORY = "Motor Vehicle Parts"
 
+# Shopify admin "Category" = standard product taxonomy (full breadcrumb with " > ").
+# See https://shopify.github.io/product-taxonomy/
+DEFAULT_SHOPIFY_PRODUCT_CATEGORY = (
+    "Vehicles & Parts > Vehicle Parts & Accessories > Motor Vehicle Parts"
+)
+
+# Values aligned with Shopify's English taxonomy (same keys as map_category() outcomes).
+_SHOPIFY_PRODUCT_CATEGORY_BY_GOOGLE = {
+    "Motor Vehicle Parts": DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    "Tools": "Hardware > Tools",
+    "Clothing": "Apparel & Accessories > Clothing",
+    "Bicycles": (
+        "Sporting Goods > Outdoor Recreation > Cycling > Bicycles > Electric Bikes"
+    ),
+}
+
 CATEGORY_MAP = {
 
 "PowerParts": "Motor Vehicle Parts",
@@ -38,3 +54,9 @@ def map_category(ktm_category):
         ktm_category.strip(),
         DEFAULT_CATEGORY
     )
+
+
+def map_shopify_product_category(ktm_category: str) -> str:
+    """Full Shopify standard category path for CSV column Product category."""
+    google = map_category(ktm_category)
+    return _SHOPIFY_PRODUCT_CATEGORY_BY_GOOGLE.get(google, DEFAULT_SHOPIFY_PRODUCT_CATEGORY)
