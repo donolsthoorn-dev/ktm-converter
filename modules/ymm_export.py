@@ -14,6 +14,7 @@ Fitment comes from:
 from __future__ import annotations
 
 import csv
+import io
 import os
 import re
 from glob import glob
@@ -27,6 +28,7 @@ from modules.xml_loader import build_handle, build_hierarchy_titles
 
 # Complete motor (ERP) in XML: spare parts linked via ZBH2BIKE lists on the bike PRODUKT.
 BIKE_KLASSE = "$KL-ARTICLE_BIKES"
+YMM_MAX_FILE_SIZE_BYTES = 19 * 1024 * 1024
 
 
 def _first_text(nodes):
@@ -597,6 +599,67 @@ def export_ymm_fitment(
     return count
 
 
+def _csv_row_size_bytes(row: list[str]) -> int:
+    """Approx UTF-8 byte size of a CSV row as written by csv.writer."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(row)
+    return len(buf.getvalue().encode("utf-8"))
+
+
+def split_csv_max_bytes_with_header(path: str, max_bytes: int = YMM_MAX_FILE_SIZE_BYTES) -> list[str]:
+    """
+    Split CSV into chunks <= max_bytes, each with header row.
+    Returns list of output paths. If file is already small enough, returns [path].
+    """
+    if not os.path.exists(path):
+        return []
+    if os.path.getsize(path) <= max_bytes:
+        return [path]
+
+    base, ext = os.path.splitext(path)
+    out_paths: list[str] = []
+
+    with open(path, "r", encoding="utf-8", newline="") as src:
+        reader = csv.reader(src)
+        header = next(reader, None)
+        if not header:
+            return [path]
+
+        header_size = _csv_row_size_bytes(header)
+        part_idx = 1
+        cur_path = f"{base}_part_{part_idx:03d}{ext}"
+        cur_file = open(cur_path, "w", encoding="utf-8", newline="")
+        cur_writer = csv.writer(cur_file)
+        cur_writer.writerow(header)
+        cur_size = header_size
+        rows_in_part = 0
+        out_paths.append(cur_path)
+
+        try:
+            for row in reader:
+                row_size = _csv_row_size_bytes(row)
+                if rows_in_part > 0 and (cur_size + row_size) > max_bytes:
+                    cur_file.close()
+                    part_idx += 1
+                    cur_path = f"{base}_part_{part_idx:03d}{ext}"
+                    cur_file = open(cur_path, "w", encoding="utf-8", newline="")
+                    cur_writer = csv.writer(cur_file)
+                    cur_writer.writerow(header)
+                    cur_size = header_size
+                    rows_in_part = 0
+                    out_paths.append(cur_path)
+
+                cur_writer.writerow(row)
+                cur_size += row_size
+                rows_in_part += 1
+        finally:
+            cur_file.close()
+
+    os.remove(path)
+    return out_paths
+
+
 def build_handle_to_product_id(product_ids_path: str) -> dict[str, str]:
     out = {}
     if not product_ids_path or not os.path.exists(product_ids_path):
@@ -663,4 +726,13 @@ def run_exports(
         product_rows=product_rows,
         sku_to_shopify_product_id=sku_to_shopify_product_id,
     )
+    ymm_files = split_csv_max_bytes_with_header(
+        ymm_path, max_bytes=YMM_MAX_FILE_SIZE_BYTES
+    )
+    if len(ymm_files) > 1:
+        print(
+            f"YMM CSV gesplitst in {len(ymm_files)} delen (max 19MB): {ymm_files[0]} … {ymm_files[-1]}",
+            flush=True,
+        )
+        return product_ids_path, ymm_files[0], n_ymm
     return product_ids_path, ymm_path, n_ymm
