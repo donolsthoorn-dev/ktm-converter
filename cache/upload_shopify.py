@@ -1,21 +1,26 @@
-import os
 import csv
-import requests
+import os
+import sys
 from glob import glob
-from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+import requests
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-SHOPIFY_STORE = "ktm-shop-nl"
-SHOPIFY_TOKEN = "REDACTED_REVOKE_AND_ROTATE"
+import config  # noqa: E402
 
-API_VERSION = "2024-01"
+SHOPIFY_STORE = config.SHOPIFY_SHOP_SLUG
+SHOPIFY_TOKEN = config.SHOPIFY_ACCESS_TOKEN
+
+API_VERSION = config.SHOPIFY_ADMIN_API_VERSION
 
 
 def find_latest_csv():
 
-    files = glob("output/shopify/shopify_export_*.csv")
+    files = glob(os.path.join(config.PRODUCTS_OUTPUT_DIR, "shopify_export_*.csv"))
 
     if not files:
         raise Exception("Geen Shopify export CSV gevonden")
@@ -29,22 +34,19 @@ def find_latest_csv():
 
 def create_test_csv(source_csv, limit=5):
 
-    test_csv = "output/shopify/test_upload.csv"
+    test_csv = os.path.join(config.PRODUCTS_OUTPUT_DIR, "test_upload.csv")
 
     handles_seen = set()
     rows_out = []
 
-    with open(source_csv, newline='', encoding="utf-8") as f:
-
+    with open(source_csv, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
 
         for row in reader:
-
             handle = row.get("URL handle", "").strip()
 
             if handle not in handles_seen:
-
                 if len(handles_seen) >= limit:
                     break
 
@@ -52,8 +54,7 @@ def create_test_csv(source_csv, limit=5):
 
             rows_out.append(row)
 
-    with open(test_csv, "w", newline='', encoding="utf-8") as f:
-
+    with open(test_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows_out)
@@ -67,15 +68,10 @@ def upload_csv(file_path):
 
     url = f"https://{SHOPIFY_STORE}.myshopify.com/admin/api/{API_VERSION}/products/import.json"
 
-    headers = {
-        "X-Shopify-Access-Token": SHOPIFY_TOKEN
-    }
+    headers = {"X-Shopify-Access-Token": SHOPIFY_TOKEN}
 
     with open(file_path, "rb") as f:
-
-        files = {
-            "file": f
-        }
+        files = {"file": f}
 
         print("CSV uploaden naar Shopify...")
 
@@ -85,12 +81,11 @@ def upload_csv(file_path):
 
     try:
         print(r.json())
-    except:
+    except Exception:
         print(r.text)
 
 
 if __name__ == "__main__":
-
     source_csv = find_latest_csv()
 
     upload_csv(source_csv)

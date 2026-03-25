@@ -34,4 +34,4 @@ print('00010000318 tuples:', len(m.get('00010000318', set())))
 
 ## Scope
 
-- **Geen wijziging** aan `output/shopify/` product-CSV (`xml_loader` / hoofdexport): alleen rapporten onder `output/reports/` en YMM-logica in `modules/ymm_export.py` + `modules/metafields_manager_export.py`.
+- **Geen wijziging** aan `output/products/` product-CSV (`xml_loader` / hoofdexport): alleen `output/ids/`, `output/ymm/` en `output/metafields/` en YMM-logica in `modules/ymm_export.py` + `modules/metafields_manager_export.py`.

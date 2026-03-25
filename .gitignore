@@ -25,6 +25,7 @@ htmlcov/
 
 # Virtual environments
 .venv/
+.ruff-venv/
 venv/
 env/
 
@@ -38,6 +39,8 @@ env/
 # ------------------------------
 # Runtime caches and logs
 # ------------------------------
+# Oude kopie; canoniek is cache/shopify_skus.json (zie modules/shopify_client.py)
+/shopify_skus.json
 cache/*.json
 output/logs/
 *.log
@@ -48,8 +51,10 @@ output/logs/
 # ------------------------------
 # Generated exports / reports
 # ------------------------------
-output/shopify/*.csv
-output/reports/*.csv
+output/products/*.csv
+output/ids/*.csv
+output/ymm/*.csv
+output/metafields/*.csv
 
 # ------------------------------
 # Optional heavy local inputs
@@ -60,3 +65,7 @@ input/
 # input/*.xml
 # input/*0150*.csv
 
+
+# FTP staging files
+downloads/ftp/*
+!downloads/ftp/.gitkeep

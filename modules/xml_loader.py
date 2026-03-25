@@ -1,11 +1,15 @@
-import re
+from __future__ import annotations
+
 import html
 import json
 import os
+import re
 from collections import defaultdict
 from functools import lru_cache
+
 from lxml import etree
-from config import XML_FILE, CULTURE, INPUT_DIR
+
+from config import CULTURE, INPUT_DIR, XML_FILE
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 SIZE_RE = re.compile(r"^(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|XXXXL)$", re.IGNORECASE)
@@ -18,6 +22,7 @@ LANG_TOKEN_RE = re.compile(
 # Helpers
 # -----------------------------------------------------
 
+
 def slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
@@ -28,7 +33,12 @@ def strip_language_suffix(sku: str) -> str:
         return s
 
     while True:
-        base = re.sub(r"([/-](DE|EN|FR|ES|IT|NL|PT|CZ|SK|HU|PL|DK|GR|FIN|SWE|EST|LAT|LIT|SLK|FRA|AT|CH|BE|LUX))$", "", s, flags=re.IGNORECASE)
+        base = re.sub(
+            r"([/-](DE|EN|FR|ES|IT|NL|PT|CZ|SK|HU|PL|DK|GR|FIN|SWE|EST|LAT|LIT|SLK|FRA|AT|CH|BE|LUX))$",
+            "",
+            s,
+            flags=re.IGNORECASE,
+        )
         if base == s:
             break
         s = base
@@ -59,6 +69,7 @@ def load_handle_overrides():
         print(f"Kon handle-overrides niet lezen: {e}")
         return {"keys": {}, "skus": {}}
 
+
 def first_text(nodes):
     for n in nodes:
         if n is not None and n.text and n.text.strip():
@@ -68,11 +79,7 @@ def first_text(nodes):
 
 def first_textart_any_culture(elem, textart_name: str) -> str:
     """Prefer CULTURE; many PP/structure nodes only ship BEZEICHNUNG as DE-AT."""
-    t = first_text(
-        elem.xpath(
-            f'.//TEXTART[@name="{textart_name}"]/TEXT[@culture="{CULTURE}"]'
-        )
-    )
+    t = first_text(elem.xpath(f'.//TEXTART[@name="{textart_name}"]/TEXT[@culture="{CULTURE}"]'))
     if t:
         return t
     for node in elem.xpath(f'.//TEXTART[@name="{textart_name}"]/TEXT'):
@@ -91,16 +98,12 @@ def structure_display_title(elem, name_attr: str) -> str:
 
 
 def get_html_textart(elem, name):
-    raw = first_text(elem.xpath(
-        f'.//TEXTART[@name="{name}"]/TEXT[@culture="{CULTURE}"]'
-    ))
+    raw = first_text(elem.xpath(f'.//TEXTART[@name="{name}"]/TEXT[@culture="{CULTURE}"]'))
     return html.unescape(raw) if raw else ""
 
 
 def get_html_textart_any_culture(elem, name: str) -> str:
-    raw = first_text(elem.xpath(
-        f'.//TEXTART[@name="{name}"]/TEXT[@culture="{CULTURE}"]'
-    ))
+    raw = first_text(elem.xpath(f'.//TEXTART[@name="{name}"]/TEXT[@culture="{CULTURE}"]'))
     if raw:
         return html.unescape(raw)
     for node in elem.xpath(f'.//TEXTART[@name="{name}"]/TEXT'):
@@ -190,11 +193,14 @@ def build_properties_table_html(skus: list[str], sku_attrs: dict) -> str:
 
 def build_group_meta(skus: list[str], sku_attrs: dict) -> dict:
     return {
-        "color": find_group_attr_value(skus, sku_attrs, ["COLOUR_POWERWEAR", "COLOUR", "COLOR"]).lower(),
+        "color": find_group_attr_value(
+            skus, sku_attrs, ["COLOUR_POWERWEAR", "COLOUR", "COLOR"]
+        ).lower(),
         "gender": find_group_attr_value(skus, sku_attrs, ["PW_GENDER", "GENDER"]),
         "collection": find_group_attr_value(skus, sku_attrs, ["PW_KTM_COLL", "KTM_COLLECTION"]),
         "playground": find_group_attr_value(skus, sku_attrs, ["PW_KTM_PLAY", "KTM_PLAYGROUND"]),
     }
+
 
 def is_bad_value(v: str) -> bool:
     if not v:
@@ -206,10 +212,19 @@ def is_bad_value(v: str) -> bool:
         return True
     return False
 
+
 # -----------------------------------------------------
 # Loader
 # -----------------------------------------------------
-def build_handle(key: str, skus: list[str]) -> str:
+def normalize_shopify_product_handle(h: str) -> str:
+    """
+    Shopify product handles are URL slugs; Admin and API use lowercase.
+    All CSV exports and lookups should use the same normalization.
+    """
+    return (h or "").strip().lower()
+
+
+def _build_handle_uncased(key: str, skus: list[str]) -> str:
 
     clean_skus = [s.strip() for s in skus if s and s.strip()]
     overrides = load_handle_overrides()
@@ -221,7 +236,9 @@ def build_handle(key: str, skus: list[str]) -> str:
     if key in overrides["keys"]:
         return overrides["keys"][key]
 
-    sku_override_handles = {overrides["skus"].get(s) for s in clean_skus if overrides["skus"].get(s)}
+    sku_override_handles = {
+        overrides["skus"].get(s) for s in clean_skus if overrides["skus"].get(s)
+    }
     if len(sku_override_handles) == 1:
         return next(iter(sku_override_handles))
 
@@ -237,11 +254,10 @@ def build_handle(key: str, skus: list[str]) -> str:
     same_length = all(len(s) == len(first) for s in clean_skus)
 
     if same_length and len(first) >= 3:
-
         prefix = first[:-1]
 
         if all(s[:-1] == prefix for s in clean_skus):
-            return (prefix + "X")
+            return prefix + "X"
 
     # ------------------------------------------------
     # CASE 2: language codes (EN DE FR etc)
@@ -269,7 +285,13 @@ def build_handle(key: str, skus: list[str]) -> str:
     return fallback or slugify(key.replace("$M-", ""))
 
 
-def get_attr_value(attrs: dict, include_keywords: list[str], exclude_keywords: list[str] | None = None) -> str:
+def build_handle(key: str, skus: list[str]) -> str:
+    return normalize_shopify_product_handle(_build_handle_uncased(key, skus))
+
+
+def get_attr_value(
+    attrs: dict, include_keywords: list[str], exclude_keywords: list[str] | None = None
+) -> str:
     if not attrs:
         return ""
 
@@ -408,8 +430,8 @@ def resolve_group_option(skus: list[str], sku_attrs: dict):
 
     option_map = {}
     for sku in skus:
-        l, v = values_by_sku.get(sku, ("", ""))
-        option_map[sku] = v if l == label and v else "Default Title"
+        lbl, v = values_by_sku.get(sku, ("", ""))
+        option_map[sku] = v if lbl == label and v else "Default Title"
 
     return label, option_map
 
@@ -431,6 +453,7 @@ def build_hierarchy_titles(structure_index: dict, start_name: str) -> list[str]:
 
     return titles
 
+
 def load_products():
 
     print("XML streaming parsen...")
@@ -444,20 +467,17 @@ def load_products():
     context = etree.iterparse(
         XML_FILE,
         events=("end",),
-        tag=("STRUKTUR_ELEMENT", "PRODUKT_ZU_STRUKTUR_ELEMENT", "PRODUKT")
+        tag=("STRUKTUR_ELEMENT", "PRODUKT_ZU_STRUKTUR_ELEMENT", "PRODUKT"),
     )
 
     for event, elem in context:
-
         tag = elem.tag
 
         # ---------------- STRUCTURE ----------------
         if tag == "STRUKTUR_ELEMENT":
-
             name = elem.get("name")
 
             if name:
-
                 title = structure_display_title(elem, name)
 
                 description = build_description(elem)
@@ -466,17 +486,15 @@ def load_products():
                 structure_index[name] = {
                     "title": title,
                     "description": description,
-                    "parent_name": parent_name
+                    "parent_name": parent_name,
                 }
 
                 # images
                 if elem.get("ebene") == "MODELL":
-
                     seen = set()
                     ordered = []
 
                     for media in elem.findall(".//MEDIENDATEI"):
-
                         path = (media.text or "").strip()
                         if not path:
                             continue
@@ -494,7 +512,6 @@ def load_products():
 
         # ---------------- RELATIONS ----------------
         elif tag == "PRODUKT_ZU_STRUKTUR_ELEMENT":
-
             sku = elem.findtext("PRODUKT_NAME")
             key = elem.findtext("ELEMENT_NAME")
 
@@ -503,15 +520,12 @@ def load_products():
 
         # ---------------- ATTRIBUTES ----------------
         elif tag == "PRODUKT":
-
             sku = elem.get("name")
 
             if sku:
-
                 attrs = {}
 
                 for a in elem.findall(".//ATTRIBUTE/ATTRIBUT"):
-
                     aname = a.get("name")
                     if not aname:
                         continue
@@ -538,7 +552,6 @@ def load_products():
     products = []
 
     for key, skus in relations.items():
-
         se = structure_index.get(key)
         if not se:
             continue
@@ -559,7 +572,9 @@ def load_products():
         type_value = ""
         category_value = ""
 
-        hierarchy_titles = build_hierarchy_titles(structure_index, parent_name) if parent_name else []
+        hierarchy_titles = (
+            build_hierarchy_titles(structure_index, parent_name) if parent_name else []
+        )
         if hierarchy_titles:
             type_value = hierarchy_titles[0]
         if len(hierarchy_titles) > 1:
@@ -580,24 +595,25 @@ def load_products():
         option_label, option_values = resolve_group_option(skus, sku_attrs)
 
         for idx, sku in enumerate(skus):
-
-            products.append({
-                "handle": handle,
-                "sku": sku,
-                "title": title if idx == 0 else "",
-                "description": description if idx == 0 else "",
-                "type": type_value if idx == 0 else "",
-                "category": category_value if idx == 0 else "",
-                "tags": tags_value if idx == 0 else "",
-                "color": group_meta["color"] if idx == 0 else "",
-                "gender": group_meta["gender"] if idx == 0 else "",
-                "collection": group_meta["collection"] if idx == 0 else "",
-                "playground": group_meta["playground"] if idx == 0 else "",
-                "variant": "Default Title" if single else option_values.get(sku, sku[-1]),
-                "variant_label": option_label,
-                "weight_grams": get_weight_grams(sku_attrs.get(sku, {})),
-                "images": images
-            })
+            products.append(
+                {
+                    "handle": handle,
+                    "sku": sku,
+                    "title": title if idx == 0 else "",
+                    "description": description if idx == 0 else "",
+                    "type": type_value if idx == 0 else "",
+                    "category": category_value if idx == 0 else "",
+                    "tags": tags_value if idx == 0 else "",
+                    "color": group_meta["color"] if idx == 0 else "",
+                    "gender": group_meta["gender"] if idx == 0 else "",
+                    "collection": group_meta["collection"] if idx == 0 else "",
+                    "playground": group_meta["playground"] if idx == 0 else "",
+                    "variant": "Default Title" if single else option_values.get(sku, sku[-1]),
+                    "variant_label": option_label,
+                    "weight_grams": get_weight_grams(sku_attrs.get(sku, {})),
+                    "images": images,
+                }
+            )
 
     print(f"{len(products)} producten opgebouwd.")
 

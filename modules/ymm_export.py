@@ -17,14 +17,18 @@ import csv
 import io
 import os
 import re
-from glob import glob
 from collections import defaultdict
+from glob import glob
 
 from lxml import etree
 
-from config import CULTURE, XML_FILE, REPORT_OUTPUT_DIR
+from config import CULTURE, IDS_OUTPUT_DIR, XML_FILE, YMM_OUTPUT_DIR
 from modules.shopify_client import get_shopify_products_index, get_shopify_sku_to_product_id
-from modules.xml_loader import build_handle, build_hierarchy_titles
+from modules.xml_loader import (
+    build_handle,
+    build_hierarchy_titles,
+    normalize_shopify_product_handle,
+)
 
 # Complete motor (ERP) in XML: spare parts linked via ZBH2BIKE lists on the bike PRODUKT.
 BIKE_KLASSE = "$KL-ARTICLE_BIKES"
@@ -140,9 +144,7 @@ def _produkt_is_complete_bike(elem) -> bool:
 
 def _first_bezeichnung_any_culture(elem) -> str:
     """Prefer configured CULTURE; many bike PRODUKT only ship BEZEICHNUNG as DE-AT."""
-    t = _first_text(
-        elem.xpath(f'.//TEXTART[@name="BEZEICHNUNG"]/TEXT[@culture="{CULTURE}"]')
-    )
+    t = _first_text(elem.xpath(f'.//TEXTART[@name="BEZEICHNUNG"]/TEXT[@culture="{CULTURE}"]'))
     if t:
         return t
     for node in elem.xpath('.//TEXTART[@name="BEZEICHNUNG"]/TEXT'):
@@ -260,9 +262,7 @@ def stream_xml_for_export():
             if name:
                 title = (
                     _first_text(
-                        elem.xpath(
-                            f'.//TEXTART[@name="BEZEICHNUNG"]/TEXT[@culture="{CULTURE}"]'
-                        )
+                        elem.xpath(f'.//TEXTART[@name="BEZEICHNUNG"]/TEXT[@culture="{CULTURE}"]')
                     )
                     or name
                 )
@@ -327,12 +327,10 @@ def export_product_ids_template(path: str, product_rows: list[dict]) -> None:
     by_handle: dict[str, dict] = {}
     for p in product_rows:
         h = p["handle"]
-        cur = by_handle.setdefault(
-            h, {"title": p.get("title") or "", "tags": p.get("tags") or ""}
-        )
-        if len((p.get("title") or "")) > len(cur["title"]):
+        cur = by_handle.setdefault(h, {"title": p.get("title") or "", "tags": p.get("tags") or ""})
+        if len(p.get("title") or "") > len(cur["title"]):
             cur["title"] = p.get("title") or ""
-        if len((p.get("tags") or "")) > len(cur["tags"]):
+        if len(p.get("tags") or "") > len(cur["tags"]):
             cur["tags"] = p.get("tags") or ""
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
@@ -348,7 +346,7 @@ def load_product_ids_from_csv(path: str) -> dict:
         return index
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            sku = (row.get("Product SKU") or "").strip()
+            sku = normalize_shopify_product_handle(row.get("Product SKU") or "")
             if not sku:
                 continue
             index[sku] = {
@@ -365,9 +363,7 @@ def find_latest_product_ids_csv() -> str:
     return candidates[-1] if candidates else ""
 
 
-def _lookup_product_id_by_variant_sku(
-    sku: str, sku_to_product_id: dict[str, str]
-) -> str:
+def _lookup_product_id_by_variant_sku(sku: str, sku_to_product_id: dict[str, str]) -> str:
     """
     Shopify stores variant SKU with stable casing; XML / handles may differ in case.
     """
@@ -398,12 +394,10 @@ def export_product_ids_with_shopify_data(
     by_handle: dict[str, dict] = {}
     for p in product_rows:
         h = p["handle"]
-        cur = by_handle.setdefault(
-            h, {"title": p.get("title") or "", "tags": p.get("tags") or ""}
-        )
-        if len((p.get("title") or "")) > len(cur["title"]):
+        cur = by_handle.setdefault(h, {"title": p.get("title") or "", "tags": p.get("tags") or ""})
+        if len(p.get("title") or "") > len(cur["title"]):
             cur["title"] = p.get("title") or ""
-        if len((p.get("tags") or "")) > len(cur["tags"]):
+        if len(p.get("tags") or "") > len(cur["tags"]):
             cur["tags"] = p.get("tags") or ""
 
     handle_to_skus: dict[str, list[str]] = defaultdict(list)
@@ -429,15 +423,11 @@ def export_product_ids_with_shopify_data(
             # When the XML handle equals the variant SKU, match via variants API map.
             if not product_id and sku_to_shopify_product_id:
                 for sku in handle_to_skus.get(h, []):
-                    product_id = _lookup_product_id_by_variant_sku(
-                        sku, sku_to_shopify_product_id
-                    )
+                    product_id = _lookup_product_id_by_variant_sku(sku, sku_to_shopify_product_id)
                     if product_id:
                         break
                 if not product_id:
-                    product_id = _lookup_product_id_by_variant_sku(
-                        h, sku_to_shopify_product_id
-                    )
+                    product_id = _lookup_product_id_by_variant_sku(h, sku_to_shopify_product_id)
             title = api.get("title") or xml_row.get("title") or fb.get("title") or ""
             tags = api.get("tags") or xml_row.get("tags") or fb.get("tags") or ""
             w.writerow([created_at, product_id, h, title, tags])
@@ -452,7 +442,9 @@ def _build_sku_to_keys(relations: dict) -> dict[str, list[str]]:
     return m
 
 
-def resolve_handle_for_sku(sku: str, relations: dict, sku_to_keys: dict[str, list[str]] | None = None) -> str:
+def resolve_handle_for_sku(
+    sku: str, relations: dict, sku_to_keys: dict[str, list[str]] | None = None
+) -> str:
     """
     Map a variant SKU to its Shopify-style product handle.
     A SKU may appear under a bike MODELL key (fitment) and under its own product key;
@@ -461,9 +453,7 @@ def resolve_handle_for_sku(sku: str, relations: dict, sku_to_keys: dict[str, lis
     sku = (sku or "").strip()
     if not sku:
         return ""
-    candidates = (sku_to_keys or {}).get(sku) or [
-        k for k, sks in relations.items() if sku in sks
-    ]
+    candidates = (sku_to_keys or {}).get(sku) or [k for k, sks in relations.items() if sku in sks]
     if not candidates:
         return sku
 
@@ -559,18 +549,12 @@ def export_ymm_fitment(
     seen_rows = set()
     handle_to_product_id = handle_to_product_id or {}
 
-    sku_to_ymm = build_merged_sku_to_ymm(
-        structure_index, relations, xml_file=xml_file or XML_FILE
-    )
+    sku_to_ymm = build_merged_sku_to_ymm(structure_index, relations, xml_file=xml_file or XML_FILE)
 
     all_skus = {s for sks in relations.values() for s in sks if s} | set(sku_to_ymm.keys())
     sku_to_keys = _build_sku_to_keys(relations)
-    sku_to_handle = {
-        s: resolve_handle_for_sku(s, relations, sku_to_keys) for s in all_skus
-    }
-    sku_to_candidate_handles = (
-        build_sku_to_candidate_handles(product_rows) if product_rows else {}
-    )
+    sku_to_handle = {s: resolve_handle_for_sku(s, relations, sku_to_keys) for s in all_skus}
+    sku_to_candidate_handles = build_sku_to_candidate_handles(product_rows) if product_rows else {}
     sku_to_shopify_product_id = sku_to_shopify_product_id or {}
 
     with open(path, "w", encoding="utf-8", newline="") as f:
@@ -587,9 +571,7 @@ def export_ymm_fitment(
                 handle_to_product_id,
             )
             if not product_id:
-                product_id = _lookup_product_id_by_variant_sku(
-                    sku, sku_to_shopify_product_id
-                )
+                product_id = _lookup_product_id_by_variant_sku(sku, sku_to_shopify_product_id)
             if filter_handles is not None and handle not in filter_handles:
                 continue
             for make, model, year in sorted(ymm_set, key=lambda t: (t[0], t[1], t[2])):
@@ -610,7 +592,9 @@ def _csv_row_size_bytes(row: list[str]) -> int:
     return len(buf.getvalue().encode("utf-8"))
 
 
-def split_csv_max_bytes_with_header(path: str, max_bytes: int = YMM_MAX_FILE_SIZE_BYTES) -> list[str]:
+def split_csv_max_bytes_with_header(
+    path: str, max_bytes: int = YMM_MAX_FILE_SIZE_BYTES
+) -> list[str]:
     """
     Split CSV into chunks <= max_bytes, each with header row.
     Returns list of output paths. If file is already small enough, returns [path].
@@ -623,7 +607,7 @@ def split_csv_max_bytes_with_header(path: str, max_bytes: int = YMM_MAX_FILE_SIZ
     base, ext = os.path.splitext(path)
     out_paths: list[str] = []
 
-    with open(path, "r", encoding="utf-8", newline="") as src:
+    with open(path, encoding="utf-8", newline="") as src:
         reader = csv.reader(src)
         header = next(reader, None)
         if not header:
@@ -663,13 +647,32 @@ def split_csv_max_bytes_with_header(path: str, max_bytes: int = YMM_MAX_FILE_SIZ
     return out_paths
 
 
+def _ensure_ymm_all_named_as_parts(ymm_path: str, split_paths: list[str]) -> list[str]:
+    """
+    Na splitsing: volledige ALL-export gebruikt altijd ymm_APP_import_ALL_part_NNN.csv
+    (ook één deel onder de 10MB-grens), zodat upload-stappen niet afhangen van
+    een losse ymm_APP_import_ALL.csv.
+    """
+    if not split_paths or len(split_paths) != 1:
+        return split_paths
+    only = split_paths[0]
+    base = os.path.basename(only)
+    if base != "ymm_APP_import_ALL.csv":
+        return split_paths
+    d = os.path.dirname(only) or "."
+    target = os.path.join(d, "ymm_APP_import_ALL_part_001.csv")
+    if os.path.abspath(only) != os.path.abspath(target):
+        os.replace(only, target)
+    return [target]
+
+
 def build_handle_to_product_id(product_ids_path: str) -> dict[str, str]:
     out = {}
     if not product_ids_path or not os.path.exists(product_ids_path):
         return out
     with open(product_ids_path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            handle = (row.get("Product SKU") or "").strip()
+            handle = normalize_shopify_product_handle(row.get("Product SKU") or "")
             pid = (row.get("Product Id") or "").replace("~", "").strip()
             if handle and pid:
                 out[handle] = pid
@@ -703,12 +706,12 @@ def run_exports(
 
     if product_ids_path is None:
         product_ids_path = os.path.join(
-            REPORT_OUTPUT_DIR,
+            IDS_OUTPUT_DIR,
             "product_ids_from_xml_delta.csv" if filter_handles else "product_ids_from_xml.csv",
         )
     if ymm_path is None:
         ymm_path = os.path.join(
-            REPORT_OUTPUT_DIR,
+            YMM_OUTPUT_DIR,
             "ymm_APP_import_DELTA.csv" if filter_handles else "ymm_APP_import_ALL.csv",
         )
     shopify_index = None
@@ -750,13 +753,24 @@ def run_exports(
         sku_to_shopify_product_id=sku_to_shopify_product_id,
         filter_handles=filter_handles,
     )
-    ymm_files = split_csv_max_bytes_with_header(
-        ymm_path, max_bytes=YMM_MAX_FILE_SIZE_BYTES
-    )
-    if len(ymm_files) > 1:
-        print(
-            f"YMM CSV gesplitst in {len(ymm_files)} delen (max 10MB): {ymm_files[0]} … {ymm_files[-1]}",
-            flush=True,
-        )
+    # Max 10MB per bestand alleen voor volledige catalogus (ALL), niet voor delta-export:
+    # dan blijft ymm_APP_import_DELTA.csv één bestand (of handmatig splitsen indien nodig).
+    if filter_handles is None:
+        ymm_files = split_csv_max_bytes_with_header(ymm_path, max_bytes=YMM_MAX_FILE_SIZE_BYTES)
+        if not ymm_files:
+            ymm_files = [ymm_path]
+        ymm_files = _ensure_ymm_all_named_as_parts(ymm_path, ymm_files)
+        if len(ymm_files) > 1:
+            print(
+                f"YMM CSV (volledige catalogus) gesplitst in {len(ymm_files)} delen "
+                f"(max 10 MB per deel): {ymm_files[0]} … {ymm_files[-1]}",
+                flush=True,
+            )
+        else:
+            print(
+                f"YMM CSV (volledige catalogus): {ymm_files[0]} "
+                f"(max {YMM_MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB per deel indien gesplitst).",
+                flush=True,
+            )
         return product_ids_path, ymm_files[0], n_ymm
     return product_ids_path, ymm_path, n_ymm

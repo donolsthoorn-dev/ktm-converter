@@ -1,10 +1,11 @@
-import sys
 import os
+import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from modules.xml_loader import load_products
 from collections import Counter
+
+from modules.xml_loader import load_products
 
 
 def analyse():
@@ -18,7 +19,6 @@ def analyse():
     categories = Counter()
 
     for p in products:
-
         cat = p.get("category")
 
         if cat:

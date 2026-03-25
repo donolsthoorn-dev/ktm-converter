@@ -6,6 +6,9 @@ import time
 
 import requests
 
+import config
+from modules.xml_loader import normalize_shopify_product_handle
+
 """
 Shopify REST-caches onder cache/:
 
@@ -23,13 +26,23 @@ PRODUCTS_CACHE_FILE = "cache/shopify_products_index.json"
 # Variant SKU (shop) -> parent product id (for YMM / fitment rows)
 SKU_TO_PRODUCT_ID_CACHE = "cache/shopify_sku_to_product_id.json"
 
-SHOP = "ktm-shop-nl.myshopify.com"
-TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip() or (
-    "REDACTED_REVOKE_AND_ROTATE"
-)
+SHOP = config.SHOPIFY_SHOP_DOMAIN
+TOKEN = config.SHOPIFY_ACCESS_TOKEN
+ADMIN_API_VERSION = config.SHOPIFY_ADMIN_API_VERSION
 
 # Connect timeout, read timeout (seconds) — fail faster than hanging on bad proxy/VPN
 _REQUEST_TIMEOUT = (12, 120)
+
+
+def _normalize_products_index_keys(index: dict) -> dict:
+    """Shopify handles are lowercase; normalize cached keys that may predate this."""
+    out: dict = {}
+    for k, v in (index or {}).items():
+        hk = normalize_shopify_product_handle(str(k))
+        if hk:
+            out[hk] = v
+    return out
+
 
 # Ignore HTTP(S)_PROXY and macOS proxy auto-config (often causes tunnel 403)
 _session: requests.Session | None = None
@@ -81,10 +94,7 @@ def _normalize_sku_set(raw: list) -> set[str]:
 def _fetch_all_shopify_skus_from_api() -> set[str]:
     print("Shopify variant-SKU's ophalen (API, kan even duren)...", flush=True)
     skus: set[str] = set()
-    url = (
-        f"https://{SHOP}/admin/api/2024-01/variants.json"
-        "?limit=250&fields=sku"
-    )
+    url = f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/variants.json?limit=250&fields=sku"
     headers = {"X-Shopify-Access-Token": TOKEN}
     sess = _http_session()
 
@@ -140,7 +150,7 @@ def get_all_shopify_skus() -> set[str]:
                 "KTM_SKIP_SHOPIFY_API=1: Shopify SKU-cache laden (geen live API)...",
                 flush=True,
             )
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            with open(CACHE_FILE, encoding="utf-8") as f:
                 return _normalize_sku_set(json.load(f))
         print(
             "KTM_SKIP_SHOPIFY_API=1: geen shopify_skus.json — lege SKU-set (delta onbetrouwbaar).",
@@ -159,7 +169,7 @@ def get_all_shopify_skus() -> set[str]:
             )
         else:
             print("Shopify SKU-cache laden...", flush=True)
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            with open(CACHE_FILE, encoding="utf-8") as f:
                 return _normalize_sku_set(json.load(f))
 
     if force_refresh and os.path.exists(CACHE_FILE):
@@ -191,8 +201,8 @@ def get_shopify_products_index(force_refresh: bool = False):
                 "KTM_SKIP_SHOPIFY_API=1: Shopify API overgeslagen, cache gebruiken...",
                 flush=True,
             )
-            with open(PRODUCTS_CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+            with open(PRODUCTS_CACHE_FILE, encoding="utf-8") as f:
+                return _normalize_products_index_keys(json.load(f))
         print(
             "KTM_SKIP_SHOPIFY_API=1: geen cache; alleen input/Product-Ids CSV als fallback.",
             flush=True,
@@ -210,8 +220,8 @@ def get_shopify_products_index(force_refresh: bool = False):
             )
         else:
             print("Shopify productindex cache laden...", flush=True)
-            with open(PRODUCTS_CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+            with open(PRODUCTS_CACHE_FILE, encoding="utf-8") as f:
+                return _normalize_products_index_keys(json.load(f))
 
     if force_refresh and os.path.exists(PRODUCTS_CACHE_FILE):
         print("Shopify productindex-cache geforceerd verversen...", flush=True)
@@ -219,7 +229,7 @@ def get_shopify_products_index(force_refresh: bool = False):
     print("Shopify products ophalen (direct, zonder systeem-proxy)...", flush=True)
     index = {}
     url = (
-        f"https://{SHOP}/admin/api/2024-01/products.json"
+        f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
         "?limit=250&fields=id,created_at,handle,title,tags"
     )
     headers = {"X-Shopify-Access-Token": TOKEN}
@@ -247,7 +257,7 @@ def get_shopify_products_index(force_refresh: bool = False):
         data = r.json()
 
         for p in data.get("products", []):
-            handle = (p.get("handle") or "").strip()
+            handle = normalize_shopify_product_handle(p.get("handle") or "")
             if not handle:
                 continue
             index[handle] = {
@@ -295,7 +305,7 @@ def get_shopify_sku_to_product_id(force_refresh: bool = False) -> dict[str, str]
                 "KTM_SKIP_SHOPIFY_API=1: SKU→Product Id cache laden...",
                 flush=True,
             )
-            with open(SKU_TO_PRODUCT_ID_CACHE, "r", encoding="utf-8") as f:
+            with open(SKU_TO_PRODUCT_ID_CACHE, encoding="utf-8") as f:
                 return json.load(f)
         return {}
 
@@ -310,7 +320,7 @@ def get_shopify_sku_to_product_id(force_refresh: bool = False) -> dict[str, str]
             )
         else:
             print("Shopify SKU→Product Id cache laden...", flush=True)
-            with open(SKU_TO_PRODUCT_ID_CACHE, "r", encoding="utf-8") as f:
+            with open(SKU_TO_PRODUCT_ID_CACHE, encoding="utf-8") as f:
                 return json.load(f)
 
     if force_refresh and os.path.exists(SKU_TO_PRODUCT_ID_CACHE):
@@ -322,7 +332,7 @@ def get_shopify_sku_to_product_id(force_refresh: bool = False) -> dict[str, str]
     )
     out: dict[str, str] = {}
     url = (
-        f"https://{SHOP}/admin/api/2024-01/variants.json"
+        f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/variants.json"
         "?limit=250&fields=sku,product_id"
     )
     headers = {"X-Shopify-Access-Token": TOKEN}

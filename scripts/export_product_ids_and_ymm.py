@@ -11,6 +11,8 @@ os.chdir(ROOT)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import config  # noqa: E402, F401 — laadt .env
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -25,7 +27,7 @@ def main():
     h.add_argument(
         "--delta-handles-csv",
         metavar="PATH",
-        help="Alleen deze producthandles (kolom Handle), bijv. output/shopify/shopify_export_delta_….csv",
+        help="Alleen deze producthandles (kolom Handle), bijv. output/products/shopify_export_delta_….csv",
     )
     h.add_argument(
         "--delta-handles-file",

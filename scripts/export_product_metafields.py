@@ -3,11 +3,11 @@
 Build a Metafields Manager–style product CSV (fits_on JSON + flat YMM columns).
 
 Prerequisite: run scripts/export_product_ids_and_ymm.py first so
-  output/reports/product_ids_from_xml.csv
+  output/ids/product_ids_from_xml.csv
 exists with Product Id + handle mapping (or pass --product-ids).
 
 Output default:
-  output/reports/product_metafields_metafields_manager.csv
+  output/metafields/product_metafields_metafields_manager.csv
   (of …_delta.csv bij --delta-handles-csv / --delta-handles-file)
 """
 
@@ -21,6 +21,7 @@ os.chdir(ROOT)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import config  # noqa: E402, F401 — laadt .env
 from modules.metafields_manager_export import run_metafields_export  # noqa: E402
 
 
@@ -31,13 +32,13 @@ def main():
     p.add_argument(
         "--product-ids",
         default=None,
-        help="Pad naar product_ids_from_xml.csv (default: output/reports/...).",
+        help="Pad naar product_ids_from_xml.csv (default: output/ids/...).",
     )
     p.add_argument(
         "-o",
         "--output",
         default=None,
-        help="Uitvoer-CSV (default: output/reports/product_metafields_metafields_manager.csv).",
+        help="Uitvoer-CSV (default: output/metafields/product_metafields_metafields_manager.csv).",
     )
     p.add_argument(
         "--merge-from-shopify-csv",
@@ -75,7 +76,12 @@ def main():
         shopify_merge_csv=args.merge_from_shopify_csv,
         filter_handles=filter_handles,
     )
-    print("Metafields Manager CSV:", out, f"({n} regels; zie console voor aantal mét fits_on)", flush=True)
+    print(
+        "Metafields Manager CSV:",
+        out,
+        f"({n} regels; zie console voor aantal mét fits_on)",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 # 📦 PROJECT CONTEXT – KTM → Shopify Export
 
+Operationeel stappenplan (FTP → import → apps): **`docs/workflow.md`**. YMM/metafields in detail: **`docs/metafields_manager_export.md`**.
+
 ## Doel
 
 Python-project dat:
@@ -24,6 +26,12 @@ config.py
 input/
 output/
 ```
+
+---
+
+## Secrets en shop-configuratie
+
+Shopify-token, CDN-URL en shop-naam staan in **`.env`** (niet in git). Kopieer `.env.example` naar `.env` en vul `SHOPIFY_ACCESS_TOKEN` in. Zie **`docs/shopify_env.md`**.
 
 ---
 
@@ -105,24 +113,25 @@ Systeem werkt voor:
 
 ---
 
-## Workflow: YMM + metafields (alleen delta)
+## Workflow: YMM + metafields
 
-Na `main.py` staat de delta-CSV onder `output/shopify/shopify_export_delta_<timestamp>.csv`.
+Na `main.py` staat de delta-CSV onder `output/products/shopify_export_delta_<timestamp>.csv`.  
+Volgorde, commando’s, delta vs. volledige catalogus en `export_delta_app_imports`: **`docs/workflow.md`** (hoofdlijn) en **`docs/metafields_manager_export.md`** (metafields/YMM-detail).
 
-**Aanbevolen commando’s** (pas het pad naar je nieuwste delta-CSV aan):
+---
 
-```bash
-python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
-  --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+## Ontwikkeling (tests, lint, CI)
 
-python3 -u scripts/export_product_metafields.py \
-  --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv \
-  --product-ids output/reports/product_ids_from_xml_delta.csv
-```
+* **Python:** ondersteund bereik staat in **`pyproject.toml`** (`requires-python`).
+* **Dependencies:** productie `pip install -r requirements.txt`; ontwikkeling `pip install -r requirements-dev.txt` (pytest, ruff).
+* **Tests:** `python -m pytest tests/`
+* **Lint/format:** `ruff check .` en `ruff format .` (config: `pyproject.toml`).
+* **CI:** GitHub Actions (`.github/workflows/ci.yml`) op push/PR: ruff, `compileall`, pytest (Python 3.10 en 3.12).
 
-Uitvoer o.a.: `ymm_APP_import_DELTA.csv`, `product_metafields_metafields_manager_delta.csv`.
+### Foutopsporing `main.py` (ETL)
 
-Details en alternatieven (volledige catalogus, filter-script zonder opnieuw te genereren): **`docs/metafields_manager_export.md`**.
+* Log: standaard **`output/logs/ktm_etl_<timestamp>.log`** (ook naar stdout); optioneel `KTM_LOG_FILE`, niveau o.a. `KTM_LOG_LEVEL=DEBUG`.
+* Zie **`docs/workflow.md`** (sectie *Bij falende ETL / import*) voor checklist (input, `.env`, console).
 
 ---
 

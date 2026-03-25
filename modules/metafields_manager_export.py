@@ -22,13 +22,26 @@ import os
 import re
 from collections import defaultdict
 
-from config import REPORT_OUTPUT_DIR, XML_FILE
+from config import IDS_OUTPUT_DIR, METAFIELDS_OUTPUT_DIR, XML_FILE
+from modules.xml_loader import normalize_shopify_product_handle
 from modules.ymm_export import (
+    build_handle_to_product_id,
     build_merged_sku_to_ymm,
     build_product_rows,
-    build_handle_to_product_id,
     stream_xml_for_export,
 )
+
+
+# Metafields Manager import verwacht standaard CSV met komma (RFC 4180). Puntkomma
+# (Excel-regio EU) wordt door de app niet als kolommen herkend.
+def _metafields_csv_writer(f):
+    return csv.writer(
+        f,
+        delimiter=",",
+        quoting=csv.QUOTE_MINIMAL,
+        lineterminator="\n",
+    )
+
 
 def load_shopify_product_merge_csv(path: str | None) -> dict[str, dict[str, str]]:
     """
@@ -59,7 +72,7 @@ def load_shopify_product_merge_csv(path: str | None) -> dict[str, dict[str, str]
             if kl in fields:
                 col_for[key] = fields[kl]
         for row in reader:
-            h = (row.get(handle_col) or "").strip()
+            h = normalize_shopify_product_handle(row.get(handle_col) or "")
             if not h:
                 continue
             entry = {k: (row.get(col) or "").strip() for k, col in col_for.items()}
@@ -76,9 +89,7 @@ def load_shopify_product_merge_csv(path: str | None) -> dict[str, dict[str, str]
 def _recursive_upper_json_strings(obj):
     """Metafields Manager / Shopify-export gebruikt vaak HOOFDLETTERS in fits_on JSON en platte kolommen."""
     if isinstance(obj, dict):
-        return {
-            str(k).upper(): _recursive_upper_json_strings(v) for k, v in obj.items()
-        }
+        return {str(k).upper(): _recursive_upper_json_strings(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_recursive_upper_json_strings(x) for x in obj]
     if isinstance(obj, str):
@@ -165,9 +176,7 @@ def _ymm_tuples_to_fits_on_json(tuples: set[tuple[str, str, str]]) -> str:
     for make in sorted(nested.keys()):
         out[make] = {}
         for model in sorted(nested[make].keys()):
-            out[make][model] = sorted(
-                nested[make][model], key=lambda y: (len(y), y)
-            )
+            out[make][model] = sorted(nested[make][model], key=lambda y: (len(y), y))
     return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -241,11 +250,7 @@ def _classify_model_line_tag(model: str) -> str | None:
     if "SX-F" in u or re.search(r"\d+\s+SX\b", u):
         return "SX"
     # 2T XC / XC-W / '… XC' zonder F (niet SX-F: geen SX in eerste token na cc)
-    if (
-        "XC-W" in u
-        or "XC TPI" in u
-        or re.search(r"\d+\s+XC\b", u)
-    ):
+    if "XC-W" in u or "XC TPI" in u or re.search(r"\d+\s+XC\b", u):
         return "XC"
     if re.search(r"\bENDURO\b", u):
         return "ENDURO"
@@ -289,12 +294,7 @@ def _ymm_summary(tuples: set[tuple[str, str, str]]) -> str:
             line_tags.add(tag)
 
     # Eén merk + cc-range + minstens één lijn-tag → volledige zin
-    if (
-        len(makes_upper) == 1
-        and ccs
-        and line_tags
-        and y_part
-    ):
+    if len(makes_upper) == 1 and ccs and line_tags and y_part:
         make = next(iter(makes_upper))
         lo, hi = min(ccs), max(ccs)
         cc_str = f"{lo}-{hi}" if lo != hi else str(lo)
@@ -337,9 +337,7 @@ def export_product_metafields_csv(
     """
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     shopify_merge = shopify_merge or {}
-    sku_to_ymm = build_merged_sku_to_ymm(
-        structure_index, relations, xml_file=xml_file or XML_FILE
-    )
+    sku_to_ymm = build_merged_sku_to_ymm(structure_index, relations, xml_file=xml_file or XML_FILE)
     handle_to_skus = _build_handle_to_skus(product_rows)
     handle_to_title = _build_handle_to_title(product_rows)
 
@@ -363,7 +361,7 @@ def export_product_metafields_csv(
     rows_written = 0
     with_fits = 0
     with open(path, "w", encoding="utf-8", newline="") as f:
-        w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+        w = _metafields_csv_writer(f)
         w.writerow(METAFIELDS_HEADER)
         for handle in handles_sorted:
             if filter_handles is not None and handle not in filter_handles:
@@ -371,10 +369,10 @@ def export_product_metafields_csv(
             merge_row = shopify_merge.get(handle, {})
             title = handle_to_title.get(handle, "") or merge_row.get("title", "")
             product_id = (
-                handle_to_product_id.get(handle, "")
-                or merge_row.get("id", "")
-                or ""
-            ).replace("~", "").strip()
+                (handle_to_product_id.get(handle, "") or merge_row.get("id", "") or "")
+                .replace("~", "")
+                .strip()
+            )
             skus = handle_to_skus.get(handle, [])
             ymm_union: set[tuple[str, str, str]] = set()
             for sku in skus:
@@ -459,10 +457,11 @@ def run_metafields_export(
     filter_handles: set[str] | None = None,
 ) -> tuple[str, int]:
     product_ids_path = product_ids_path or os.path.join(
-        REPORT_OUTPUT_DIR, "product_ids_from_xml.csv"
+        IDS_OUTPUT_DIR,
+        ("product_ids_from_xml_delta.csv" if filter_handles else "product_ids_from_xml.csv"),
     )
     output_path = output_path or os.path.join(
-        REPORT_OUTPUT_DIR,
+        METAFIELDS_OUTPUT_DIR,
         (
             "product_metafields_metafields_manager_delta.csv"
             if filter_handles

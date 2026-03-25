@@ -1,6 +1,7 @@
 import csv
 import os
-from config import VAT_MULTIPLIER, INPUT_DIR
+
+from config import INPUT_DIR, VAT_MULTIPLIER
 
 
 def load_price_index():
@@ -17,7 +18,7 @@ def load_price_index():
             break
 
     if not price_file:
-        raise Exception("0150 prijsbestand niet gevonden.")
+        raise FileNotFoundError("0150 prijsbestand niet gevonden.")
 
     path = os.path.join(INPUT_DIR, price_file)
 
@@ -25,19 +26,18 @@ def load_price_index():
 
     for enc in encodings:
         try:
-            with open(path, newline='', encoding=enc) as f:
-                reader = csv.reader(f, delimiter=';')
+            with open(path, newline="", encoding=enc) as f:
+                reader = csv.reader(f, delimiter=";")
                 next(reader, None)
 
                 for row in reader:
-
                     if len(row) < 24:
                         continue
 
-                    sku = row[1].strip()          # Kolom B
-                    price_raw = row[4].strip()    # Kolom E
+                    sku = row[1].strip()  # Kolom B
+                    price_raw = row[4].strip()  # Kolom E
                     article_status = row[10].strip()  # Kolom K
-                    gtin = row[23].strip()        # Kolom X
+                    gtin = row[23].strip()  # Kolom X
 
                     if not sku:
                         continue
@@ -67,4 +67,4 @@ def load_price_index():
         except UnicodeDecodeError:
             continue
 
-    raise Exception("Prijsbestand kon niet worden gelezen.")
+    raise RuntimeError("Prijsbestand kon niet worden gelezen.")

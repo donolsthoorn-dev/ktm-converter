@@ -6,18 +6,21 @@ from pathlib import Path
 
 import requests
 
+import config
+
 # -----------------------------
 # CONFIG
 # -----------------------------
 
-SHOPIFY_STORE = "ktm-shop-nl"
-SHOPIFY_TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip() or (
-    "REDACTED_REVOKE_AND_ROTATE"
-)
+SHOPIFY_STORE = config.SHOPIFY_SHOP_SLUG
+SHOPIFY_TOKEN = config.SHOPIFY_ACCESS_TOKEN
 
-CDN_BASE = "https://cdn.shopify.com/s/files/1/0511/7820/9461/files/"
+CDN_BASE = config.SHOPIFY_CDN_FILES_BASE_URL
 # GraphQL voor staged upload + fileCreate (REST files.json multipart is onbetrouwbaar)
-GRAPHQL_URL = f"https://{SHOPIFY_STORE}.myshopify.com/admin/api/2024-10/graphql.json"
+GRAPHQL_URL = (
+    f"https://{SHOPIFY_STORE}.myshopify.com/admin/api/"
+    f"{config.SHOPIFY_ADMIN_API_VERSION}/graphql.json"
+)
 
 CACHE_FILE = "cache/image_cache.json"
 _REQUEST_TIMEOUT = (12, 180)
@@ -40,6 +43,26 @@ def _http_session() -> requests.Session:
 def _debug(msg: str) -> None:
     if os.environ.get("KTM_DEBUG_SHOPIFY_IMAGES", "").strip().lower() in ("1", "true", "yes"):
         print(f"[image debug] {msg}", flush=True)
+
+
+def _env_truthy(name: str, default: bool = True) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes")
+
+
+def _cache_entry_url(cache: dict, filename: str) -> str | None:
+    v = cache.get(filename)
+    if isinstance(v, dict):
+        u = v.get("url")
+        if isinstance(u, str) and u.startswith("http"):
+            return u
+    return None
+
+
+def _normalize_cache_entry(cache: dict, filename: str, url: str) -> None:
+    cache[filename] = {"url": url}
 
 
 def _notify_graphql_errors(errs: list) -> None:
@@ -133,6 +156,70 @@ def url_is_reachable(url: str) -> bool:
 
 def check_cdn(filename):
     return url_is_reachable(build_url(filename))
+
+
+_FILE_LOOKUP_GQL = """
+query KtmFileLookup($q: String!) {
+  files(first: 15, query: $q) {
+    edges {
+      node {
+        __typename
+        ... on MediaImage {
+          id
+          image {
+            url
+          }
+        }
+        ... on GenericFile {
+          url
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def _url_from_file_node(node: dict | None) -> str | None:
+    if not isinstance(node, dict):
+        return None
+    tn = node.get("__typename")
+    if tn == "MediaImage":
+        img = node.get("image")
+        if isinstance(img, dict):
+            u = img.get("url")
+            if isinstance(u, str) and u.startswith("http"):
+                return u
+    if tn == "GenericFile":
+        u = node.get("url")
+        if isinstance(u, str) and u.startswith("http"):
+            return u
+    return None
+
+
+def lookup_shopify_file_url_by_basename(filename: str) -> str | None:
+    """
+    Zoek of dit bestand al in Shopify bestanden (Content → Files) staat.
+    Vereist scope read_files (of read_images) op het Admin-token.
+    """
+    if not filename or not SHOPIFY_TOKEN.strip():
+        return None
+    body = _admin_graphql(_FILE_LOOKUP_GQL, {"q": f"filename:{filename}"})
+    if body.get("errors"):
+        _debug(f"lookup files errors: {body.get('errors')}")
+        return None
+    conn = (body.get("data") or {}).get("files") or {}
+    edges = conn.get("edges") or []
+    target = filename.lower()
+    for e in edges:
+        node = (e or {}).get("node") or {}
+        url = _url_from_file_node(node)
+        if not url:
+            continue
+        path_last = url.split("?", 1)[0].rsplit("/", 1)[-1].lower()
+        if path_last == target or target in path_last:
+            return url
+    return None
 
 
 # -----------------------------
@@ -384,27 +471,44 @@ def ensure_image(
 
     Retourneert (url_of_None, uploaded_naar_shopify).
 
-    strict_delta (aan voor delta in main.py):
-    - Cache wordt niet blind vertrouwd: URL moet bereikbaar zijn, anders opnieuw uploaden.
-    - Upload loopt via GraphQL staged + fileCreate; retour-URL komt van Shopify.
+    Geen dubbele uploads:
+    - Staat de bestandsnaam al in image_cache.json → direct die URL gebruiken (geen HEAD/upload).
+    - Anders: CDN-URL testen; zo niet bereikbaar, optioneel GraphQL `files`-zoektocht naar bestaand
+      bestand in Shopify; pas daarna upload.
+
+    strict_delta: alleen voor API-compatibiliteit; gedrag is gelijk (cache voorkomt her-upload).
     """
+    _ = strict_delta
     guessed = build_url(filename)
 
-    if strict_delta and filename in cache:
-        if url_is_reachable(guessed):
-            return guessed, False
-        del cache[filename]
-
-    if not strict_delta and filename in cache:
+    # 1) Cache: altijd vertrouwen — voorkomt dubbele uploads bij opnieuw draaien main.py
+    if filename in cache:
+        cached = _cache_entry_url(cache, filename)
+        if cached:
+            return cached, False
         return guessed, False
 
+    # 2) Bekende CDN-URL al bereikbaar
     if url_is_reachable(guessed):
-        cache[filename] = True
+        _normalize_cache_entry(cache, filename, guessed)
         return guessed, False
 
+    # 3) Bestand staat al in Shopify (zelfde bestandsnaam), maar andere/preview-URL
+    if _env_truthy("KTM_IMAGE_SHOPIFY_FILE_LOOKUP", default=True):
+        try:
+            existing = lookup_shopify_file_url_by_basename(filename)
+        except Exception as e:
+            _debug(f"lookup exception: {e}")
+            existing = None
+        if existing:
+            _normalize_cache_entry(cache, filename, existing)
+            return existing, False
+
+    # 4) Echt nieuw uploaden
     ok, api_url = upload_image(Path(local_path))
     if not ok or not api_url:
         return None, False
 
-    cache[filename] = True
-    return api_url, True
+    final = api_url if api_url else guessed
+    _normalize_cache_entry(cache, filename, final)
+    return final, True

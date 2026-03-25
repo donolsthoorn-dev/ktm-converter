@@ -8,36 +8,35 @@ Compatibel met het importformaat zoals [Metafields Manager](https://metafieldsma
 
 Kleine bestanden, minder kans op time-outs in YMM-/Metafields-apps.
 
-1. **Delta-CSV** met kolom `Handle`: `main.py` schrijft die naar `output/shopify/shopify_export_delta_<timestamp>.csv`. Neem het bestand van de run waarmee je de betreffende producten hebt geëxporteerd (of de nieuwste delta als die set klopt).
+1. **Delta-CSV** met kolom `Handle`: `main.py` schrijft die naar `output/products/shopify_export_delta_<timestamp>.csv`. Neem het bestand van de run waarmee je de betreffende producten hebt geëxporteerd (of de nieuwste delta als die set klopt).
 
 2. **YMM + Product Id’s (delta)** — cache verversen na een grote import:
 
    ```bash
    python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
-     --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
    ```
 
-   Output o.a.: `output/reports/product_ids_from_xml_delta.csv`, `output/reports/ymm_APP_import_DELTA.csv` (eventueel gesplitst in `_part_00x`).
+   Output o.a.: `output/ids/product_ids_from_xml_delta.csv`, `output/ymm/ymm_APP_import_DELTA.csv` (eventueel gesplitst in `_part_00x`).
 
-3. **Metafields (delta)** — optioneel expliciet dezelfde `product_ids`-delta meegeven:
+3. **Metafields (delta)** — standaard wordt `output/ids/product_ids_from_xml_delta.csv` gebruikt (zelfde als stap 2). Alleen nodig om `--product-ids` mee te geven als je een ander bestand wilt:
 
    ```bash
    python3 -u scripts/export_product_metafields.py \
-     --delta-handles-csv output/shopify/shopify_export_delta_JJJJMMDD_HHMMSS.csv \
-     --product-ids output/reports/product_ids_from_xml_delta.csv
+     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
    ```
 
-   Output: `output/reports/product_metafields_metafields_manager_delta.csv`.
+   Output: `output/metafields/product_metafields_metafields_manager_delta.csv`.
 
    In plaats van `--delta-handles-csv` kun je `--delta-handles-file pad/naar/handles.txt` gebruiken (één handle per regel, `#` = commentaar).
 
-**Alternatief (geen nieuwe generatie):** heb je al de **volledige** YMM + metafields-CSV’s in `output/reports/`, filter dan met:
+**Alternatief (geen nieuwe generatie):** heb je al de **volledige** `product_ids` in `output/ids/` plus YMM + metafields in `output/ymm/` en `output/metafields/`, filter dan met:
 
 ```bash
 python3 scripts/export_delta_app_imports.py
 ```
 
-Dat leest de **laatste** `output/shopify/shopify_export_delta_*.csv` en schrijft o.a. `ymm_APP_import_delta_latest.csv` en `product_metafields_delta_latest.csv`.
+Dat leest de **laatste** `output/products/shopify_export_delta_*.csv` en schrijft o.a. `output/ymm/ymm_APP_import_delta_latest.csv` en `output/metafields/product_metafields_delta_latest.csv`.
 
 ### Hele catalogus (grote bestanden)
 
@@ -46,13 +45,13 @@ Dat leest de **laatste** `output/shopify/shopify_export_delta_*.csv` en schrijft
 
 ## Output
 
-- Volledig: `output/reports/product_metafields_metafields_manager.csv`
-- Delta: `output/reports/product_metafields_metafields_manager_delta.csv`
+- Volledig: `output/metafields/product_metafields_metafields_manager.csv`
+- Delta: `output/metafields/product_metafields_metafields_manager_delta.csv`
 
 ## Opties
 
 ```bash
-python3 scripts/export_product_metafields.py --product-ids output/reports/product_ids_from_xml.csv -o output/reports/mijn_metafields.csv
+python3 scripts/export_product_metafields.py --product-ids output/ids/product_ids_from_xml.csv -o output/metafields/mijn_metafields.csv
 ```
 
 ## Wat wordt gevuld
@@ -86,4 +85,4 @@ De merge vult **alleen** lege `fits_on` (XML heeft voorrang) en voegt **ontbreke
 
 Accessoires die in de boom vooral aan `$M-<sku>` hangen, krijgen `fits_on` mee via de onderdelenlijsten op complete motoren. Technische uitleg: `docs/zbh2bike_ymm.md`. Controleren: `python3 scripts/check_ymm_sku.py 00010000318`.
 
-De **Shopify product-export** (`output/shopify/…`) wordt hiervoor niet aangepast — alleen `output/reports/` YMM/Metafields-exports gebruiken deze logica.
+De **Shopify product-export** (`output/products/…`) wordt hiervoor niet aangepast — alleen `output/ids/`, `output/ymm/` en `output/metafields/` gebruiken deze logica.
