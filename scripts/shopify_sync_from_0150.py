@@ -28,7 +28,8 @@ Eerste keer state vullen zonder alles te uploaden:
   • Basis = **0150**-bestand (ERP): scripts/bootstrap_0150_sync_state_from_csv.py
   (variant-ID-cache komt alleen uit shopify_refresh_variant_cache.py, niet uit een CSV.)
 
-Opties: --csv, --dry-run, --force (negeer state, volledige sync), --variant-cache, --state-file
+Opties: --csv, --dry-run, --force, --variant-cache, --state-file, --price-workers,
+  --graphql-inflight (max gelijktijdige GraphQL-requests; default env SHOPIFY_GRAPHQL_INFLIGHT=4)
 """
 
 from __future__ import annotations
@@ -37,8 +38,12 @@ import argparse
 import csv
 import json
 import os
+import random
 import sys
+import threading
 import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
 
@@ -214,6 +219,48 @@ def load_state(path: Path) -> dict:
         return {}
 
 
+def _graphql_errors_throttled(errors: list | None) -> bool:
+    if not errors:
+        return False
+    for e in errors:
+        if not isinstance(e, dict):
+            continue
+        ext = e.get("extensions") or {}
+        if ext.get("code") == "THROTTLED":
+            return True
+        msg = (e.get("message") or "").lower()
+        if "throttl" in msg:
+            return True
+    return False
+
+
+_gql_inflight: threading.Semaphore | None = None
+_gql_inflight_lock = threading.Lock()
+
+
+def configure_graphql_inflight(limit: int) -> None:
+    """Max parallel GraphQL HTTP-requests (alle threads). Eerste aanroep wint."""
+    global _gql_inflight
+    with _gql_inflight_lock:
+        if _gql_inflight is not None:
+            return
+        _gql_inflight = threading.Semaphore(max(1, min(limit, 32)))
+
+
+def _gql_acquire() -> None:
+    global _gql_inflight
+    if _gql_inflight is None:
+        with _gql_inflight_lock:
+            if _gql_inflight is None:
+                n = int(os.environ.get("SHOPIFY_GRAPHQL_INFLIGHT", "4"))
+                _gql_inflight = threading.Semaphore(max(1, min(n, 32)))
+    _gql_inflight.acquire()
+
+
+def _gql_release() -> None:
+    _gql_inflight.release()
+
+
 def save_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -223,33 +270,153 @@ def save_state(path: Path, state: dict) -> None:
 
 
 def graphql_post(
-    shop: str, token: str, api_version: str, query: str, variables: dict | None = None
+    shop: str,
+    token: str,
+    api_version: str,
+    query: str,
+    variables: dict | None = None,
+    sess: requests.Session | None = None,
 ) -> dict:
-    sess = _http_session()
+    sess = sess or _http_session()
     url = f"https://{shop}/admin/api/{api_version}/graphql.json"
     body: dict = {"query": query}
     if variables is not None:
         body["variables"] = variables
+    n429 = 0
+    n_throttled = 0
     while True:
-        r = sess.post(
-            url,
-            headers={
-                "X-Shopify-Access-Token": token,
-                "Content-Type": "application/json",
-            },
-            data=json.dumps(body),
-            timeout=(12, 120),
-            proxies={"http": None, "https": None},
-        )
+        _gql_acquire()
+        try:
+            r = sess.post(
+                url,
+                headers={
+                    "X-Shopify-Access-Token": token,
+                    "Content-Type": "application/json",
+                },
+                data=json.dumps(body),
+                timeout=(15, 120),
+                proxies={"http": None, "https": None},
+            )
+        finally:
+            _gql_release()
         if r.status_code == 429:
-            print("GraphQL rate limit, wachten...", flush=True)
-            time.sleep(2)
+            n429 += 1
+            if n429 > 40:
+                raise RuntimeError("GraphQL 429: te veel retries")
+            ra = r.headers.get("Retry-After")
+            if ra:
+                try:
+                    w = float(ra)
+                except ValueError:
+                    w = 2.0
+            else:
+                w = min(2.0 + n429 * 0.5, 60.0)
+            print(f"GraphQL rate limit ({n429}/40), {w:.1f}s wachten…", flush=True)
+            time.sleep(w)
             continue
+        n429 = 0
         r.raise_for_status()
         out = r.json()
-        if "errors" in out:
-            raise RuntimeError(json.dumps(out["errors"], indent=2))
+        errs = out.get("errors")
+        if errs and _graphql_errors_throttled(errs):
+            n_throttled += 1
+            if n_throttled > 50:
+                raise RuntimeError(
+                    "GraphQL THROTTLED: te veel retries\n" + json.dumps(errs, indent=2)
+                )
+            w = min(1.5 + n_throttled * 0.4, 25.0) + random.uniform(0, 0.35)
+            if n_throttled <= 3 or n_throttled % 12 == 0:
+                print(
+                    f"GraphQL THROTTLED ({n_throttled}/50), {w:.1f}s wachten…",
+                    flush=True,
+                )
+            time.sleep(w)
+            continue
+        n_throttled = 0
+        if errs:
+            raise RuntimeError(json.dumps(errs, indent=2))
         return out.get("data") or {}
+
+
+def graphql_product_variants_bulk_update(
+    shop: str,
+    token: str,
+    api_version: str,
+    product_id_numeric: str,
+    variant_id_prices: list[tuple[str, str]],
+    sess: requests.Session | None = None,
+) -> tuple[bool, str]:
+    """
+    Zet prijzen voor meerdere varianten van één product in één GraphQL-call
+    (veel minder REST-429 dan PUT per variant).
+    """
+    if not variant_id_prices:
+        return True, ""
+    q = """
+mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+    productVariants { id }
+    userErrors { field message }
+  }
+}
+"""
+    pid_gid = f"gid://shopify/Product/{product_id_numeric}"
+    variants = [
+        {"id": f"gid://shopify/ProductVariant/{vid}", "price": price}
+        for vid, price in variant_id_prices
+    ]
+    data = graphql_post(
+        shop,
+        token,
+        api_version,
+        q,
+        {"productId": pid_gid, "variants": variants},
+        sess=sess,
+    )
+    payload = (data or {}).get("productVariantsBulkUpdate") or {}
+    uerr = payload.get("userErrors") or []
+    if uerr:
+        return False, str(uerr)
+    return True, ""
+
+
+def _run_price_bulk_for_product(
+    shop: str,
+    token: str,
+    api_ver: str,
+    pid: str,
+    items: list[tuple[str, str, str]],
+    max_variants: int,
+) -> tuple[int, int, list[tuple[str, str]]]:
+    """
+    Eén product (alle prijswijzigingen voor dat product). Eigen HTTP-sessies (thread-safe).
+    Returns: (n_done, n_errors, state_updates als (sku, price_incl)).
+    """
+    gql_sess = _http_session()
+    rest_sess = _http_session()
+    n_done = 0
+    n_err = 0
+    updates: list[tuple[str, str]] = []
+    for start in range(0, len(items), max_variants):
+        chunk = items[start : start + max_variants]
+        vid_prices = [(c[1], c[2]) for c in chunk]
+        ok, err_msg = graphql_product_variants_bulk_update(
+            shop, token, api_ver, pid, vid_prices, sess=gql_sess
+        )
+        if ok:
+            for sku, _vid, price in chunk:
+                updates.append((sku, price))
+            n_done += len(chunk)
+        else:
+            n_err += 1
+            print(f"  Bulk prijs-fout product {pid}: {err_msg[:300]}", flush=True)
+            for sku, vid, price in chunk:
+                if rest_variant_price(shop, token, api_ver, vid, price, sess=rest_sess):
+                    updates.append((sku, price))
+                    n_done += 1
+                else:
+                    n_err += 1
+    return n_done, n_err, updates
 
 
 def graphql_metafields_set(shop: str, token: str, api_version: str, metafields: list[dict]) -> dict:
@@ -432,7 +599,27 @@ def main() -> int:
     p.add_argument(
         "--limit", type=int, default=0, help="Max. aantal SKU's met wijzigingen (0=alles)"
     )
+    p.add_argument(
+        "--price-workers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Parallelle producten voor prijs-updates (0 = env SHOPIFY_PRICE_CONCURRENCY, default 4)",
+    )
+    p.add_argument(
+        "--graphql-inflight",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Max gelijktijdige GraphQL-requests (0 = env SHOPIFY_GRAPHQL_INFLIGHT, default 4)",
+    )
     args = p.parse_args()
+
+    graphql_inflight = args.graphql_inflight
+    if graphql_inflight <= 0:
+        graphql_inflight = int(os.environ.get("SHOPIFY_GRAPHQL_INFLIGHT", "4"))
+    graphql_inflight = max(1, min(graphql_inflight, 16))
+    configure_graphql_inflight(graphql_inflight)
 
     token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
     shop = os.environ.get("SHOPIFY_SHOP_DOMAIN", "ktm-shop-nl.myshopify.com").strip()
@@ -634,24 +821,75 @@ def main() -> int:
         time.sleep(0.25)
 
     n_price = len(price_ops)
+    price_workers = args.price_workers
+    if price_workers <= 0:
+        price_workers = int(os.environ.get("SHOPIFY_PRICE_CONCURRENCY", "4"))
+    price_workers = max(1, min(price_workers, 16))
     if n_price:
         print(
             f"ETA afgerond. Start prijs-updates: {n_price} "
-            f"(voortgang elke {progress_every}; kan lang duren door API-pauze)…",
+            f"(GraphQL bulk per product, {price_workers} workers, "
+            f"max {graphql_inflight} gelijktijdige GraphQL-requests; "
+            f"REST alleen zonder product_id of bij bulk-fout)…",
             flush=True,
         )
 
-    # Prijzen
-    price_sess = _http_session()
-    for idx, (sku, vid, price) in enumerate(price_ops, start=1):
-        if idx == 1 or idx == n_price or idx % progress_every == 0:
-            print(f"  Prijs {idx}/{n_price} (SKU {sku}) — verzoek…", flush=True)
-        if rest_variant_price(shop, token, api_ver, vid, price, sess=price_sess):
+    # Prijzen: GraphQL productVariantsBulkUpdate, parallel per product (eigen sessie per thread).
+    by_pid: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    no_pid_ops: list[tuple[str, str, str]] = []
+    for sku, vid, price in price_ops:
+        pid = sku_to_vp.get(sku, (None, None))[1]
+        if pid:
+            by_pid[pid].append((sku, vid, price))
+        else:
+            no_pid_ops.append((sku, vid, price))
+
+    n_done = 0
+    max_variants_per_mutation = 100
+    n_products = len(by_pid)
+    state_lock = threading.Lock()
+
+    if n_products > 0:
+        completed = 0
+        with ThreadPoolExecutor(max_workers=price_workers) as ex:
+            futs = {
+                ex.submit(
+                    _run_price_bulk_for_product,
+                    shop,
+                    token,
+                    api_ver,
+                    pid,
+                    items,
+                    max_variants_per_mutation,
+                ): pid
+                for pid, items in by_pid.items()
+            }
+            for fut in as_completed(futs):
+                dn, ne, updates = fut.result()
+                with state_lock:
+                    for sku, price in updates:
+                        _merge_state(state, sku, {"price_incl": price})
+                    errors += ne
+                    n_done += dn
+                    completed += 1
+                    if n_done > 0 and (n_done % progress_every == 0 or n_done == n_price):
+                        save_state(state_path, state)
+                if completed == 1 or completed == n_products or completed % 50 == 0:
+                    print(
+                        f"  Prijs bulk: {completed}/{n_products} producten "
+                        f"({n_done}/{n_price} varianten)…",
+                        flush=True,
+                    )
+
+    price_rest_sess = _http_session()
+    for sku, vid, price in no_pid_ops:
+        print(f"  Prijs REST (geen product_id in cache): SKU {sku} …", flush=True)
+        if rest_variant_price(shop, token, api_ver, vid, price, sess=price_rest_sess):
             _merge_state(state, sku, {"price_incl": price})
-            if idx % progress_every == 0 or idx == n_price:
-                save_state(state_path, state)
+            n_done += 1
         else:
             errors += 1
+        save_state(state_path, state)
         time.sleep(0.1)
 
     # Product status (dedupe op product_id: laatste wint)

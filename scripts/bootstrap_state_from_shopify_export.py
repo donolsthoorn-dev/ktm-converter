@@ -15,12 +15,14 @@ Kolomnamen (komma-gescheiden) zoals Shopify exporteert o.a.:
   Handle, …, Variant SKU, Variant Price, Status (active/draft/archived; vaak alleen op eerste rij per product).
 
 Workflow:
-  1) In Shopify: Products → Export (alle producten of selectie).
+  1) In Shopify: Products → Export (soms 2+ bestanden bij grote catalogus).
   2) python3 scripts/shopify_refresh_variant_cache.py
   3) python3 scripts/bootstrap_state_from_shopify_export.py \\
-       --shopify-csv ~/Downloads/products_export.csv \\
+       --shopify-csv export1.csv --shopify-csv export2.csv \\
        --merge-eta-from-0150 input/0150_....csv
   4) python3 scripts/shopify_sync_from_0150.py --csv input/0150_....csv
+
+Meerdere exports: zelfde optie herhalen; bij dezelfde SKU wint het **laatste** bestand.
 """
 
 from __future__ import annotations
@@ -136,8 +138,10 @@ def main() -> int:
     p.add_argument(
         "--shopify-csv",
         type=Path,
+        action="append",
         required=True,
-        help="Shopify Admin → Products → Export (komma-gescheiden)",
+        metavar="PAD",
+        help="Shopify product-export (komma-CSV). Meerdere: optie herhalen; latere file wint bij dubbele SKU.",
     )
     p.add_argument(
         "--merge-eta-from-0150",
@@ -164,16 +168,24 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    shopify_path = args.shopify_csv.resolve()
-    if not shopify_path.is_file():
-        print(f"Bestand niet gevonden: {shopify_path}", flush=True)
-        return 1
-
-    try:
-        from_shop = read_shopify_products_csv(shopify_path)
-    except ValueError as e:
-        print(e, flush=True)
-        return 1
+    from_shop: dict[str, dict] = {}
+    for raw_path in args.shopify_csv:
+        shopify_path = raw_path.resolve()
+        if not shopify_path.is_file():
+            print(f"Bestand niet gevonden: {shopify_path}", flush=True)
+            return 1
+        try:
+            part = read_shopify_products_csv(shopify_path)
+        except ValueError as e:
+            print(f"{shopify_path}: {e}", flush=True)
+            return 1
+        overlap = len(set(from_shop) & set(part))
+        from_shop.update(part)
+        print(
+            f"  + {shopify_path.name}: {len(part)} SKU's "
+            f"({overlap} overlap met eerdere bestanden → overschreven)",
+            flush=True,
+        )
 
     today = date.today()
     eta_by_sku: dict | None = None
@@ -215,8 +227,7 @@ def main() -> int:
     sync.save_state(out, state)
 
     print(
-        f"Shopify-export: {shopify_path}\n"
-        f"  Rijen met SKU in export: {len(from_shop)}\n"
+        f"Shopify-export(s) samen: {len(from_shop)} unieke SKU's\n"
         f"  State-regels geschreven: {len(state)}\n"
         f"  Overgeslagen (niet in variant-cache): {skipped if only_cache else 0}\n"
         f"  ETA uit 0150 gemerged: "
