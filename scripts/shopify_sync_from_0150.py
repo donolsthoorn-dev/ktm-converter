@@ -284,6 +284,7 @@ def graphql_post(
         body["variables"] = variables
     n429 = 0
     n_throttled = 0
+    n_transient = 0
     while True:
         _gql_acquire()
         try:
@@ -315,8 +316,36 @@ def graphql_post(
             time.sleep(w)
             continue
         n429 = 0
+        if r.status_code >= 500:
+            n_transient += 1
+            if n_transient > 30:
+                r.raise_for_status()
+            w = min(2.0 + n_transient * 0.75, 90.0) + random.uniform(0, 0.5)
+            if n_transient <= 3 or n_transient % 8 == 0:
+                print(
+                    f"GraphQL HTTP {r.status_code} ({n_transient}/30), {w:.1f}s wachten…",
+                    flush=True,
+                )
+            time.sleep(w)
+            continue
         r.raise_for_status()
-        out = r.json()
+        try:
+            out = r.json()
+        except json.JSONDecodeError:
+            n_transient += 1
+            if n_transient > 30:
+                raise RuntimeError(
+                    f"GraphQL: ongeldig JSON-antwoord (HTTP {r.status_code})"
+                ) from None
+            w = min(2.0 + n_transient * 0.75, 90.0) + random.uniform(0, 0.5)
+            if n_transient <= 3 or n_transient % 8 == 0:
+                print(
+                    f"GraphQL JSON parse ({n_transient}/30), {w:.1f}s wachten…",
+                    flush=True,
+                )
+            time.sleep(w)
+            continue
+        n_transient = 0
         errs = out.get("errors")
         if errs and _graphql_errors_throttled(errs):
             n_throttled += 1

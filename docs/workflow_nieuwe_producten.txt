@@ -1,0 +1,73 @@
+Workflow: nieuwe producten (zonder ETA / 0150-API-prijs-sync)
+============================================================
+
+Zie ook: docs/workflow.md (volledige operationele handleiding).
+
+Wat je overslaat
+----------------
+- shopify_refresh_variant_cache.py en shopify_sync_eta_from_0150.py — alleen nodig als je
+  levertijden (ETA) vanuit 0150 naar Shopify wilt pushen via de API.
+- Die scripts zijn géén vervanging voor het 0150-bestand in input/: main.py gebruikt nog
+  steeds input/*0150*.csv voor prijzen in de product-CSV.
+
+Cache / --refresh-shopify-cache
+--------------------------------
+- Voor YMM + metafields ná een import van nieuwe producten in Shopify is
+  --refresh-shopify-cache op export_product_ids_and_ymm.py juist aan te raden: zo wordt de
+  lokale Shopify-index bijgewerkt zodat nieuwe handles naar product-id’s worden opgelost.
+- Dat is iets anders dan de optionele variant-cache voor de ETA-sync (§3b in workflow.md).
+
+Stapsgewijs (vanaf projectroot)
+-------------------------------
+
+1) Bestanden van de server
+
+   python3 scripts/fetch_input_sftp.py
+
+2) Van download naar input/ (zip → XML indien van toepassing)
+
+   python3 scripts/prepare_input_from_ftp.py --extract-xml-from-zips
+
+3) Product-CSV’s genereren
+
+   python3 -u main.py
+
+   Noteer welk bestand hoort bij deze run, bijv.:
+   output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+
+4) Shopify — producten importeren
+
+   Admin → import met die delta-CSV. Wacht tot de import klaar is.
+
+5) Alleen delta: YMM + metafields (vul het echte pad naar jouw delta-CSV in)
+
+   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+
+   python3 -u scripts/export_product_metafields.py \
+     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+
+6) Apps
+
+   - YMM-app: bestand(en) uit output/ymm/ (bijv. ymm_APP_import_DELTA*.csv).
+   - Metafields Manager: output/metafields/product_metafields_metafields_manager_delta.csv
+
+Handig: laatste delta-pad vinden (macOS/Linux)
+
+   ls -t output/products/shopify_export_delta_*.csv | head -1
+
+Samenvatting
+------------
+
+  Ophalen          → fetch_input_sftp.py
+  Input klaar      → prepare_input_from_ftp.py --extract-xml-from-zips
+  Export           → main.py
+  Webshop          → delta-CSV importeren in Shopify
+  YMM              → export_product_ids_and_ymm.py met --delta-handles-csv + --refresh-shopify-cache
+  Metafields       → export_product_metafields.py met dezelfde --delta-handles-csv
+  Apps             → YMM-CSV + metafields-CSV uploaden
+
+Niet nodig in dit scenario (tenzij je alsnog ETA in Shopify wilt):
+
+  python3 scripts/shopify_refresh_variant_cache.py
+  python3 scripts/shopify_sync_eta_from_0150.py

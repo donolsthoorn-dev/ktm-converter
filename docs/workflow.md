@@ -72,7 +72,7 @@ Opties: `--dry-run`, `--move`, `--files "a.zip,b.csv"`.
 
 ## 3. Input controleren
 
-- XML (default): `input/CBEXPDN_KTM-DN-3008-0.xml`
+- XML (default): `input/CBEXPDN_KTM-DN*.xml` — één match, of bij meerdere het nieuwste bestand; override: `KTM_XML_FILE` in `.env` (zie `.env.example`)
 - Prijs-CSV: `input/*0150*.csv`
 - Optioneel: Product-Ids fallback-CSV, `input/handle-overrides.json`
 - Afbeeldingen: onder `input/` (recursief op bestandsnaam)

@@ -1,9 +1,28 @@
+import glob
 import os
 from datetime import datetime
 
 from modules.env_loader import load_dotenv
 
 load_dotenv()
+
+
+def _resolve_xml_file() -> str:
+    """Pad naar de KTM-export-XML: env KTM_XML_FILE, anders CBEXPDN_KTM-DN*.xml in input/ (bij meerdere: nieuwste bestand)."""
+    raw = os.environ.get("KTM_XML_FILE", "").strip()
+    if raw:
+        if os.path.isabs(raw):
+            return raw
+        if os.sep in raw or (os.altsep and os.altsep in raw):
+            return os.path.normpath(raw)
+        return os.path.join(INPUT_DIR, raw)
+    pattern = os.path.join(INPUT_DIR, "CBEXPDN_KTM-DN*.xml")
+    matches = glob.glob(pattern)
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        return max(matches, key=lambda p: os.path.getmtime(p))
+    return os.path.join(INPUT_DIR, "CBEXPDN_KTM-DN-3008-0.xml")
 
 # ----------------------------------
 # Shopify / secrets (zie .env.example)
@@ -25,7 +44,7 @@ if SHOPIFY_CDN_FILES_BASE_URL and not SHOPIFY_CDN_FILES_BASE_URL.endswith("/"):
 # ----------------------------------
 
 INPUT_DIR = "input"
-XML_FILE = os.path.join(INPUT_DIR, "CBEXPDN_KTM-DN-3008-0.xml")
+XML_FILE = _resolve_xml_file()
 
 # ----------------------------------
 # OUTPUT STRUCTUUR
