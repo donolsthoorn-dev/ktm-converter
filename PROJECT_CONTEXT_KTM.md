@@ -1,6 +1,6 @@
 # 📦 PROJECT CONTEXT – KTM → Shopify Export
 
-Operationeel stappenplan (FTP → import → apps): **`docs/workflow.md`**. YMM/metafields in detail: **`docs/metafields_manager_export.md`**.
+Snelle commando’s (copy-paste): **`HOWTO.md`**. Operationeel stappenplan (FTP → import → apps): **`docs/workflow.md`**. YMM/metafields in detail: **`docs/metafields_manager_export.md`**.
 
 ## Doel
 

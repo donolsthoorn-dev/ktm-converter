@@ -507,14 +507,33 @@ def rest_put_json(
     headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
     n429 = 0
     n500 = 0
+    n_net = 0
+    # Connect / read timeout: lange reads bij grote product-payloads zijn zeldzaam bij status-PUT.
+    _timeout = (15, 60)
     while True:
-        r = sess.put(
-            url,
-            headers=headers,
-            data=json.dumps(payload),
-            timeout=(15, 90),
-            proxies={"http": None, "https": None},
-        )
+        try:
+            r = sess.put(
+                url,
+                headers=headers,
+                data=json.dumps(payload),
+                timeout=_timeout,
+                proxies={"http": None, "https": None},
+            )
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as e:
+            n_net += 1
+            if n_net > 25:
+                return False, f"netwerk: {type(e).__name__}: {e!s}"[:500]
+            w = min(2.0 + n_net * 0.4, 45.0)
+            print(
+                f"REST netwerkfout ({n_net}/25) {type(e).__name__}, {w:.1f}s…",
+                flush=True,
+            )
+            time.sleep(w)
+            continue
+        n_net = 0
         if r.status_code == 429:
             n429 += 1
             if n429 > 30:
@@ -948,10 +967,25 @@ def main() -> int:
 
     product_sess = _http_session()
     for pidx, (sku, pid, ps) in enumerate(deduped, start=1):
-        if pidx == 1 or pidx == n_prod or pidx % progress_every == 0:
-            print(f"  Product status {pidx}/{n_prod} (product {pid}) — verzoek…", flush=True)
         st_rest = "draft" if ps == "DRAFT" else "active"
-        if rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess):
+        if pidx == 1:
+            print(
+                f"  Product status {pidx}/{n_prod} (product {pid}) — REST PUT "
+                "(kan tot ~60s duren; geen vastloper zolang je geen netwerkfout ziet)…",
+                flush=True,
+            )
+        elif pidx == n_prod or pidx % progress_every == 0:
+            print(f"  Product status {pidx}/{n_prod} (product {pid}) — verzoek…", flush=True)
+        t0 = time.time()
+        ok = rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess)
+        elapsed = time.time() - t0
+        if pidx == 1 or elapsed > 15.0:
+            print(
+                f"  Product status {pidx}/{n_prod} (product {pid}) — "
+                f"{'ok' if ok else 'fout'} in {elapsed:.1f}s",
+                flush=True,
+            )
+        if ok:
             for s in skus_by_product_id.get(pid, []):
                 if s in desired_by_sku and desired_by_sku[s]["product_status"] == ps:
                     _merge_state(state, s, {"product_status": ps})
