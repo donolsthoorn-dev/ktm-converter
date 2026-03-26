@@ -1,7 +1,18 @@
 import csv
+import io
 import os
 
 from config import INPUT_DIR, VAT_MULTIPLIER
+
+
+def detect_0150_csv_delimiter(first_line: str) -> str:
+    """Komma (huidige ERP-export) of puntkomma (oudere bestanden)."""
+    for delim in (",", ";"):
+        r = csv.reader(io.StringIO(first_line), delimiter=delim)
+        row = next(r, [])
+        if len(row) >= 10 and row[1].strip() == "ArticleNumber":
+            return delim
+    return ","
 
 
 def load_price_index():
@@ -27,7 +38,10 @@ def load_price_index():
     for enc in encodings:
         try:
             with open(path, newline="", encoding=enc) as f:
-                reader = csv.reader(f, delimiter=";")
+                first = f.readline()
+                f.seek(0)
+                delim = detect_0150_csv_delimiter(first)
+                reader = csv.reader(f, delimiter=delim)
                 next(reader, None)
 
                 for row in reader:

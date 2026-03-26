@@ -11,7 +11,7 @@ variant-metafield inventory_policy_eta_date in Shopify bij (type date, ISO YYYY-
 Bouw of ververs die cache met:
   python3 scripts/shopify_refresh_variant_cache.py
 
-Geen imports uit modules/ — alleen stdlib + requests.
+CSV-scheidingsteken (komma vs `;`) via `pricing_loader.detect_0150_csv_delimiter`.
 
 Configuratie (omgevingsvariabelen, o.a. via project-root .env):
   SHOPIFY_ACCESS_TOKEN   — verplicht
@@ -48,6 +48,9 @@ except ImportError:
     raise SystemExit(1)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
+
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
 
 
@@ -136,7 +139,10 @@ def read_sku_eta_from_csv(csv_path: Path) -> dict[str, str | None]:
     for enc in encodings:
         try:
             with open(csv_path, newline="", encoding=enc) as fh:
-                reader = csv.reader(fh, delimiter=";")
+                first = fh.readline()
+                fh.seek(0)
+                delim = detect_0150_csv_delimiter(first)
+                reader = csv.reader(fh, delimiter=delim)
                 header = next(reader, None)
                 if not header:
                     return out

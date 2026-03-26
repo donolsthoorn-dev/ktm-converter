@@ -57,6 +57,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import VAT_MULTIPLIER  # noqa: E402
+from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
 DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
@@ -123,6 +124,16 @@ def resolve_csv_path(explicit: str | None) -> Path:
     raise FileNotFoundError(f"Geen *0150*.csv in {input_dir}; gebruik --csv PAD")
 
 
+def _detect_0150_delimiter(first_line: str) -> str:
+    """Export is meestal komma-gescheiden; sommige bestanden gebruiken puntkomma."""
+    for delim in (",", ";"):
+        r = csv.reader(io.StringIO(first_line), delimiter=delim)
+        row = next(r, [])
+        if len(row) >= 10 and row[1].strip() == "ArticleNumber":
+            return delim
+    return ","
+
+
 def _parse_sales_price_incl_vat(raw: str) -> str | None:
     raw = (raw or "").strip()
     if not raw:
@@ -145,7 +156,10 @@ def read_0150_desired(csv_path: Path, today: date) -> dict[str, dict]:
     for enc in encodings:
         try:
             with open(csv_path, newline="", encoding=enc) as fh:
-                reader = csv.reader(fh, delimiter=";")
+                first = fh.readline()
+                fh.seek(0)
+                delim = detect_0150_csv_delimiter(first)
+                reader = csv.reader(fh, delimiter=delim)
                 header = next(reader, None)
                 if not header:
                     return {}
