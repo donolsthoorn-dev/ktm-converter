@@ -1,8 +1,11 @@
 import json
 import mimetypes
 import os
+import re
+import threading
 import time
 from pathlib import Path
+from urllib.parse import unquote
 
 import requests
 
@@ -23,6 +26,7 @@ GRAPHQL_URL = (
 )
 
 CACHE_FILE = "cache/image_cache.json"
+_cache_save_lock = threading.Lock()
 _REQUEST_TIMEOUT = (12, 180)
 _CDN_POLL_ATTEMPTS = 12
 _CDN_POLL_SLEEP_SEC = 0.75
@@ -63,6 +67,63 @@ def _cache_entry_url(cache: dict, filename: str) -> str | None:
 
 def _normalize_cache_entry(cache: dict, filename: str, url: str) -> None:
     cache[filename] = {"url": url}
+
+
+def _url_basename(url: str) -> str:
+    try:
+        return unquote(url.split("?", 1)[0].rsplit("/", 1)[-1])
+    except (IndexError, TypeError):
+        return ""
+
+
+def _store_cache_url(cache: dict, local_filename: str, url: str) -> None:
+    """
+    Sla URL op onder de lokale basename; als de CDN-URL een andere bestandsnaam heeft
+    (Shopify voegt soms __v1 toe), ook onder die naam — volgende run vindt de cache.
+    """
+    _normalize_cache_entry(cache, local_filename, url)
+    cdn_name = _url_basename(url)
+    if cdn_name and cdn_name.lower() != local_filename.lower():
+        _normalize_cache_entry(cache, cdn_name, url)
+
+
+def _canonical_filename_match(path_last: str, target_filename: str) -> bool:
+    """
+    Of het laatste URL-segment hetzelfde bestand is als de lokale basename.
+    Shopify kan een extra __vN vóór de extensie zetten bij een 'duplicate' upload.
+    """
+    a = unquote(path_last).lower()
+    b = target_filename.lower()
+    if a == b:
+        return True
+    sa, ea = os.path.splitext(a)
+    sb, eb = os.path.splitext(b)
+    if ea != eb:
+        return False
+    ra = re.sub(r"__v\d+$", "", sa, count=1, flags=re.IGNORECASE)
+    rb = re.sub(r"__v\d+$", "", sb, count=1, flags=re.IGNORECASE)
+    return ra == rb
+
+
+def _filename_variant_keys(filename: str) -> list[str]:
+    """Lokale basename + mogelijke Shopify-namen met extra __vN vóór de extensie."""
+    if not filename:
+        return []
+    out = [filename]
+    stem, ext = os.path.splitext(filename)
+    if not re.search(r"__v\d+$", stem, re.IGNORECASE):
+        for n in (1, 2, 3, 4, 5):
+            out.append(f"{stem}__v{n}{ext}")
+    return out
+
+
+def _file_lookup_queries(filename: str) -> list[str]:
+    """
+    Eén GraphQL-query per mogelijke Shopify-bestandsnaam.
+    Moet gelijk lopen met _filename_variant_keys: als we alleen exact + __v1 zoeken,
+    missen we bestanden die alleen als __v2…__v5 bestaan → dan volgt een dubbele upload.
+    """
+    return [f"filename:{name}" for name in _filename_variant_keys(filename)]
 
 
 def _notify_graphql_errors(errs: list) -> None:
@@ -107,8 +168,20 @@ def load_cache():
 
 
 def save_cache(cache):
+    """Schrijf image_cache.json (gebruik save_cache_safe vanuit meerdere threads)."""
     with open(CACHE_FILE, "w") as f:
         json.dump(cache, f, indent=2)
+
+
+def save_cache_safe(cache):
+    """
+    Thread-safe schrijven. Gebruik na elke afbeelding op de slow path (lookup/upload
+    vult cache in geheugen); zo raak je bij Ctrl+C/crash niet alle tussentijdse mappen kwijt.
+    """
+    with _cache_save_lock:
+        os.makedirs(os.path.dirname(CACHE_FILE) or ".", exist_ok=True)
+        with open(CACHE_FILE, "w") as f:
+            json.dump(cache, f, indent=2)
 
 
 # -----------------------------
@@ -160,7 +233,7 @@ def check_cdn(filename):
 
 _FILE_LOOKUP_GQL = """
 query KtmFileLookup($q: String!) {
-  files(first: 15, query: $q) {
+  files(first: 25, query: $q) {
     edges {
       node {
         __typename
@@ -200,25 +273,29 @@ def _url_from_file_node(node: dict | None) -> str | None:
 def lookup_shopify_file_url_by_basename(filename: str) -> str | None:
     """
     Zoek of dit bestand al in Shopify bestanden (Content → Files) staat.
+    Exacte filename:-query vindt geen bestand dat Shopify als …__v1.JPG heeft opgeslagen;
+    daarom meerdere zoekpogingen en vergelijking via _canonical_filename_match.
     Vereist scope read_files (of read_images) op het Admin-token.
     """
     if not filename or not SHOPIFY_TOKEN.strip():
         return None
-    body = _admin_graphql(_FILE_LOOKUP_GQL, {"q": f"filename:{filename}"})
-    if body.get("errors"):
-        _debug(f"lookup files errors: {body.get('errors')}")
-        return None
-    conn = (body.get("data") or {}).get("files") or {}
-    edges = conn.get("edges") or []
-    target = filename.lower()
-    for e in edges:
-        node = (e or {}).get("node") or {}
-        url = _url_from_file_node(node)
-        if not url:
+    seen_urls: set[str] = set()
+    for q in _file_lookup_queries(filename):
+        body = _admin_graphql(_FILE_LOOKUP_GQL, {"q": q})
+        if body.get("errors"):
+            _debug(f"lookup files errors: {body.get('errors')}")
             continue
-        path_last = url.split("?", 1)[0].rsplit("/", 1)[-1].lower()
-        if path_last == target or target in path_last:
-            return url
+        conn = (body.get("data") or {}).get("files") or {}
+        edges = conn.get("edges") or []
+        for e in edges:
+            node = (e or {}).get("node") or {}
+            url = _url_from_file_node(node)
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            path_last = url.split("?", 1)[0].rsplit("/", 1)[-1]
+            if _canonical_filename_match(path_last, filename):
+                return url
     return None
 
 
@@ -459,6 +536,28 @@ def upload_image(local_path: Path) -> tuple[bool, str | None]:
 # -----------------------------
 
 
+def try_resolve_image_cache_or_cdn(filename: str, cache: dict) -> str | None:
+    """
+    Alleen cache + CDN-HEAD (zelfde als stap 1–2 van ensure_image).
+    Retourneert URL als de afbeelding zonder Shopify lookup/upload te vinden is; anders None.
+    """
+    if not filename:
+        return None
+    guessed = build_url(filename)
+    for key in _filename_variant_keys(filename):
+        if key not in cache:
+            continue
+        cached = _cache_entry_url(cache, key)
+        if cached:
+            return cached
+    if filename in cache:
+        return guessed
+    if url_is_reachable(guessed):
+        _store_cache_url(cache, filename, guessed)
+        return guessed
+    return None
+
+
 def ensure_image(
     filename: str,
     local_path: Path,
@@ -479,19 +578,10 @@ def ensure_image(
     strict_delta: alleen voor API-compatibiliteit; gedrag is gelijk (cache voorkomt her-upload).
     """
     _ = strict_delta
+    if u := try_resolve_image_cache_or_cdn(filename, cache):
+        return u, False
+
     guessed = build_url(filename)
-
-    # 1) Cache: altijd vertrouwen — voorkomt dubbele uploads bij opnieuw draaien main.py
-    if filename in cache:
-        cached = _cache_entry_url(cache, filename)
-        if cached:
-            return cached, False
-        return guessed, False
-
-    # 2) Bekende CDN-URL al bereikbaar
-    if url_is_reachable(guessed):
-        _normalize_cache_entry(cache, filename, guessed)
-        return guessed, False
 
     # 3) Bestand staat al in Shopify (zelfde bestandsnaam), maar andere/preview-URL
     if _env_truthy("KTM_IMAGE_SHOPIFY_FILE_LOOKUP", default=True):
@@ -501,7 +591,7 @@ def ensure_image(
             _debug(f"lookup exception: {e}")
             existing = None
         if existing:
-            _normalize_cache_entry(cache, filename, existing)
+            _store_cache_url(cache, filename, existing)
             return existing, False
 
     # 4) Echt nieuw uploaden
@@ -510,5 +600,40 @@ def ensure_image(
         return None, False
 
     final = api_url if api_url else guessed
-    _normalize_cache_entry(cache, filename, final)
+    _store_cache_url(cache, filename, final)
     return final, True
+
+
+def resolve_image_url_without_upload(
+    filename: str,
+    local_path: Path,
+    cache: dict,
+    *,
+    use_network: bool = True,
+) -> str | None:
+    """
+    Zelfde stappen 1–3 als ensure_image (cache, CDN-HEAD, Shopify files-lookup), zonder upload.
+    Gebruikt voor o.a. sku-probe; past image_cache.json niet aan.
+    """
+    guessed = build_url(filename)
+    for key in _filename_variant_keys(filename):
+        if key not in cache:
+            continue
+        cached = _cache_entry_url(cache, key)
+        if cached:
+            return cached
+    if filename in cache:
+        return guessed
+    if not use_network:
+        return None
+    if url_is_reachable(guessed):
+        return guessed
+    if _env_truthy("KTM_IMAGE_SHOPIFY_FILE_LOOKUP", default=True):
+        try:
+            existing = lookup_shopify_file_url_by_basename(filename)
+        except Exception as e:
+            _debug(f"lookup exception: {e}")
+            existing = None
+        if existing:
+            return existing
+    return None

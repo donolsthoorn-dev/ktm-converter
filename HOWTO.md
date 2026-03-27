@@ -78,6 +78,26 @@ Opties o.a.: `--dry-run`, `--csv pad/naar/0150.csv` — zie docstring in het scr
 
 ---
 
+## Ontbrekende productafbeeldingen (`shopify_export_all` → Shopify API)
+
+Vergelijkt **Image Src** in een `shopify_export_all_*.csv` met de live shop en voegt ontbrekende afbeeldingen toe (zelfde URL’s als in de CSV). Er worden **alleen producten opgehaald voor handles die in die CSV voorkomen** (niet de hele catalogus); parallel via **`--workers N`** (default 6). Standaard alleen een rapport; **`--apply`** voert de wijzigingen uit. Geen `KTM_SKIP_SHOPIFY_API=1` — dit script heeft live API nodig.
+
+**Dry-run** (default; gebruikt standaard de nieuwste `shopify_export_all_*.csv` in `output/products/`):
+
+```bash
+python3 scripts/shopify_sync_images_from_csv.py
+```
+
+**Echt bijwerken** (optioneel `--csv` / `--limit N` voor testen):
+
+```bash
+python3 scripts/shopify_sync_images_from_csv.py --apply
+```
+
+Zie de docstring in [`scripts/shopify_sync_images_from_csv.py`](scripts/shopify_sync_images_from_csv.py) voor alle opties.
+
+---
+
 ## Vaak samen: bron ophalen
 
 ```bash

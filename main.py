@@ -1,14 +1,21 @@
 import logging
 import os
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
 import config  # noqa: F401 — laadt .env vóór Shopify-modules
+from modules.excluded_report import write_excluded_report
 from modules.exporter import export
-from modules.image_manager import ensure_image, load_cache, save_cache
+from modules.image_manager import (
+    ensure_image,
+    load_cache,
+    save_cache_safe,
+    try_resolve_image_cache_or_cdn,
+)
 from modules.image_resolve import build_basename_index, resolve_local_image
-from modules.pricing_loader import load_price_index
+from modules.pricing_loader import load_price_index, normalize_sku_key
 from modules.xml_loader import load_products
 
 _log = logging.getLogger(__name__)
@@ -63,10 +70,10 @@ def main() -> None:
     # -----------------------------------------------------
 
     for p in products:
-        sku = p["sku"]
-        p["price"] = price_index.get(sku, "")
-        p["barcode"] = barcode_index.get(sku, "")
-        p["article_status"] = status_index.get(sku, "")
+        sku_key = normalize_sku_key(p["sku"])
+        p["price"] = price_index.get(sku_key, "")
+        p["barcode"] = barcode_index.get(sku_key, "")
+        p["article_status"] = status_index.get(sku_key, "")
         p["product_category"] = p.get("category", "")
         p["type"] = p.get("type", "")
 
@@ -90,24 +97,26 @@ def main() -> None:
         delta_variant_exists = False
 
         for p in items:
-            sku = p["sku"]
+            sku_key = normalize_sku_key(p["sku"])
 
             if (
-                float(price_index.get(sku, 0)) > 0
+                float(price_index.get(sku_key, 0)) > 0
                 and p.get("type") not in excluded_types
-                and status_index.get(sku) != "80"
+                and status_index.get(sku_key) != "80"
             ):
                 delta_variant_exists = True
                 break
 
         if delta_variant_exists:
             for p in items:
-                sku = p["sku"]
+                sku_key = normalize_sku_key(p["sku"])
 
-                if float(price_index.get(sku, 0)) > 0 and status_index.get(sku) != "80":
+                if float(price_index.get(sku_key, 0)) > 0 and status_index.get(sku_key) != "80":
                     delta_products.append(p)
 
     log.info("Producten in delta: %s", len(delta_products))
+
+    delta_initial_skus = {normalize_sku_key(p["sku"]) for p in delta_products if p.get("sku")}
 
     # -----------------------------------------------------
     # images voorbereiden
@@ -152,29 +161,68 @@ def main() -> None:
     image_url_by_norm: dict[str, str] = {}
 
     # -----------------------------------------------------
-    # images verwerken
+    # images verwerken (per uniek lokaal bestand — voorkomt race + dubbele upload)
     # -----------------------------------------------------
+    # Meerdere XML-paden kunnen naar hetzelfde bestand wijzen. Parallel per ref
+    # betekende dat meerdere threads tegelijk cache misten en allemaal uploadden.
+
+    abs_path_to_refs: dict[str, list[str]] = defaultdict(list)
+    abs_path_to_local: dict[str, Path] = {}
+    refs_no_file: list[str] = []
+
+    for ref in image_refs:
+        local_path = resolve_local_image(ref, input_root, by_basename_exact, by_basename_lower)
+        if not local_path:
+            refs_no_file.append(ref)
+            continue
+        ap = str(local_path.resolve())
+        abs_path_to_refs[ap].append(ref)
+        abs_path_to_local[ap] = local_path
+
+    images_no_file = len(refs_no_file)
+    unique_local_paths = list(abs_path_to_refs.keys())
+    log.info(
+        "%s unieke lokale bestanden om te verwerken (na dedup t.o.v. %s refs)",
+        len(unique_local_paths),
+        len(image_refs),
+    )
 
     image_url_map = {}
 
     images_resolved = 0
-    images_no_file = 0
     images_local_failed = 0
     images_uploaded = 0
 
-    def process_image(ref: str):
-
-        local_path = resolve_local_image(ref, input_root, by_basename_exact, by_basename_lower)
-
-        if not local_path:
-            return ("no_file", ref)
-
+    def process_one_local_file(abs_path: str) -> tuple[str, list[str], str | None, bool]:
+        local_path = abs_path_to_local[abs_path]
+        refs = abs_path_to_refs[abs_path]
         cache_name = local_path.name
         url, did_upload = ensure_image(cache_name, local_path, cache, strict_delta=True)
+        return ("resolved" if url else "failed", refs, url, did_upload)
 
-        if url:
-            return ("resolved", ref, url, did_upload)
-        return ("failed", ref)
+    # Eerst synchroon: cache + CDN-HEAD (geen threads, geen GraphQL). Alleen rest naar workers.
+    need_slow: list[str] = []
+    for ap in unique_local_paths:
+        local_path = abs_path_to_local[ap]
+        refs = abs_path_to_refs[ap]
+        cache_name = local_path.name
+        url = try_resolve_image_cache_or_cdn(cache_name, cache)
+        if url is not None:
+            images_resolved += len(refs)
+            for ref in refs:
+                image_url_map[ref] = url
+                image_url_by_norm[_norm_ref_key(ref)] = url
+        else:
+            need_slow.append(ap)
+
+    # Fast path kan cache vullen (CDN-HEAD → _store_cache_url); direct naar schijf.
+    save_cache_safe(cache)
+
+    log.info(
+        "Afbeeldingen: %s via cache/CDN (geen Shopify-lookup/upload); %s nog te controleren",
+        len(unique_local_paths) - len(need_slow),
+        len(need_slow),
+    )
 
     # GraphQL file-upload is rate-limited; te veel parallel = THROTTLED
     try:
@@ -187,31 +235,32 @@ def main() -> None:
     log.info("Afbeelding-upload workers (parallel): %s", _image_workers)
 
     with ThreadPoolExecutor(max_workers=_image_workers) as executor:
-        futures = [executor.submit(process_image, r) for r in image_refs]
+        futures = [executor.submit(process_one_local_file, ap) for ap in need_slow]
 
         for future in as_completed(futures):
             try:
-                result = future.result()
+                kind, refs, url, did_upload = future.result()
             except Exception as e:
                 # Keep the run alive when Shopify/media API is unreachable.
                 images_local_failed += 1
                 log.warning("Image verwerking fout: %s", e)
                 continue
 
-            kind = result[0]
-            if kind == "no_file":
-                images_no_file += 1
-            elif kind == "failed":
-                images_local_failed += 1
-            else:
-                _, ref, url, did_upload = result
-                images_resolved += 1
-                if did_upload:
-                    images_uploaded += 1
+            if kind == "failed" or not url:
+                images_local_failed += len(refs)
+                continue
+
+            images_resolved += len(refs)
+            if did_upload:
+                images_uploaded += 1
+            for ref in refs:
                 image_url_map[ref] = url
                 image_url_by_norm[_norm_ref_key(ref)] = url
 
-    save_cache(cache)
+            # ensure_image heeft cache bijgewerkt (lookup/upload); niet pas aan het einde wegschrijven.
+            save_cache_safe(cache)
+
+    save_cache_safe(cache)
 
     # -----------------------------------------------------
     # CDN urls koppelen aan producten
@@ -246,6 +295,10 @@ def main() -> None:
 
         if group_has_images:
             filtered_delta.extend(items)
+
+    delta_after_images_skus = {
+        normalize_sku_key(p["sku"]) for p in filtered_delta if p.get("sku")
+    }
 
     log.info(
         "producten zonder image gefilterd: %s",
@@ -299,6 +352,8 @@ def main() -> None:
 
     delta_products = fixed_delta
 
+    delta_final_skus = {normalize_sku_key(p["sku"]) for p in delta_products if p.get("sku")}
+
     # -----------------------------------------------------
     # CSV export
     # -----------------------------------------------------
@@ -309,12 +364,26 @@ def main() -> None:
 
     delta_file = os.path.join(config.PRODUCTS_OUTPUT_DIR, f"shopify_export_delta_{timestamp}.csv")
     all_file = os.path.join(config.PRODUCTS_OUTPUT_DIR, f"shopify_export_all_{timestamp}.csv")
+    excluded_file = os.path.join(
+        config.PRODUCTS_OUTPUT_DIR, f"shopify_export_excluded_{timestamp}.csv"
+    )
 
     log.info("CSV export delta maken...")
     export(delta_products, delta_file)
 
     log.info("CSV export ALL maken...")
     export(products, all_file)
+
+    log.info("CSV export uitgesloten (met redenen) maken...")
+    write_excluded_report(
+        excluded_file,
+        products,
+        price_index=price_index,
+        status_index=status_index,
+        delta_initial_skus=delta_initial_skus,
+        delta_after_images_skus=delta_after_images_skus,
+        delta_final_skus=delta_final_skus,
+    )
 
     log.info("ETL run voltooid.")
 
