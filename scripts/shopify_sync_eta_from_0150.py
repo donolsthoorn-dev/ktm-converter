@@ -11,6 +11,10 @@ variant-metafield inventory_policy_eta_date in Shopify bij (type date, ISO YYYY-
 Bouw of ververs die cache met:
   python3 scripts/shopify_refresh_variant_cache.py
 
+Delta t.o.v. **cache/shopify_0150_sync_state.json** (zelfde als `shopify_sync_from_0150.py`): alleen
+mutaties waar de gewenste ETA nog niet in die state staat; na elke geslaagde batch wordt de state
+bijgewerkt. `--force` = alles opnieuw pushen (state negeren).
+
 CSV-scheidingsteken (komma vs `;`) via `pricing_loader.detect_0150_csv_delimiter`.
 
 Configuratie (omgevingsvariabelen, o.a. via project-root .env):
@@ -26,6 +30,7 @@ CLI:
   python3 scripts/shopify_sync_eta_from_0150.py --csv input/0150_00_Z1_EUR_EN_csv.csv
   python3 scripts/shopify_sync_eta_from_0150.py --dry-run
   python3 scripts/shopify_sync_eta_from_0150.py --variant-cache pad/naar/sku_variant.json
+  python3 scripts/shopify_sync_eta_from_0150.py --force   # state negeren, volledige ETA-push
 
 Later uitbreidbaar (prijzen + cron) in hetzelfde bestand of een wrapper.
 """
@@ -52,6 +57,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
+DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
 
 
 def load_dotenv(path: Path | None = None) -> None:
@@ -88,6 +94,39 @@ def _http_session() -> requests.Session:
     return sess
 
 
+def _graphql_post_with_retries(
+    sess: requests.Session,
+    url: str,
+    headers: dict,
+    json_body: dict,
+) -> requests.Response:
+    """POST met retries bij timeout/verbindingsfout (bijv. kort internet weg)."""
+    payload = json.dumps(json_body)
+    n_net = 0
+    while True:
+        try:
+            return sess.post(
+                url,
+                headers=headers,
+                data=payload,
+                timeout=(25, 180),
+                proxies={"http": None, "https": None},
+            )
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as e:
+            n_net += 1
+            if n_net > 40:
+                raise
+            w = min(3.0 + n_net * 0.6, 120.0)
+            print(
+                f"GraphQL netwerk ({n_net}/40) {type(e).__name__}, {w:.1f}s…",
+                flush=True,
+            )
+            time.sleep(w)
+
+
 def parse_hq_eta_to_iso(raw: str) -> str | None:
     raw = (raw or "").strip()
     if not raw:
@@ -116,16 +155,100 @@ def resolve_csv_path(explicit: str | None) -> Path:
     raise FileNotFoundError(f"Geen *0150*.csv in {input_dir}; gebruik --csv PAD")
 
 
-def variant_cache_json_to_sku_variant_ids(raw: dict) -> dict[str, str]:
-    """Oude cache: SKU -> variant-id string. Nieuwe cache: SKU -> { variant_id, product_id }."""
-    out: dict[str, str] = {}
+def load_state(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+    tmp.replace(path)
+
+
+def merge_eta_state(state: dict, sku: str, vid: str, iso: str | None) -> None:
+    """Zelfde velden als shopify_sync_from_0150 na geslaagde ETA-mutatie."""
+    entry = dict(state.get(sku) or {})
+    ev = dict(entry.get("eta_variants") or {})
+    s = str(vid)
+    if iso is None:
+        ev.pop(s, None)
+    else:
+        ev[s] = iso
+    entry["eta_variants"] = ev
+    if iso is not None:
+        entry["eta_iso"] = iso
+    elif not ev:
+        entry["eta_iso"] = None
+    state[sku] = entry
+
+
+def current_eta_from_state(
+    state: dict, sku: str, vid: str, all_vids_for_sku: list[str]
+) -> str | None:
+    st = state.get(sku) or {}
+    ev = st.get("eta_variants") or {}
+    svid = str(vid)
+    if svid in ev:
+        return ev[svid]
+    if len(all_vids_for_sku) <= 1:
+        return st.get("eta_iso")
+    return None
+
+
+def filter_eta_ops_by_state(
+    ops: list[tuple[str, str, str, str]],
+    state: dict,
+    sku_to_vid: dict[str, list[str]],
+) -> tuple[list[tuple[str, str, str, str]], int]:
+    """Laat alleen mutaties door die nog niet in state staan. Returns (ops, n_skipped)."""
+    out: list[tuple[str, str, str, str]] = []
+    skipped = 0
+    for op in ops:
+        kind, sku, vid, val = op
+        vids = sku_to_vid.get(sku) or []
+        cur = current_eta_from_state(state, sku, vid, vids)
+        if kind == "set":
+            if cur == val:
+                skipped += 1
+                continue
+        else:
+            if cur is None:
+                skipped += 1
+                continue
+        out.append(op)
+    return out, skipped
+
+
+def variant_cache_json_to_sku_variant_ids(raw: dict) -> dict[str, list[str]]:
+    """SKU -> alle variant-id's (lijst). Oude cache: één object of string → één id."""
+    out: dict[str, list[str]] = {}
     for k, v in raw.items():
-        if isinstance(v, dict):
+        sku = k.strip().upper()
+        vids: list[str] = []
+        if isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    vid = str(item.get("variant_id") or "").strip()
+                    if vid:
+                        vids.append(vid)
+        elif isinstance(v, dict):
             vid = str(v.get("variant_id") or "").strip()
+            if vid:
+                vids.append(vid)
         else:
             vid = str(v).strip()
-        if vid:
-            out[k] = vid
+            if vid:
+                vids.append(vid)
+        if vids:
+            out[sku] = vids
     return out
 
 
@@ -186,16 +309,16 @@ mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
 }
 """
     url = f"https://{shop}/admin/api/{api_version}/graphql.json"
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json",
+    }
     while True:
-        r = sess.post(
+        r = _graphql_post_with_retries(
+            sess,
             url,
-            headers={
-                "X-Shopify-Access-Token": token,
-                "Content-Type": "application/json",
-            },
-            data=json.dumps({"query": q, "variables": {"metafields": metafields}}),
-            timeout=(12, 120),
-            proxies={"http": None, "https": None},
+            headers,
+            {"query": q, "variables": {"metafields": metafields}},
         )
         if r.status_code == 429:
             print("GraphQL rate limit, wachten...", flush=True)
@@ -225,16 +348,16 @@ mutation metafieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
 }
 """
     url = f"https://{shop}/admin/api/{api_version}/graphql.json"
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json",
+    }
     while True:
-        r = sess.post(
+        r = _graphql_post_with_retries(
+            sess,
             url,
-            headers={
-                "X-Shopify-Access-Token": token,
-                "Content-Type": "application/json",
-            },
-            data=json.dumps({"query": q, "variables": {"metafields": identifiers}}),
-            timeout=(12, 120),
-            proxies={"http": None, "https": None},
+            headers,
+            {"query": q, "variables": {"metafields": identifiers}},
         )
         if r.status_code == 429:
             print("GraphQL rate limit (delete), wachten...", flush=True)
@@ -249,7 +372,7 @@ mutation metafieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
 
 def build_eta_ops(
     sku_to_eta: dict[str, str | None],
-    sku_to_vid: dict[str, str],
+    sku_to_vids: dict[str, list[str]],
     today: date,
 ) -> tuple[
     list[tuple[str, str, str, str]],
@@ -262,24 +385,27 @@ def build_eta_ops(
     """
     Returns: ops, n_clear_empty, n_clear_past, n_no_variant, n_set_planned, n_clear_planned
     """
-    n_no_variant = sum(1 for sku in sku_to_eta if sku not in sku_to_vid)
+    n_no_variant = sum(
+        1 for sku in sku_to_eta if sku not in sku_to_vids or not sku_to_vids[sku]
+    )
     ops: list[tuple[str, str, str, str]] = []
     n_clear_empty = 0
     n_clear_past = 0
     for sku, val in sku_to_eta.items():
-        vid = sku_to_vid.get(sku)
-        if not vid:
+        vids = sku_to_vids.get(sku) or []
+        if not vids:
             continue
-        if val is None:
-            ops.append(("clear", sku, vid, ""))
-            n_clear_empty += 1
-            continue
-        d = date.fromisoformat(val)
-        if d < today:
-            ops.append(("clear", sku, vid, ""))
-            n_clear_past += 1
-        else:
-            ops.append(("set", sku, vid, val))
+        for vid in vids:
+            if val is None:
+                ops.append(("clear", sku, vid, ""))
+                n_clear_empty += 1
+                continue
+            d = date.fromisoformat(val)
+            if d < today:
+                ops.append(("clear", sku, vid, ""))
+                n_clear_past += 1
+            else:
+                ops.append(("set", sku, vid, val))
     n_set_planned = sum(1 for o in ops if o[0] == "set")
     n_clear_planned = sum(1 for o in ops if o[0] == "clear")
     return ops, n_clear_empty, n_clear_past, n_no_variant, n_set_planned, n_clear_planned
@@ -308,6 +434,17 @@ def main() -> int:
         type=Path,
         default=DEFAULT_VARIANT_CACHE,
         help=f"SKU→variant JSON van shopify_refresh_variant_cache.py (default: {DEFAULT_VARIANT_CACHE})",
+    )
+    p.add_argument(
+        "--state-file",
+        type=Path,
+        default=DEFAULT_STATE_FILE,
+        help=f"Zelfde JSON als hoofdsync — delta op ETA (default: {DEFAULT_STATE_FILE})",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Geen delta: alle geplande ETA zetten/wissen uitvoeren (state niet gebruiken om te skippen)",
     )
     args = p.parse_args()
 
@@ -363,6 +500,21 @@ def main() -> int:
             with open(cache_hint, encoding="utf-8") as f:
                 sku_to_vid_dr = variant_cache_json_to_sku_variant_ids(json.load(f))
             ops_dr, _ce, _cp, n_no_dr, n_sp, n_cp = build_eta_ops(sku_to_eta, sku_to_vid_dr, today)
+            st = load_state(args.state_file.resolve())
+            if args.force:
+                ops_eff = ops_dr
+                n_sk = 0
+                print("  (--force: geen delta-filter in dry-run)", flush=True)
+            else:
+                ops_eff, n_sk = filter_eta_ops_by_state(ops_dr, st, sku_to_vid_dr)
+                if n_sk:
+                    print(
+                        f"  (delta: {n_sk} variant-ETA's zouden worden overgeslagen — al in "
+                        f"{args.state_file.resolve().name})",
+                        flush=True,
+                    )
+            n_sp_eff = sum(1 for o in ops_eff if o[0] == "set")
+            n_cp_eff = sum(1 for o in ops_eff if o[0] == "clear")
             _print_summary_footer(
                 csv_path=csv_path,
                 ns=ns,
@@ -371,13 +523,13 @@ def main() -> int:
                 n_no_variant=n_no_dr,
                 n_set_ok=0,
                 n_del_ok=0,
-                n_set_planned=n_sp,
-                n_clear_planned=n_cp,
+                n_set_planned=n_sp_eff,
+                n_clear_planned=n_cp_eff,
                 errors=0,
                 limited=False,
                 dry_run=True,
-                planned_set_full=None,
-                planned_clear_full=None,
+                planned_set_full=n_sp,
+                planned_clear_full=n_cp,
             )
         else:
             print(
@@ -403,11 +555,31 @@ def main() -> int:
     ops, n_clear_empty, n_clear_past, n_no_variant, n_set_planned_full, n_clear_planned_full = (
         build_eta_ops(sku_to_eta, sku_to_vid, today)
     )
-    n_set_planned = n_set_planned_full
-    n_clear_planned = n_clear_planned_full
+    state_path = args.state_file.resolve()
+    state = load_state(state_path)
+    n_skipped_state = 0
+    if args.force:
+        print("--force: volledige werklijst (geen overslaan op basis van state).", flush=True)
+    else:
+        ops, n_skipped_state = filter_eta_ops_by_state(ops, state, sku_to_vid)
+        if n_skipped_state:
+            print(
+                f"Delta: {n_skipped_state} variant-ETA's overgeslagen (al in sync volgens "
+                f"{state_path.name}).",
+                flush=True,
+            )
+    n_set_after_delta = sum(1 for o in ops if o[0] == "set")
+    n_clear_after_delta = sum(1 for o in ops if o[0] == "clear")
 
     if not ops:
-        print("Geen overlap tussen CSV-ETA en Shopify-variant-SKU's.", flush=True)
+        if n_set_planned_full + n_clear_planned_full > 0 and n_skipped_state:
+            print(
+                "Geen resterende ETA-mutaties: alles in de CSV staat al in de sync-state "
+                f"({state_path.name}). Gebruik --force om alle metafields opnieuw te zetten/wissen.",
+                flush=True,
+            )
+        else:
+            print("Geen overlap tussen CSV-ETA en Shopify-variant-SKU's.", flush=True)
         _print_summary_footer(
             csv_path=csv_path,
             ns=ns,
@@ -427,9 +599,13 @@ def main() -> int:
         return 0
 
     print(
-        f"Te verwerken: {n_set_planned_full} ETA zetten (vandaag/toekomst), "
-        f"{n_clear_planned_full} metafield wissen (waarvan {n_clear_empty} lege ETA, "
-        f"{n_clear_past} datum in verleden).",
+        f"Te verwerken (na delta): {n_set_after_delta} ETA zetten, "
+        f"{n_clear_after_delta} metafield wissen.",
+        flush=True,
+    )
+    print(
+        f"  Bruto uit CSV+cache: {n_set_planned_full} zetten, {n_clear_planned_full} wissen "
+        f"(waarvan {n_clear_empty} lege ETA, {n_clear_past} datum in verleden).",
         flush=True,
     )
     if n_no_variant:
@@ -472,7 +648,8 @@ def main() -> int:
             ]
             data = graphql_metafields_delete(shop, token, api_ver, identifiers)
             mdel = (data or {}).get("metafieldsDelete") or {}
-            for err in mdel.get("userErrors") or []:
+            uerr = mdel.get("userErrors") or []
+            for err in uerr:
                 print("Shopify userError (delete):", err, flush=True)
                 errors += 1
             deleted = mdel.get("deletedMetafields") or []
@@ -481,6 +658,10 @@ def main() -> int:
                 f"Batch {batch_num} (wissen): {len(deleted)} metafields verwijderd.",
                 flush=True,
             )
+            if not uerr:
+                for op in batch:
+                    merge_eta_state(state, op[1], op[2], None)
+                save_state(state_path, state)
         else:
             mfs = [
                 {
@@ -494,7 +675,8 @@ def main() -> int:
             ]
             data = graphql_metafields_set(shop, token, api_ver, mfs)
             mset = (data or {}).get("metafieldsSet") or {}
-            for err in mset.get("userErrors") or []:
+            uerr = mset.get("userErrors") or []
+            for err in uerr:
                 print("Shopify userError (set):", err, flush=True)
                 errors += 1
             mf = mset.get("metafields") or []
@@ -503,6 +685,10 @@ def main() -> int:
                 f"Batch {batch_num} (zetten): {len(mf)} metafields gezet.",
                 flush=True,
             )
+            if not uerr:
+                for op in batch:
+                    merge_eta_state(state, op[1], op[2], op[3])
+                save_state(state_path, state)
         time.sleep(0.25)
 
     _print_summary_footer(

@@ -1,4 +1,5 @@
 import csv
+import glob
 import io
 import os
 
@@ -79,6 +80,56 @@ def _resolve_0150_column_indices(header: list[str]) -> tuple[int, int, int, int 
         gtin_col = 23 if len(h) > 23 else None
 
     return sku_col, price_col, status_col, gtin_col
+
+
+def _read_article_status_from_single_0150_style_csv(path: str) -> dict[str, str]:
+    """Lees één KTM-export-CSV; return ArticleNumber (upper) -> ArticleStatus (string)."""
+    out: dict[str, str] = {}
+    encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
+    for enc in encodings:
+        try:
+            with open(path, newline="", encoding=enc) as f:
+                first = f.readline()
+                f.seek(0)
+                delim = detect_0150_csv_delimiter(first)
+                reader = csv.reader(f, delimiter=delim)
+                header = next(reader, None)
+                if not header:
+                    continue
+                header_len = len(header)
+                sku_col, _price_col, status_col, _gtin_col = _resolve_0150_column_indices(
+                    header
+                )
+                min_len = max(sku_col, status_col) + 1
+                for row in reader:
+                    if len(row) < header_len:
+                        row = list(row) + [""] * (header_len - len(row))
+                    if len(row) < min_len:
+                        continue
+                    sku_raw = row[sku_col].strip()
+                    if not sku_raw:
+                        continue
+                    out[sku_raw.upper()] = row[status_col].strip()
+            return out
+        except UnicodeDecodeError:
+            continue
+        except OSError:
+            return out
+    return out
+
+
+def load_article_status_from_35_z1_csv_files(input_dir: str | None = None) -> dict[str, str]:
+    """
+    Alle *35_Z1_EUR_EN_csv.csv onder input_dir (default INPUT_DIR): ArticleNumber → ArticleStatus.
+    Bij dezelfde SKU in meerdere bestanden wint de laatst verwerkte file (alfabetisch op pad).
+    """
+    base = os.path.normpath(input_dir or INPUT_DIR)
+    pattern = os.path.join(base, "*35_Z1_EUR_EN_csv.csv")
+    paths = sorted(glob.glob(pattern))
+    merged: dict[str, str] = {}
+    for path in paths:
+        merged.update(_read_article_status_from_single_0150_style_csv(path))
+    return merged
 
 
 def load_price_index():

@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-0150-CSV → Shopify: alleen wijzigingen doorzetten (delta) t.o.v. de vorige succesvolle run.
+KTM-prijs-CSV(s) → Shopify: alleen wijzigingen doorzetten (delta) t.o.v. de vorige succesvolle run.
 
 Prijzen, ETA en publicatiestatus (draft/active) gaan **uitsluitend** via dit script; de delta is
-altijd: gewenste waarde uit het 0150-bestand vergeleken met cache/shopify_0150_sync_state.json
+altijd: gewenste waarde uit de CSV-bron(zen) vergeleken met cache/shopify_0150_sync_state.json
 (geen massale uitlees van Shopify per run).
+
+**Standaard** worden (als ze in `input/` bestaan) vier exports **samengevoegd** — **laatste bestand
+wint** bij dezelfde SKU: `1100_35_Z1_EUR_EN_csv.csv`, `0910_35_Z1_EUR_EN_csv.csv`,
+`0150_35_Z1_EUR_EN_csv.csv`, `0140_35_Z1_EUR_EN_csv.csv`. Met `--csv PAD` (meerdere keren) kies je
+zelf bestanden en volgorde.
 
 Leest uit dezelfde 0150-export als pricing_loader:
   - hqETADate      → variant-metafield global.inventory_policy_eta_date (type date)
   - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
   - ArticleStatus  → als waarde 80: product op draft (niet gepubliceerd); anders active
 
-Variant-SKU → variant_id (+ product_id) komt uit cache (geen volledige variant-fetch per run):
+Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; geen live variant-fetch per run):
   python3 scripts/shopify_refresh_variant_cache.py
 
 Status van de laatst succesvol toegepaste waarden per SKU staat in:
@@ -28,7 +33,7 @@ Eerste keer state vullen zonder alles te uploaden:
   • Basis = **0150**-bestand (ERP): scripts/bootstrap_0150_sync_state_from_csv.py
   (variant-ID-cache komt alleen uit shopify_refresh_variant_cache.py, niet uit een CSV.)
 
-Opties: --csv, --dry-run, --force, --variant-cache, --state-file, --price-workers,
+Opties: --csv (herhaalbaar), --dry-run, --force, --variant-cache, --state-file, --price-workers,
   --graphql-inflight (max gelijktijdige GraphQL-requests; default env SHOPIFY_GRAPHQL_INFLIGHT=4)
 """
 
@@ -61,6 +66,14 @@ from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
 DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
+
+# Standaard merge-volgorde: later in de lijst overschrijft bij dubbele ArticleNumber tussen bestanden.
+DEFAULT_KTM_PRICE_CSV_NAMES: tuple[str, ...] = (
+    "1100_35_Z1_EUR_EN_csv.csv",
+    "0910_35_Z1_EUR_EN_csv.csv",
+    "0150_35_Z1_EUR_EN_csv.csv",
+    "0140_35_Z1_EUR_EN_csv.csv",
+)
 
 
 def load_dotenv(path: Path | None = None) -> None:
@@ -112,6 +125,7 @@ def parse_hq_eta_to_iso(raw: str) -> str | None:
 
 
 def resolve_csv_path(explicit: str | None) -> Path:
+    """Eén CSV-pad (legacy / bootstrap)."""
     if explicit:
         p = Path(explicit)
         if not p.is_file():
@@ -124,14 +138,41 @@ def resolve_csv_path(explicit: str | None) -> Path:
     raise FileNotFoundError(f"Geen *0150*.csv in {input_dir}; gebruik --csv PAD")
 
 
-def _detect_0150_delimiter(first_line: str) -> str:
-    """Export is meestal komma-gescheiden; sommige bestanden gebruiken puntkomma."""
-    for delim in (",", ";"):
-        r = csv.reader(io.StringIO(first_line), delimiter=delim)
-        row = next(r, [])
-        if len(row) >= 10 and row[1].strip() == "ArticleNumber":
-            return delim
-    return ","
+def resolve_csv_paths(explicit: list[str] | None) -> list[Path]:
+    """
+    Lijst van prijs-CSV-paden. Zonder --csv: de vier standaard KTM-bestanden die in input/ bestaan
+    (merge in vaste volgorde; ontbrekende namen worden overgeslagen met waarschuwing), anders
+    fallback naar één automatisch 0150-bestand. Met expliciete paden: alle moeten bestaan.
+    """
+    input_dir = PROJECT_ROOT / "input"
+    if explicit:
+        out: list[Path] = []
+        for s in explicit:
+            p = Path(s)
+            if not p.is_file():
+                p = input_dir / s
+            if not p.is_file():
+                raise FileNotFoundError(f"CSV niet gevonden: {s}")
+            out.append(p.resolve())
+        return out
+
+    found: list[Path] = []
+    missing: list[str] = []
+    for name in DEFAULT_KTM_PRICE_CSV_NAMES:
+        p = input_dir / name
+        if p.is_file():
+            found.append(p.resolve())
+        else:
+            missing.append(name)
+    if found:
+        if missing:
+            print(
+                "Waarschuwing: deze prijs-CSV's ontbreken in input/ en worden overgeslagen: "
+                + ", ".join(missing),
+                flush=True,
+            )
+        return found
+    return [resolve_csv_path(None)]
 
 
 def _parse_sales_price_incl_vat(raw: str) -> str | None:
@@ -201,26 +242,65 @@ def read_0150_desired(csv_path: Path, today: date) -> dict[str, dict]:
     raise OSError(f"CSV kon niet worden gelezen: {csv_path}")
 
 
-def load_variant_cache(path: Path) -> dict[str, tuple[str, str | None]]:
-    """SKU uppercase -> (variant_id, product_id or None). Oude cache: alleen variant_id."""
+def read_0150_desired_many(csv_paths: list[Path], today: date) -> dict[str, dict]:
+    """
+    Leest meerdere KTM-exporten; bij dezelfde SKU wint de **laatste** file in de lijst
+    (zelfde semantiek als meerdere regels in één CSV: laatste wint).
+    """
+    merged: dict[str, dict] = {}
+    for p in csv_paths:
+        merged.update(read_0150_desired(p, today))
+    return merged
+
+
+def load_variant_cache(path: Path) -> dict[str, list[tuple[str, str | None]]]:
+    """
+    SKU uppercase -> lijst (variant_id, product_id).
+    Oude cache: één object {variant_id, product_id} of alleen variant-id string → één element in de lijst.
+    Nieuwe cache: lijst van objecten (alle varianten met dezelfde SKU).
+    """
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
-    out: dict[str, tuple[str, str | None]] = {}
+    out: dict[str, list[tuple[str, str | None]]] = {}
+
+    def _pid(v) -> str | None:
+        if v is None:
+            return None
+        return str(int(v)) if isinstance(v, (int, float)) else str(v).strip()
+
     for k, v in raw.items():
         sku = k.strip().upper()
-        if isinstance(v, dict):
+        pairs: list[tuple[str, str | None]] = []
+
+        def add(vid: str, pid_s: str | None) -> None:
+            if vid:
+                pairs.append((vid, pid_s if pid_s else None))
+
+        if isinstance(v, list):
+            for item in v:
+                if not isinstance(item, dict):
+                    continue
+                vid = str(item.get("variant_id") or "").strip()
+                add(vid, _pid(item.get("product_id")))
+        elif isinstance(v, dict):
             vid = str(v.get("variant_id") or "").strip()
-            pid = v.get("product_id")
-            if pid is None:
-                pid_s = None
-            else:
-                pid_s = str(int(pid)) if isinstance(pid, (int, float)) else str(pid).strip()
+            if vid or "product_id" in v:
+                add(vid, _pid(v.get("product_id")))
         else:
-            vid = str(v).strip()
-            pid_s = None
-        if vid:
-            out[sku] = (vid, pid_s)
+            add(str(v).strip(), None)
+
+        if pairs:
+            out[sku] = pairs
     return out
+
+
+def product_id_for_variant(
+    sku_to_vp: dict[str, list[tuple[str, str | None]]], sku: str, variant_id: str
+) -> str | None:
+    for vid, pid in sku_to_vp.get(sku, []):
+        if vid == variant_id:
+            return pid
+    return None
 
 
 def load_state(path: Path) -> dict:
@@ -430,16 +510,16 @@ def _run_price_bulk_for_product(
     pid: str,
     items: list[tuple[str, str, str]],
     max_variants: int,
-) -> tuple[int, int, list[tuple[str, str]]]:
+) -> tuple[int, int, list[tuple[str, str, str]]]:
     """
     Eén product (alle prijswijzigingen voor dat product). Eigen HTTP-sessies (thread-safe).
-    Returns: (n_done, n_errors, state_updates als (sku, price_incl)).
+    Returns: (n_done, n_errors, state_updates als (sku, variant_id, price_incl)).
     """
     gql_sess = _http_session()
     rest_sess = _http_session()
     n_done = 0
     n_err = 0
-    updates: list[tuple[str, str]] = []
+    updates: list[tuple[str, str, str]] = []
     for start in range(0, len(items), max_variants):
         chunk = items[start : start + max_variants]
         vid_prices = [(c[1], c[2]) for c in chunk]
@@ -447,15 +527,15 @@ def _run_price_bulk_for_product(
             shop, token, api_ver, pid, vid_prices, sess=gql_sess
         )
         if ok:
-            for sku, _vid, price in chunk:
-                updates.append((sku, price))
+            for sku, vid, price in chunk:
+                updates.append((sku, vid, price))
             n_done += len(chunk)
         else:
             n_err += 1
             print(f"  Bulk prijs-fout product {pid}: {err_msg[:300]}", flush=True)
             for sku, vid, price in chunk:
                 if rest_variant_price(shop, token, api_ver, vid, price, sess=rest_sess):
-                    updates.append((sku, price))
+                    updates.append((sku, vid, price))
                     n_done += 1
                 else:
                     n_err += 1
@@ -637,9 +717,111 @@ def needs_update(
     return prev != desired
 
 
+def needs_update_price(
+    force: bool,
+    state: dict,
+    sku: str,
+    desired: str | None,
+    variant_ids: list[str],
+) -> bool:
+    if force:
+        return True
+    if desired is None:
+        return False
+    st = state.get(sku) or {}
+    pv = st.get("price_variants") or {}
+    legacy = st.get("price_incl")
+    vids = [str(x) for x in variant_ids]
+    if len(vids) <= 1:
+        vid = vids[0] if vids else None
+        if vid and vid in pv:
+            return pv[vid] != desired
+        return legacy != desired
+    for vid in vids:
+        if pv.get(vid) != desired:
+            return True
+    return False
+
+
+def needs_update_eta(
+    force: bool,
+    state: dict,
+    sku: str,
+    desired: str | None,
+    variant_ids: list[str],
+) -> bool:
+    if force:
+        return True
+    st = state.get(sku) or {}
+    ev = st.get("eta_variants") or {}
+    legacy = st.get("eta_iso")
+    vids = [str(x) for x in variant_ids]
+
+    if desired is None:
+        for vid in vids:
+            cur = ev.get(vid)
+            if cur is None and len(vids) == 1:
+                cur = legacy
+            if cur is not None:
+                return True
+        return False
+
+    for vid in vids:
+        cur = ev.get(vid)
+        if cur is None and len(vids) == 1:
+            cur = legacy
+        if cur is None and len(vids) > 1:
+            return True
+        if cur != desired:
+            return True
+    return False
+
+
+def needs_update_product_status(
+    force: bool,
+    state: dict,
+    sku: str,
+    desired: str,
+    product_ids: list[str],
+) -> bool:
+    if force:
+        return True
+    st = state.get(sku) or {}
+    pb = st.get("product_status_by_product") or {}
+    legacy = st.get("product_status")
+    pids = [str(x) for x in product_ids if x]
+    if len(pids) <= 1:
+        pid = pids[0] if pids else None
+        if pid and pid in pb:
+            return pb[pid] != desired
+        return legacy != desired
+    for pid in pids:
+        if pb.get(pid) != desired:
+            return True
+    return False
+
+
 def _merge_state(state: dict, sku: str, updates: dict) -> None:
     entry = dict(state.get(sku) or {})
-    entry.update(updates)
+    for k, v in updates.items():
+        if k == "price_variants" and isinstance(v, dict):
+            prev = dict(entry.get("price_variants") or {})
+            prev.update(v)
+            entry["price_variants"] = prev
+        elif k == "eta_variants" and isinstance(v, dict):
+            prev = dict(entry.get("eta_variants") or {})
+            for k2, v2 in v.items():
+                if v2 is None:
+                    prev.pop(str(k2), None)
+                else:
+                    prev[str(k2)] = v2
+            entry["eta_variants"] = prev
+        elif k == "product_status_by_product" and isinstance(v, dict):
+            prev = dict(entry.get("product_status_by_product") or {})
+            prev.update(v)
+            entry["product_status_by_product"] = prev
+        else:
+            entry[k] = v
     state[sku] = entry
 
 
@@ -649,7 +831,18 @@ def main() -> int:
     p = argparse.ArgumentParser(
         description="0150 → Shopify: ETA, prijs (×BTW), draft bij status 80 — alleen bij wijziging"
     )
-    p.add_argument("--csv", metavar="PAD", help="0150-CSV (default: eerste *0150*.csv in input/)")
+    p.add_argument(
+        "--csv",
+        action="append",
+        metavar="PAD",
+        dest="csv_paths",
+        help=(
+            "Prijs-CSV in 0150-formaat (herhaalbaar voor merge). "
+            f"Default zonder deze vlag: merge van {', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)} "
+            "die in input/ bestaan (volgorde = 1100 → 0910 → 0150 → 0140; laatste wint bij dubbele SKU), "
+            "of anders eerste *0150*.csv in input/."
+        ),
+    )
     p.add_argument("--dry-run", action="store_true", help="Geen API-calls; wel delta-tonen")
     p.add_argument(
         "--force",
@@ -695,11 +888,18 @@ def main() -> int:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt (.env of export).", flush=True)
         return 1
 
-    csv_path = resolve_csv_path(args.csv)
+    csv_paths = resolve_csv_paths(args.csv_paths)
     today = date.today()
-    desired_by_sku = read_0150_desired(csv_path, today)
+    desired_by_sku = read_0150_desired_many(csv_paths, today)
     print(
-        f"CSV: {csv_path} — {len(desired_by_sku)} SKU-regels (laatste wint bij dubbel)", flush=True
+        "CSV-bronnen (volgorde: latere bestand wint bij dubbele SKU tussen bestanden):",
+        flush=True,
+    )
+    for cp in csv_paths:
+        print(f"  • {cp}", flush=True)
+    print(
+        f"→ {len(desired_by_sku)} unieke SKU-regels na merge (binnen één bestand: laatste wint bij dubbel)",
+        flush=True,
     )
 
     cache_path = args.variant_cache.resolve()
@@ -718,10 +918,14 @@ def main() -> int:
             )
             return 1
 
-    sku_to_vp: dict[str, tuple[str, str | None]] = {}
+    sku_to_vp: dict[str, list[tuple[str, str | None]]] = {}
     if cache_path.is_file():
         sku_to_vp = load_variant_cache(cache_path)
-        print(f"Variant-cache: {len(sku_to_vp)} SKU's — {cache_path}", flush=True)
+        n_variants = sum(len(v) for v in sku_to_vp.values())
+        print(
+            f"Variant-cache: {len(sku_to_vp)} SKU's ({n_variants} varianten) — {cache_path}",
+            flush=True,
+        )
 
     state_path = args.state_file.resolve()
     state: dict = load_state(state_path) if not args.force else {}
@@ -733,7 +937,7 @@ def main() -> int:
     product_id_memo: dict[str, str] = {}
 
     def resolve_product_id(sku: str, variant_id: str) -> str | None:
-        pid = sku_to_vp.get(sku, (None, None))[1]
+        pid = product_id_for_variant(sku_to_vp, sku, variant_id)
         if pid:
             return pid
         if variant_id in product_id_memo:
@@ -756,32 +960,48 @@ def main() -> int:
         if sku not in sku_to_vp:
             n_skip_no_variant += 1
             continue
-        vid, _pid = sku_to_vp[sku]
+        pairs = sku_to_vp[sku]
+        variant_ids = [p[0] for p in pairs]
+        unique_product_ids = list(
+            dict.fromkeys(p for _v, p in pairs if p)
+        )
 
-        if needs_update(args.force, state, sku, "eta_iso", d["eta_iso"]):
-            if d["eta_iso"] is None:
-                eta_clear.append((sku, vid))
-            else:
-                eta_set.append((sku, vid, d["eta_iso"]))
+        if needs_update_eta(args.force, state, sku, d["eta_iso"], variant_ids):
+            for vid, _pid in pairs:
+                if d["eta_iso"] is None:
+                    eta_clear.append((sku, vid))
+                else:
+                    eta_set.append((sku, vid, d["eta_iso"]))
 
-        if d["price_incl"] is not None and needs_update(
-            args.force, state, sku, "price_incl", d["price_incl"]
+        if d["price_incl"] is not None and needs_update_price(
+            args.force, state, sku, d["price_incl"], variant_ids
         ):
-            price_ops.append((sku, vid, d["price_incl"]))
+            for vid, _pid in pairs:
+                price_ops.append((sku, vid, d["price_incl"]))
 
         ps = d["product_status"]
-        if needs_update(args.force, state, sku, "product_status", ps):
-            pid = resolve_product_id(sku, vid)
-            if args.dry_run:
-                product_ops.append((sku, pid or "", ps))
-            elif not pid:
-                print(
-                    f"  Waarschuwing: geen product_id voor SKU {sku}; "
-                    f"ververs cache met shopify_refresh_variant_cache.py",
-                    flush=True,
-                )
+        if needs_update_product_status(
+            args.force, state, sku, ps, unique_product_ids
+        ):
+            if not unique_product_ids:
+                if args.dry_run:
+                    product_ops.append((sku, "", ps))
+                else:
+                    print(
+                        f"  Waarschuwing: geen product_id in cache voor SKU {sku}; "
+                        "ververs cache met shopify_refresh_variant_cache.py",
+                        flush=True,
+                    )
             else:
-                product_ops.append((sku, pid, ps))
+                seen_pid_local: set[str] = set()
+                for _vid, pid in pairs:
+                    if not pid or pid in seen_pid_local:
+                        continue
+                    seen_pid_local.add(pid)
+                    if args.dry_run:
+                        product_ops.append((sku, pid, ps))
+                    else:
+                        product_ops.append((sku, pid, ps))
 
     total_changes = len(eta_set) + len(eta_clear) + len(price_ops) + len(product_ops)
     print(
@@ -853,7 +1073,12 @@ def main() -> int:
             if not uerr:
                 for op in batch:
                     sku_c = op[1][0]
-                    _merge_state(state, sku_c, {"eta_iso": None})
+                    vid_c = op[1][1]
+                    _merge_state(
+                        state,
+                        sku_c,
+                        {"eta_iso": None, "eta_variants": {str(vid_c): None}},
+                    )
                 save_state(state_path, state)
             print(f"Batch {batch_num} ETA wissen: {len(deleted)} verwijderd.", flush=True)
         else:
@@ -876,8 +1101,13 @@ def main() -> int:
             if not uerr:
                 for op in batch:
                     sku_s = op[1][0]
+                    vid_s = op[1][1]
                     iso = op[1][2]
-                    _merge_state(state, sku_s, {"eta_iso": iso})
+                    _merge_state(
+                        state,
+                        sku_s,
+                        {"eta_iso": iso, "eta_variants": {str(vid_s): iso}},
+                    )
                 save_state(state_path, state)
             print(f"Batch {batch_num} ETA zetten: {len(mfs)} verzoeken.", flush=True)
         time.sleep(0.25)
@@ -900,7 +1130,7 @@ def main() -> int:
     by_pid: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     no_pid_ops: list[tuple[str, str, str]] = []
     for sku, vid, price in price_ops:
-        pid = sku_to_vp.get(sku, (None, None))[1]
+        pid = product_id_for_variant(sku_to_vp, sku, vid)
         if pid:
             by_pid[pid].append((sku, vid, price))
         else:
@@ -929,8 +1159,15 @@ def main() -> int:
             for fut in as_completed(futs):
                 dn, ne, updates = fut.result()
                 with state_lock:
-                    for sku, price in updates:
-                        _merge_state(state, sku, {"price_incl": price})
+                    for sku, vid, price in updates:
+                        _merge_state(
+                            state,
+                            sku,
+                            {
+                                "price_incl": price,
+                                "price_variants": {str(vid): price},
+                            },
+                        )
                     errors += ne
                     n_done += dn
                     completed += 1
@@ -947,7 +1184,11 @@ def main() -> int:
     for sku, vid, price in no_pid_ops:
         print(f"  Prijs REST (geen product_id in cache): SKU {sku} …", flush=True)
         if rest_variant_price(shop, token, api_ver, vid, price, sess=price_rest_sess):
-            _merge_state(state, sku, {"price_incl": price})
+            _merge_state(
+                state,
+                sku,
+                {"price_incl": price, "price_variants": {str(vid): price}},
+            )
             n_done += 1
         else:
             errors += 1
@@ -968,9 +1209,10 @@ def main() -> int:
     deduped.reverse()
 
     skus_by_product_id: dict[str, list[str]] = {}
-    for s, (_v, p) in sku_to_vp.items():
-        if p:
-            skus_by_product_id.setdefault(p, []).append(s)
+    for s, pairs in sku_to_vp.items():
+        for _v, p in pairs:
+            if p:
+                skus_by_product_id.setdefault(str(p), []).append(s)
 
     n_prod = len(deduped)
     if n_prod:
@@ -1000,9 +1242,16 @@ def main() -> int:
                 flush=True,
             )
         if ok:
-            for s in skus_by_product_id.get(pid, []):
+            for s in skus_by_product_id.get(str(pid), []):
                 if s in desired_by_sku and desired_by_sku[s]["product_status"] == ps:
-                    _merge_state(state, s, {"product_status": ps})
+                    _merge_state(
+                        state,
+                        s,
+                        {
+                            "product_status": ps,
+                            "product_status_by_product": {str(pid): ps},
+                        },
+                    )
         else:
             errors += 1
         if pidx % progress_every == 0 or pidx == n_prod:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Haalt alle variant-SKU's uit Shopify op en schrijft SKU → { variant_id, product_id } naar JSON.
+Haalt alle variant-SKU's uit Shopify op en schrijft SKU → lijst van { variant_id, product_id }
+naar JSON (alle varianten met dezelfde SKU; duplicaat-SKU's worden allemaal opgenomen).
 
 Los aan te roepen (handmatig, of later op een server op vaste tijden). Scripts zoals
 `shopify_sync_eta_from_0150.py` en `shopify_sync_from_0150.py` gebruiken deze cache;
@@ -19,6 +20,7 @@ import json
 import os
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 
 try:
@@ -78,11 +80,12 @@ def fetch_sku_to_variant_cache(
     shop: str,
     token: str,
     api_version: str,
-) -> dict[str, dict[str, str]]:
-    """SKU (uppercase) -> { variant_id, product_id } (strings)."""
+) -> dict[str, list[dict[str, str]]]:
+    """SKU (uppercase) -> lijst van { variant_id, product_id } (alle varianten met die SKU)."""
     sess = _http_session()
     headers = {"X-Shopify-Access-Token": token}
-    out: dict[str, dict[str, str]] = {}
+    out: dict[str, list[dict[str, str]]] = defaultdict(list)
+    seen_ids: dict[str, set[str]] = defaultdict(set)
     url = f"https://{shop}/admin/api/{api_version}/variants.json?limit=250&fields=id,sku,product_id"
     timeout = (12, 120)
     while url:
@@ -106,18 +109,22 @@ def fetch_sku_to_variant_cache(
             sku = (v.get("sku") or "").strip().upper()
             vid = v.get("id")
             pid = v.get("product_id")
-            if not sku or vid is None or sku in out:
+            if not sku or vid is None:
                 continue
             vid_s = str(int(vid)) if isinstance(vid, (int, float)) else str(vid)
+            if vid_s in seen_ids[sku]:
+                continue
+            seen_ids[sku].add(vid_s)
             if pid is None:
                 pid_s = ""
             else:
                 pid_s = str(int(pid)) if isinstance(pid, (int, float)) else str(pid).strip()
-            out[sku] = {"variant_id": vid_s, "product_id": pid_s}
-        print(f"  Varianten geladen: {len(out)} SKU's...", flush=True)
+            out[sku].append({"variant_id": vid_s, "product_id": pid_s})
+        n_var = sum(len(x) for x in out.values())
+        print(f"  Varianten geladen: {len(out)} SKU's, {n_var} varianten…", flush=True)
         url = _next_page_url(r.headers.get("Link"))
         time.sleep(0.5)
-    return out
+    return dict(out)
 
 
 def main() -> int:
@@ -150,7 +157,17 @@ def main() -> int:
     sku_cache = fetch_sku_to_variant_cache(shop, token, api_ver)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(sku_cache, f, ensure_ascii=False, indent=2)
-    print(f"Klaar: {len(sku_cache)} SKU's weggeschreven naar {out_path}", flush=True)
+    n_v = sum(len(v) for v in sku_cache.values())
+    n_multi = sum(1 for v in sku_cache.values() if len(v) > 1)
+    print(
+        f"Klaar: {len(sku_cache)} SKU's ({n_v} varianten) weggeschreven naar {out_path}",
+        flush=True,
+    )
+    if n_multi:
+        print(
+            f"  ({n_multi} SKU's komen meer dan eens voor in Shopify — alle varianten staan in de cache.)",
+            flush=True,
+        )
     return 0
 
 

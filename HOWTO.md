@@ -18,6 +18,19 @@ Output o.a.: `output/products/shopify_export_delta_<timestamp>.csv` en `shopify_
 
 ---
 
+## SKU controleren (all/delta-export)
+
+Één SKU: staat die in de all-/delta-export en zo niet, waarom (zelfde regels en teksten als `shopify_export_excluded_*.csv`). Standaard geen netwerk (snel); optioneel `--network` voor CDN/Shopify-afbeeldinglookup zoals `main.py` bij lege cache.
+
+```bash
+python3 scripts/sku_export_status.py A62612995001
+python3 scripts/sku_export_status.py A62612995001 --network
+```
+
+Zie [`scripts/sku_export_status.py`](scripts/sku_export_status.py).
+
+---
+
 ## YMM (app-import)
 
 **Delta** (na import van die producten in Shopify; vervang het delta-pad door jouw bestand):
@@ -78,23 +91,57 @@ Opties o.a.: `--dry-run`, `--csv pad/naar/0150.csv` — zie docstring in het scr
 
 ---
 
+## Dubbele variant-SKU’s met x-handle (Shopify API)
+
+Rapportage voor **geïmporteerde dubbele producten**: een SKU komt op **meerdere producten** voor, waarbij minstens één product een **handle op `x`** heeft met **precies één** variant (familie-artikel, bv. `3ki23004580x` naast `3KI230045800`). Producten met alleen een x-handle maar **meerdere** varianten (bv. `3pw24000500x`) kwalificeren niet als anker.
+
+**Uitvoer:** CSV op **stdout** (kolom `row_kind`: `x_single_variant` vs `shared_sku_peer`); voortgang en tellingen op **stderr**. Redirect: `> bestand.csv`.
+
+```bash
+python3 scripts/shopify_list_single_variant_sku_suffix_x.py > output/logs/duplicate_x_sku_peers.csv
+```
+
+Optioneel: `--active-only` (alleen ACTIVE), `--handle-suffix` (default `x`), `--rest` (REST i.p.v. bulk — kleine shops/debug).
+
+Vereist: `SHOPIFY_ACCESS_TOKEN` / `SHOPIFY_SHOP_DOMAIN` in `.env`. Zie docstring in [`scripts/shopify_list_single_variant_sku_suffix_x.py`](scripts/shopify_list_single_variant_sku_suffix_x.py).
+
+**Zelfde producten op DRAFT zetten** (REST; standaard dry-run, `--apply` voor echt wijzigen). Leest `product_id_numeric` uit de CSV; optioneel `--only-row-kind x_single_variant` als je alleen de x-ankers wilt (niet de `shared_sku_peer`-rij). Of **handles** (URL-slug): `--handles "a,b"` of `--handles-file` met één handle per regel.
+
+```bash
+python3 scripts/shopify_set_products_draft.py --csv output/logs/duplicate_x_sku_peers.csv
+python3 scripts/shopify_set_products_draft.py --csv output/logs/duplicate_x_sku_peers.csv --only-row-kind x_single_variant --apply
+python3 scripts/shopify_set_products_draft.py --handles-file handles.txt --apply
+```
+
+Zie [`scripts/shopify_set_products_draft.py`](scripts/shopify_set_products_draft.py).
+
+---
+
 ## Ontbrekende productafbeeldingen (`shopify_export_all` → Shopify API)
 
-Vergelijkt **Image Src** in een `shopify_export_all_*.csv` met de live shop en voegt ontbrekende afbeeldingen toe (zelfde URL’s als in de CSV). Er worden **alleen producten opgehaald voor handles die in die CSV voorkomen** (niet de hele catalogus); parallel via **`--workers N`** (default 6). Standaard alleen een rapport; **`--apply`** voert de wijzigingen uit. Geen `KTM_SKIP_SHOPIFY_API=1` — dit script heeft live API nodig.
+Twee stappen: **(1) vergelijken** (export + live shop, rapport + JSON), **(2) ontbrekende URL’s koppelen** aan producten. Zelfde URL’s als in de CSV; alleen handles uit de export worden opgehaald. Stap 1 gebruikt standaard **GraphQL** (`handle:a OR handle:b …` in batches) — veel minder API-rondes dan één REST-call per handle; ontbrekende handles daarna via REST. Geen `KTM_SKIP_SHOPIFY_API=1`.
 
-**Dry-run** (default; gebruikt standaard de nieuwste `shopify_export_all_*.csv` in `output/products/`):
-
-```bash
-python3 scripts/shopify_sync_images_from_csv.py
-```
-
-**Echt bijwerken** (optioneel `--csv` / `--limit N` voor testen):
+**Stap 1 — vergelijken** (standaard nieuwste `shopify_export_all_*.csv`; schrijft `output/logs/shopify_missing_image_tasks.json` als er ontbrekende images zijn):
 
 ```bash
-python3 scripts/shopify_sync_images_from_csv.py --apply
+python3 scripts/shopify_compare_export_images.py
+python3 scripts/shopify_compare_export_images.py --fetch-workers 16 --graphql-batch 30
+# alleen als je de oude trage modus wilt (één REST GET per handle):
+python3 scripts/shopify_compare_export_images.py --rest-only --workers 12
 ```
 
-Zie de docstring in [`scripts/shopify_sync_images_from_csv.py`](scripts/shopify_sync_images_from_csv.py) voor alle opties.
+Alleen rapport, geen JSON: `--no-tasks-file`.
+
+**Stap 2 — koppelen in Shopify** (leest het JSON van stap 1; parallelle POST’s):
+
+```bash
+python3 scripts/shopify_apply_missing_images.py
+python3 scripts/shopify_apply_missing_images.py --apply-workers 12
+```
+
+Alleen tellen, geen wijzigingen: `python3 scripts/shopify_apply_missing_images.py --dry-run`
+
+Zie de docstrings in [`scripts/shopify_compare_export_images.py`](scripts/shopify_compare_export_images.py) en [`scripts/shopify_apply_missing_images.py`](scripts/shopify_apply_missing_images.py).
 
 ---
 
