@@ -72,8 +72,8 @@ query MirrorProducts($cursor: String) {{
               legacyResourceId
               sku
               title
-              price
-              compareAtPrice
+              price {{ amount }}
+              compareAtPrice {{ amount }}
               updatedAt{eta_block}
             }}
           }}
@@ -95,8 +95,8 @@ query MirrorVariants($id: ID!, $cursor: String) {{
           legacyResourceId
           sku
           title
-          price
-          compareAtPrice
+          price {{ amount }}
+          compareAtPrice {{ amount }}
           updatedAt{eta_block}
         }}
       }}
