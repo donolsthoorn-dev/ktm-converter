@@ -1,10 +1,13 @@
-# Verwerkt maximaal één `queued` rij in Supabase `jobs` (zie scripts/supabase_job_worker.py).
+# Kopieer dit bestand naar: .github/workflows/job-worker.yml
+# (GitHub voert alleen workflows uit die in die map staan.)
 #
-# Vereiste repository secrets:
-#   SUPABASE_URL                  — https://xxxx.supabase.co
-#   SUPABASE_SERVICE_ROLE_KEY     — service role (niet de anon key)
+# Waarom hier en niet direct in .github?
+# Bij push via HTTPS + Personal Access Token zonder "workflow"-scope weigert GitHub
+# wijzigingen onder .github/workflows/. Met SSH of een PAT mét workflow-scope mag het wél.
 #
-# Push naar .github/workflows/ vereist een GitHub-token met "workflow"-scope (PAT) of SSH.
+# Vereiste repository secrets (GitHub → Settings → Secrets → Actions):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
 
 name: Job worker
 
