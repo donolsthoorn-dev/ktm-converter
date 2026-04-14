@@ -1,0 +1,53 @@
+---
+description: Conventions for KTM Shopify Python scripts (scripts/shopify_*.py)
+globs: scripts/shopify_*.py
+alwaysApply: false
+---
+
+# Shopify Script Conventions
+
+## Project layout
+
+- `config.py` — central env config (`SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_SHOP_DOMAIN`, `SHOPIFY_ADMIN_API_VERSION`, `SHOPIFY_SHOP_SLUG`, `VAT_MULTIPLIER`).
+- `scripts/` — standalone CLI scripts (not a package, no `__init__.py`).
+- `modules/` — shared library code.
+- `input/` — KTM CSV/XML source files (semicolon-delimited, `"quoted"` fields).
+- `output/` — generated reports/CSVs.
+- `cache/shopify_eta_sync_sku_variant.json` — SKU→variant cache built by `shopify_refresh_variant_cache.py`.
+
+## Script structure
+
+1. Shebang + docstring (Dutch, describes purpose, required env, usage examples).
+2. `PROJECT_ROOT = Path(__file__).resolve().parent.parent` and `sys.path.insert(0, str(PROJECT_ROOT))`.
+3. `import config` for Shopify credentials; `import shopify_sync_from_0150 as sync` for `load_variant_cache` / `DEFAULT_VARIANT_CACHE`.
+4. Own `load_dotenv()` function (copy pattern from existing scripts).
+5. `argparse` with sensible defaults pointing to `input/`, `output/`, `cache/`.
+6. `main() -> int` returning exit code; `if __name__ == "__main__": raise SystemExit(main())`.
+
+## Shopify REST API patterns
+
+- `requests.Session` with `trust_env = False` and `proxies={"http": None, "https": None}`.
+- Handle HTTP 429 (rate limit → `time.sleep(2)`) and 5xx (retry → `time.sleep(3)`).
+- Paginate via `Link` header (`rel="next"`); sleep 0.5 s between pages.
+- When only a subset of product IDs is needed, pass `only_product_ids` and break early.
+
+## SKU normalisation
+
+Always `strip().upper()` — consistent with variant cache and all sync scripts.
+
+## CSV output
+
+- Delimiter: `;` (Excel-friendly).
+- `csv.writer(f, delimiter=";", quoting=csv.QUOTE_MINIMAL)`.
+- Dutch column headers, e.g. `Oud_artikelnummer;Vervangend_artikelnummer`.
+- Print summary stats to stdout at the end.
+
+## CSV input (KTM exports)
+
+- Auto-detect delimiter with `csv.Sniffer(sample, delimiters=";,\t")`, fallback `;`.
+- Look up columns by header name, fall back to positional index.
+
+## Language
+
+- Docstrings, CLI help, and print messages in **Dutch**.
+- Code identifiers (variables, functions) in **English**.
