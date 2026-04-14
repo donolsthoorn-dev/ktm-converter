@@ -1,12 +1,10 @@
 # Elke nacht: mirror-job in de wachtrij zetten + worker draaien (één run).
 #
-# GitHub-cron is ALLEEN UTC — geen “Amsterdam-tijd” knop.
-# - Zomertijd (CEST, ~eind mrt t/m eind okt): 01:00 NL = 23:00 UTC op de *vorige* kalenderdag.
-#   Daarom: cron 10 23 * * * (~01:10 's nachts in Amsterdam tijdens CEST).
-# - Wintertijd (CET): 01:10 NL = 00:10 UTC → gebruik dan "10 0 * * *" (twee keer per jaar omschakelen
-#   of accepteer in de zomer geen run precies op winter-CET-01:00 met één vaste regel).
+# GitHub-cron is ALLEEN UTC.
+# - 04:00 's nachts Amsterdam tijdens CEST = 02:00 UTC (zelfde kalenderdag).
+# - 04:00 tijdens CET (winter) = 03:00 UTC → wijzig cron dan naar "0 3 * * *" rond klokomzetting.
 #
-# GitHub kan geplande runs enkele minuten uitstellen; check Actions rond 01:15 NL-tijd.
+# GitHub kan geplande runs enkele minuten uitstellen.
 #
 # Zelfde secrets als job-worker.yml + queue-script.
 
@@ -14,7 +12,7 @@ name: Nightly Shopify mirror
 
 on:
   schedule:
-    - cron: "10 23 * * *"
+    - cron: "0 2 * * *"
   workflow_dispatch:
 
 jobs:
