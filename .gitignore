@@ -67,7 +67,8 @@ input/
 # input/*0150*.csv
 
 
-# FTP staging files
+# FTP staging files (geen grote XML in downloads-root — GitHub limit 100 MB)
+downloads/*.xml
 downloads/ftp/*
 !downloads/ftp/.gitkeep
 
