@@ -51,6 +51,7 @@ output/logs/
 # ------------------------------
 # Generated exports / reports
 # ------------------------------
+output/*.csv
 output/products/*.csv
 output/ids/*.csv
 output/ymm/*.csv
@@ -69,3 +70,10 @@ input/
 # FTP staging files
 downloads/ftp/*
 !downloads/ftp/.gitkeep
+
+# ------------------------------
+# converter/ (Next.js)
+# ------------------------------
+converter/node_modules/
+converter/.next/
+converter/out/
