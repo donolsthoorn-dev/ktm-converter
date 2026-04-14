@@ -1,5 +1,9 @@
 # Verwerkt maximaal één `queued` job (scripts/supabase_job_worker.py).
-# Secrets: repo → Settings → Secrets and variables → Actions → SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+#
+# Actions-secrets (repo → Settings → Secrets and variables → Actions):
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+#   SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
+# Optioneel: SHOPIFY_ADMIN_API_VERSION, SHOPIFY_VARIANT_ETA_*, SHOPIFY_PRODUCT_FITS_ON_*
 
 name: Job worker
 
@@ -25,4 +29,11 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE }}
+          SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
+          SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
+          SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
         run: python scripts/supabase_job_worker.py

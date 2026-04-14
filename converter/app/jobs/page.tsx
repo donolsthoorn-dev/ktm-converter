@@ -19,8 +19,11 @@ type JobRow = {
 
 const JOB_TYPES = [
   { value: "worker_stub", label: "Worker stub (test)" },
+  {
+    value: "shopify_catalog_mirror",
+    label: "Shopify catalogus → Supabase (producten, varianten, prijzen; optioneel YMM/ETA)",
+  },
   { value: "ingest_input", label: "Nieuwe input verwerken (later)" },
-  { value: "shopify_mirror", label: "Shopify → Supabase spiegel (later)" },
 ];
 
 export default function JobsDashboardPage() {

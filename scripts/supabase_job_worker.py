@@ -2,10 +2,11 @@
 """
 Pakt één `queued` job uit Supabase `jobs`, zet deze op running → success/failed (stub).
 
-Bedoeld voor GitHub Actions (schedule / workflow_dispatch). Vereist omgevingsvariabelen:
+Bedoeld voor GitHub Actions (schedule / workflow_dispatch). Vereist o.a.:
 
-  SUPABASE_URL          — project-URL (zelfde als NEXT_PUBLIC_SUPABASE_URL)
-  SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+  Voor job_type shopify_catalog_mirror: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
+  (zie .env.example / workflow job-worker.yml)
 
 Gebruik (vanaf projectroot):
 
@@ -17,12 +18,23 @@ Exitcode: 0 als er geen job was of de run gelukt is; 1 bij configuratie-/HTTP-fo
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+os.chdir(ROOT)
+
+from modules.env_loader import load_dotenv  # noqa: E402
+
+load_dotenv()
 
 
 def _iso_now() -> str:
@@ -104,6 +116,39 @@ def _run_stub(job: dict[str, Any]) -> tuple[str, str | None]:
     return ("", f"Onbekend job_type (nog niet geïmplementeerd): {jt!r}")
 
 
+def _run_shopify_mirror(
+    job: dict[str, Any],
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    del job  # payload kan later gebruikt worden
+    from modules.shopify_supabase_mirror import run_mirror
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+
+    stats, err = run_mirror(session, base, headers, log=_log)
+    summary = "\n".join(log_lines)
+    if stats:
+        summary = f"{summary}\n{json.dumps(stats, ensure_ascii=False)}".strip()
+    return (summary or json.dumps(stats, ensure_ascii=False), err)
+
+
+def _dispatch_job(
+    job: dict[str, Any],
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    jt = job.get("job_type") or ""
+    if jt == "shopify_catalog_mirror":
+        return _run_shopify_mirror(job, session, base, headers)
+    return _run_stub(job)
+
+
 def main() -> int:
     base = _rest_base()
     headers = _headers()
@@ -137,7 +182,7 @@ def main() -> int:
         print(f"PATCH running mislukt: {e}", file=sys.stderr)
         return 1
 
-    log_summary, err = _run_stub(job)
+    log_summary, err = _dispatch_job(job, session, base, headers)
     finished: dict[str, Any] = {
         "finished_at": _iso_now(),
         "log_summary": log_summary or None,
