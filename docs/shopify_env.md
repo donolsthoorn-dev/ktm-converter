@@ -19,7 +19,7 @@ cp .env.example .env
 
 | Variabele | Verplicht | Beschrijving |
 |-----------|-----------|--------------|
-| `SHOPIFY_ACCESS_TOKEN` | Ja voor API | Admin API access token (`shpat_...`). |
+| `SHOPIFY_ACCESS_TOKEN` | Ja voor API | Admin API access token uit Shopify Admin (Develop apps). |
 | `SHOPIFY_SHOP_DOMAIN` | Nee | Default `ktm-shop-nl.myshopify.com`. |
 | `SHOPIFY_SHOP_SLUG` | Nee | Subdomein vóór `.myshopify.com` (GraphQL-host). |
 | `SHOPIFY_ADMIN_API_VERSION` | Nee | Default `2024-10`. |
