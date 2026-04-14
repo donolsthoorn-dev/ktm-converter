@@ -72,8 +72,8 @@ query MirrorProducts($cursor: String) {{
               legacyResourceId
               sku
               title
-              price {{ amount }}
-              compareAtPrice {{ amount }}
+              price
+              compareAtPrice
               updatedAt{eta_block}
             }}
           }}
@@ -95,8 +95,8 @@ query MirrorVariants($id: ID!, $cursor: String) {{
           legacyResourceId
           sku
           title
-          price {{ amount }}
-          compareAtPrice {{ amount }}
+          price
+          compareAtPrice
           updatedAt{eta_block}
         }}
       }}
@@ -158,6 +158,7 @@ def _graphql(
 
 
 def _dec_price(raw: object | None) -> str | None:
+    """Shopify GraphQL: `price` is soms een Money-scalar (string), soms een object met `amount`."""
     if raw is None:
         return None
     if isinstance(raw, dict):
