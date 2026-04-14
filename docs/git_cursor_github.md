@@ -14,7 +14,7 @@ Cursor gebruikt gewoon je systeem-`git`. Als `git push` in de Terminal werkt, we
 
 ### 1. Maak een sleutel (als je die nog niet hebt)
 
-In Terminal:
+In Terminal: **typ of plak alleen de onderstaande regel** — niet de `` ``` ``-tekens uit deze pagina (die zijn alleen voor opmaak in de editor).
 
 ```bash
 ssh-keygen -t ed25519 -C "jouw@email.nl"
@@ -36,7 +36,11 @@ ssh-add ~/.ssh/id_ed25519
 pbcopy < ~/.ssh/id_ed25519.pub
 ```
 
-Ga naar GitHub: **Settings → SSH and GPG keys → New SSH key** → plakken → opslaan.
+**Belangrijk:** dit is **niet** de instellingenpagina van je *repository* (`…/ktm-converter/settings`). Ook **niet** “Deploy keys” daar.
+
+- Klik **rechtsboven** op je **profielfoto** → **Settings** (accountinstellingen).
+- Linkermenu: **SSH and GPG keys** — of open direct: [github.com/settings/keys](https://github.com/settings/keys)
+- **New SSH key** → titel (bijv. `MacBook`) → plakken → **Add SSH key**.
 
 ### 4. Test
 
@@ -96,20 +100,9 @@ git remote set-url origin https://github.com/donolsthoorn-dev/ktm-converter.git
 
 ---
 
-## Workflow-bestand weer activeren (optioneel)
+## Job-worker workflow
 
-Het job-worker workflow-bestand staat als kopie in **`docs/github-actions-job-worker.yml`**.  
-Als je **SSH** (optie A) gebruikt, mag je het terugzetten:
-
-```bash
-mkdir -p .github/workflows
-cp docs/github-actions-job-worker.yml .github/workflows/job-worker.yml
-git add .github/workflows/job-worker.yml
-git commit -m "ci: enable job worker workflow"
-git push origin main
-```
-
-Met HTTPS + beperkt token zou die push weer falen — met SSH niet.
+Het actieve bestand staat in **`.github/workflows/job-worker.yml`** (na SSH-setup kun je dat gewoon pushen). In `docs/github-actions-job-worker.yml` staat alleen een korte verwijzing.
 
 ---
 
