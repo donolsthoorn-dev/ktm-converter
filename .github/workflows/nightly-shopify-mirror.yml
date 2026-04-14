@@ -1,7 +1,12 @@
 # Elke nacht: mirror-job in de wachtrij zetten + worker draaien (één run).
 #
-# Tijd: 00:00 UTC ~ 01:00 's nachts in Nederland bij wintertijd (CET).
-# In zomer (CEST) is dat 02:00 lokaal. Pas de cron aan als je een ander vaste UTC-tijd wilt.
+# GitHub-cron is ALLEEN UTC — geen “Amsterdam-tijd” knop.
+# - Zomertijd (CEST, ~eind mrt t/m eind okt): 01:00 NL = 23:00 UTC op de *vorige* kalenderdag.
+#   Daarom: cron 0 23 * * * (~01:00 's nachts in Amsterdam tijdens CEST).
+# - Wintertijd (CET): 01:00 NL = 00:00 UTC → gebruik dan "0 0 * * *" (twee keer per jaar omschakelen
+#   of accepteer in de zomer geen run precies op winter-CET-01:00 met één vaste regel).
+#
+# GitHub kan geplande runs enkele minuten uitstellen; check Actions rond 01:15 NL-tijd.
 #
 # Zelfde secrets als job-worker.yml + queue-script.
 
@@ -9,14 +14,8 @@ name: Nightly Shopify mirror
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch:
-    inputs:
-      max_shopify_pages:
-        description: "Test — stop na zoveel product-pagina's (~40 producten/pagina). Leeg = volledige catalogus."
-        required: false
-        default: ""
-        type: string
 
 jobs:
   mirror:
@@ -48,8 +47,6 @@ jobs:
           SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
           SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
           SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
-          # Alleen ingevuld bij handmatige Run workflow; bij schedule leeg = volledige catalogus
-          KTM_SHOPIFY_MIRROR_MAX_PAGES: ${{ github.event.inputs.max_shopify_pages }}
         run: python scripts/supabase_job_worker.py
 
       # Volgende stap (nog te bouwen): prijsbron (bv. 0150) vs shopify_variants in Supabase
