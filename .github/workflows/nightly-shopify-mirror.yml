@@ -2,8 +2,8 @@
 #
 # GitHub-cron is ALLEEN UTC — geen “Amsterdam-tijd” knop.
 # - Zomertijd (CEST, ~eind mrt t/m eind okt): 01:00 NL = 23:00 UTC op de *vorige* kalenderdag.
-#   Daarom: cron 0 23 * * * (~01:00 's nachts in Amsterdam tijdens CEST).
-# - Wintertijd (CET): 01:00 NL = 00:00 UTC → gebruik dan "0 0 * * *" (twee keer per jaar omschakelen
+#   Daarom: cron 10 23 * * * (~01:10 's nachts in Amsterdam tijdens CEST).
+# - Wintertijd (CET): 01:10 NL = 00:10 UTC → gebruik dan "10 0 * * *" (twee keer per jaar omschakelen
 #   of accepteer in de zomer geen run precies op winter-CET-01:00 met één vaste regel).
 #
 # GitHub kan geplande runs enkele minuten uitstellen; check Actions rond 01:15 NL-tijd.
@@ -14,7 +14,7 @@ name: Nightly Shopify mirror
 
 on:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "10 23 * * *"
   workflow_dispatch:
 
 jobs:
