@@ -154,6 +154,12 @@ python3 scripts/prepare_input_from_ftp.py --extract-xml-from-zips
 
 ---
 
+## Git push vanuit Cursor (GitHub)
+
+Als push weigert vanwege **`workflow` scope**: je gebruikt HTTPS met een token zonder workflow-recht. **Structurele fix:** SSH voor `origin` — stap-voor-stap in [`docs/git_cursor_github.md`](docs/git_cursor_github.md).
+
+---
+
 ## Handig
 
 Laatste delta-CSV vinden:
