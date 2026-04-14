@@ -6,6 +6,7 @@ Vereist: config (of env) met SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN, SHOPIFY_
 Optioneel (env):
   SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE / SHOPIFY_VARIANT_ETA_METAFIELD_KEY — variant-ETA → shopify_eta
   SHOPIFY_PRODUCT_FITS_ON_NAMESPACE / SHOPIFY_PRODUCT_FITS_ON_KEY — product JSON → shopify_ymm.ymm_json
+  KTM_SHOPIFY_MIRROR_MAX_PAGES — positief getal = stop na zoveel product-pagina's (test; ~40 producten/pagina).
 """
 
 from __future__ import annotations
@@ -25,6 +26,18 @@ import config
 _REQUEST_TIMEOUT = (15, 120)
 _PAGE_PRODUCTS = 40
 _PAGE_VARIANTS = 250
+
+
+def _mirror_max_pages() -> int | None:
+    """Testlimiet: stop na dit aantal Shopify product-pagina's (None = geen limiet)."""
+    raw = os.environ.get("KTM_SHOPIFY_MIRROR_MAX_PAGES", "").strip()
+    if not raw:
+        return None
+    try:
+        n = int(raw, 10)
+        return n if n > 0 else None
+    except ValueError:
+        return None
 
 
 def _fits_on_ns_key() -> tuple[str, str]:
@@ -263,6 +276,8 @@ def run_mirror(
     q_products, q_variants, use_fits, _use_eta = _mirror_queries()
 
     product_cursor: str | None = None
+    page_limit = _mirror_max_pages()
+    truncated = False
 
     try:
         while True:
@@ -391,6 +406,10 @@ def run_mirror(
             stats["ymm_rows"] += len(ymm_rows)
             stats["eta_rows"] += len(eta_rows)
 
+            if page_limit is not None and stats["pages"] >= page_limit:
+                if page_info.get("hasNextPage"):
+                    truncated = True
+                break
             if not page_info.get("hasNextPage"):
                 break
             product_cursor = page_info.get("endCursor")
@@ -400,6 +419,10 @@ def run_mirror(
             f"Spiegel klaar: {stats['products_upserted']} producten, "
             f"{stats['variants_upserted']} varianten, {stats['pages']} Shopify-pagina's."
         ]
+        if truncated:
+            parts.append(
+                f"[Test] Gestopt na {page_limit} pagina('s); niet de volledige catalogus."
+            )
         if stats["ymm_rows"]:
             parts.append(f"YMM: {stats['ymm_rows']} rijen.")
         if stats["eta_rows"]:
