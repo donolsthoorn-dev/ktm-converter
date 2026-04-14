@@ -131,10 +131,10 @@ def _run_shopify_mirror(
         log_lines.append(msg)
 
     stats, err = run_mirror(session, base, headers, log=_log)
-    summary = "\n".join(log_lines)
-    if stats:
-        summary = f"{summary}\n{json.dumps(stats, ensure_ascii=False)}".strip()
-    return (summary or json.dumps(stats, ensure_ascii=False), err)
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
 
 
 def _dispatch_job(

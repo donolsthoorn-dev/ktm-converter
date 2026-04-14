@@ -391,14 +391,20 @@ def run_mirror(
             stats["ymm_rows"] += len(ymm_rows)
             stats["eta_rows"] += len(eta_rows)
 
-            _log(
-                f"Pagina {stats['pages']}: +{len(prod_rows)} producten, +{len(var_rows)} varianten"
-            )
-
             if not page_info.get("hasNextPage"):
                 break
             product_cursor = page_info.get("endCursor")
             time.sleep(0.35)
+
+        parts = [
+            f"Spiegel klaar: {stats['products_upserted']} producten, "
+            f"{stats['variants_upserted']} varianten, {stats['pages']} Shopify-pagina's."
+        ]
+        if stats["ymm_rows"]:
+            parts.append(f"YMM: {stats['ymm_rows']} rijen.")
+        if stats["eta_rows"]:
+            parts.append(f"ETA: {stats['eta_rows']} rijen.")
+        _log(" ".join(parts))
 
         return (stats, None)
     except (requests.RequestException, RuntimeError, ValueError, KeyError) as e:
