@@ -1,0 +1,34 @@
+# Verwerkt maximaal één `queued` rij in Supabase `jobs` (zie scripts/supabase_job_worker.py).
+#
+# Vereiste repository secrets:
+#   SUPABASE_URL                  — https://xxxx.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY     — service role (niet de anon key)
+#
+# Push naar .github/workflows/ vereist een GitHub-token met "workflow"-scope (PAT) of SSH.
+
+name: Job worker
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Elke 6 uur (UTC); pas aan of zet uit door schedule te verwijderen
+    - cron: "17 */6 * * *"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install "requests>=2.28,<3"
+
+      - name: Process one queued job
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/supabase_job_worker.py

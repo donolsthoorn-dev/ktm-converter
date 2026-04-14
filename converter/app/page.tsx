@@ -14,6 +14,10 @@ export default function HomePage() {
           <a href="/api/health/supabase">/api/health/supabase</a> — database bereikbaar
           (vereist env vars)
         </li>
+        <li>
+          <a href="/jobs">/jobs</a> — joblijst + handmatig triggeren (met{" "}
+          <code>JOB_TRIGGER_SECRET</code>)
+        </li>
       </ul>
     </main>
   );
