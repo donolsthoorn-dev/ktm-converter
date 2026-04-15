@@ -483,9 +483,17 @@ def main() -> int:
         print("Dry-run: geen producten aangepast. Voeg --apply toe om op DRAFT te zetten.", flush=True)
         return 0
 
-    print("Apply-modus: producten op DRAFT zetten...", flush=True)
-    ok_count, failed = _set_products_draft(sess, rows_sorted)
-    print(f"Klaar: {ok_count}/{len(rows_sorted)} succesvol op DRAFT gezet.", flush=True)
+    apply_rows = [row for row in rows_sorted if bool(row.get("reason_sold_out"))]
+    print(
+        f"Apply-modus: alleen sold_out-producten op DRAFT zetten ({len(apply_rows)} van {len(rows_sorted)} kandidaten).",
+        flush=True,
+    )
+    if not apply_rows:
+        print("Geen sold_out-producten gevonden; er is niets aangepast.", flush=True)
+        return 0
+
+    ok_count, failed = _set_products_draft(sess, apply_rows)
+    print(f"Klaar: {ok_count}/{len(apply_rows)} succesvol op DRAFT gezet.", flush=True)
 
     if failed:
         print("Mislukte updates:", file=sys.stderr)
