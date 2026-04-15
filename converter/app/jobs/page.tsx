@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useState } from "react";
 import Link from "next/link";
 
-/** Weergave altijd NL-tijd (winter/zomer automatisch via DST). */
+/** Gelijk aan Supabase `jobs_nl.*_nl`: altijd Europe/Amsterdam, niet de browser-tijdzone. */
 const dateTimeNlAmsterdam: Intl.DateTimeFormatOptions = {
   timeZone: "Europe/Amsterdam",
 };
