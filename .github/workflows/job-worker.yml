@@ -1,6 +1,6 @@
 # Elke run: mirror-job in de wachtrij + één job verwerken (Shopify → Supabase).
 #
-# Schedule: elk heel uur (`0 * * * *`, UTC).
+# Trigger via Supabase pg_cron (workflow_dispatch).
 #
 # Prijs/ETA-sync vanuit FTP zit in een aparte workflow: price_eta_status_sync.yml
 # (testen met workflow_dispatch; later eventueel na deze run via workflow_run of een offset-cron).
@@ -16,8 +16,6 @@ name: Job worker
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 * * * *"
 
 jobs:
   run:

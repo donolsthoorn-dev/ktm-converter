@@ -19,8 +19,6 @@ on:
           - staging
           - apply
         default: staging
-  schedule:
-    - cron: "30 * * * *"
   # workflow_run:
   #   workflows: [Job worker]
   #   types: [completed]
@@ -29,7 +27,6 @@ jobs:
   sync:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     env:
@@ -72,6 +69,27 @@ jobs:
           KTM_SFTP_FILES: ${{ secrets.KTM_SFTP_FILES }}
           KTM_PREPARE_FILES: ${{ secrets.KTM_PREPARE_FILES }}
         run: python scripts/prepare_input_from_ftp.py
+
+      - name: Valideer complete prijs-CSV set (1100/0910/0150/0140)
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
+        run: |
+          missing=0
+          for f in \
+            1100_35_Z1_EUR_EN_csv.csv \
+            0910_35_Z1_EUR_EN_csv.csv \
+            0150_35_Z1_EUR_EN_csv.csv \
+            0140_35_Z1_EUR_EN_csv.csv; do
+            if [ ! -s "input/$f" ]; then
+              echo "Ontbreekt of leeg: input/$f"
+              missing=1
+            else
+              ls -l "input/$f"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Onvolledige CSV-set; stop om verkeerde delta te voorkomen."
+            exit 1
+          fi
 
       - name: CSV vs mirror → Supabase pricelist_sync_staging
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
