@@ -34,8 +34,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Modus (workflow_dispatch)
+        run: echo "mode=${{ github.event.inputs.mode }}"
+
       - name: Restore prijs/ETA sync cache (alleen bij apply)
-        if: inputs.mode == 'apply'
+        if: github.event.inputs.mode == 'apply'
         uses: actions/cache/restore@v5
         with:
           path: |
@@ -55,7 +58,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Variant-cache bijwerken indien nodig (alleen bij apply)
-        if: inputs.mode == 'apply'
+        if: github.event.inputs.mode == 'apply'
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
@@ -90,14 +93,14 @@ jobs:
         run: python scripts/prepare_input_from_ftp.py
 
       - name: CSV vs mirror → Supabase pricelist_sync_staging
-        if: inputs.mode == 'staging'
+        if: github.event.inputs.mode == 'staging'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python scripts/build_pricelist_supabase_staging.py
 
       - name: Prijs/ETA/status → Shopify
-        if: inputs.mode == 'apply'
+        if: github.event.inputs.mode == 'apply'
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
@@ -107,7 +110,7 @@ jobs:
         run: python scripts/shopify_sync_from_pricelist_csv.py
 
       - name: Zorg dat delta-state bestand bestaat (cache-upload, apply)
-        if: always() && inputs.mode == 'apply'
+        if: always() && github.event.inputs.mode == 'apply'
         run: |
           mkdir -p cache
           if [ ! -f cache/shopify_pricelist_sync_state.json ]; then
@@ -115,7 +118,7 @@ jobs:
           fi
 
       - name: Save prijs/ETA sync cache
-        if: always() && inputs.mode == 'apply'
+        if: always() && github.event.inputs.mode == 'apply'
         continue-on-error: true
         uses: actions/cache/save@v5
         with:

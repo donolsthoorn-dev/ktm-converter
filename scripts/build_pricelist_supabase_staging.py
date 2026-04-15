@@ -82,21 +82,36 @@ def _fetch_paginated(
     headers: dict[str, str],
     table: str,
     select: str,
+    order: str | None = None,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     offset = 0
     while True:
+        params: dict[str, str] = {
+            "select": select,
+            "limit": str(_PAGE),
+            "offset": str(offset),
+        }
+        if order:
+            params["order"] = order
         r = sess.get(
             f"{base}/{table}",
             headers=headers,
-            params={
-                "select": select,
-                "limit": str(_PAGE),
-                "offset": str(offset),
-            },
+            params=params,
             timeout=_REQUEST_TIMEOUT,
         )
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as e:
+            body = (e.response.text or "")[:2500]
+            print(
+                f"Supabase GET {table} → HTTP {e.response.status_code}. "
+                f"Controleer migraties (001 mirror, 002 pricelist_sync_staging) en RLS/service role. "
+                f"Antwoord: {body}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise SystemExit(1) from e
         chunk = r.json()
         if not chunk:
             break
@@ -184,7 +199,17 @@ def main() -> int:
 
     batch_id = args.batch_id or uuid.uuid4()
     today = date.today()
-    csv_paths = sync.resolve_csv_paths(args.csv_paths)
+    try:
+        csv_paths = sync.resolve_csv_paths(args.csv_paths)
+    except FileNotFoundError as e:
+        print(
+            f"Geen prijs-CSV in input/: {e}\n"
+            "Controleer FTP (KTM_SFTP_*), of prepare_input_from_ftp bestanden kopieert "
+            "(KTM_SFTP_FILES / KTM_PREPARE_FILES) en of downloads/ftp de CSV’s bevat.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
     desired_by_sku = sync.read_pricelist_csv_desired_many(csv_paths, today)
 
     print(f"Batch: {batch_id}", flush=True)
@@ -202,6 +227,7 @@ def main() -> int:
         headers,
         "shopify_variants",
         "shopify_variant_id,shopify_product_id,sku,price",
+        order="shopify_variant_id.asc",
     )
     print(f"  → {len(variants)} variant-rijen", flush=True)
 
@@ -212,6 +238,7 @@ def main() -> int:
         headers,
         "shopify_products",
         "shopify_product_id,status",
+        order="shopify_product_id.asc",
     )
     status_by_pid: dict[int, str] = {}
     for row in products:
@@ -226,6 +253,7 @@ def main() -> int:
         headers,
         "shopify_eta",
         "shopify_variant_id,eta_date",
+        order="shopify_variant_id.asc",
     )
     eta_by_vid: dict[int, Any] = {}
     for row in etas:
