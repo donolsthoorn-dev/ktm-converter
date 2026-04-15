@@ -22,6 +22,7 @@ import argparse
 import importlib.util
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +150,9 @@ def main() -> int:
     if not args.dry_run and not token:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt", file=sys.stderr)
         return 1
+    product_status_sleep_sec = float(
+        (os.environ.get("SHOPIFY_PRODUCT_STATUS_SLEEP_SEC") or "").strip() or "0.25"
+    )
 
     base = _rest_base()
     headers = _headers()
@@ -291,12 +295,19 @@ def main() -> int:
     # Product status (dedupe per product)
     product_sess = sync._http_session()
     deduped = [(pid, sku_ps[1]) for pid, sku_ps in product_ops_by_pid.items()]
+    if deduped:
+        print(
+            f"Product status pacing: {product_status_sleep_sec:.2f}s tussen requests",
+            flush=True,
+        )
     for idx, (pid, ps) in enumerate(deduped, start=1):
         st_rest = "draft" if ps == "DRAFT" else "active"
         if not sync.rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess):
             errors += 1
         if idx == 1 or idx % progress_every == 0 or idx == len(deduped):
             print(f"Product status {idx}/{len(deduped)}", flush=True)
+        if product_status_sleep_sec > 0:
+            time.sleep(product_status_sleep_sec)
 
     if benign:
         print(f"Opmerking: {benign} idempotente ETA-clear meldingen genegeerd.", flush=True)
