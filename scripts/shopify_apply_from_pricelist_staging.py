@@ -133,8 +133,19 @@ def main() -> int:
     token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
     shop = os.environ.get("SHOPIFY_SHOP_DOMAIN", "ktm-shop-nl.myshopify.com").strip()
     api_ver = ((os.environ.get("SHOPIFY_ADMIN_API_VERSION") or "").strip() or "2024-10")
-    ns = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE", "global").strip()
-    key_mf = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_KEY", "inventory_policy_eta_date").strip()
+    ns = ((os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE") or "").strip() or "global")
+    key_mf = (
+        (os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_KEY") or "").strip()
+        or "inventory_policy_eta_date"
+    )
+    print(f"ETA metafield: namespace={ns!r}, key={key_mf!r}", flush=True)
+    if len(key_mf) < 2:
+        print(
+            "Ongeldige SHOPIFY_VARIANT_ETA_METAFIELD_KEY (te kort/leeg); stop om massale userErrors te voorkomen.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
     if not args.dry_run and not token:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt", file=sys.stderr)
         return 1
