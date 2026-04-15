@@ -482,7 +482,9 @@ def main() -> int:
 
     token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
     shop = os.environ.get("SHOPIFY_SHOP_DOMAIN", "ktm-shop-nl.myshopify.com").strip()
-    api_ver = os.environ.get("SHOPIFY_ADMIN_API_VERSION", "2024-10").strip()
+    api_ver = (
+        (os.environ.get("SHOPIFY_ADMIN_API_VERSION") or "").strip() or "2024-10"
+    )
     ns = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE", "global").strip()
     key = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_KEY", "inventory_policy_eta_date").strip()
 

@@ -30,7 +30,10 @@ except ImportError:
     raise SystemExit(1)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 DEFAULT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
+
+import config  # noqa: E402
 
 
 def load_dotenv(path: Path | None = None) -> None:
@@ -143,8 +146,8 @@ def main() -> int:
     args = p.parse_args()
 
     token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
-    shop = os.environ.get("SHOPIFY_SHOP_DOMAIN", "ktm-shop-nl.myshopify.com").strip()
-    api_ver = os.environ.get("SHOPIFY_ADMIN_API_VERSION", "2024-10").strip()
+    shop = config.SHOPIFY_SHOP_DOMAIN
+    api_ver = config.SHOPIFY_ADMIN_API_VERSION
 
     if not token:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt (.env of export).", flush=True)

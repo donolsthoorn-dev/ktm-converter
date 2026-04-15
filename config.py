@@ -29,9 +29,12 @@ def _resolve_xml_file() -> str:
 # ----------------------------------
 
 SHOPIFY_ACCESS_TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
-SHOPIFY_SHOP_DOMAIN = os.environ.get("SHOPIFY_SHOP_DOMAIN", "ktm-shop-nl.myshopify.com").strip()
+_shop_raw = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
+SHOPIFY_SHOP_DOMAIN = _shop_raw if _shop_raw else "ktm-shop-nl.myshopify.com"
 SHOPIFY_SHOP_SLUG = os.environ.get("SHOPIFY_SHOP_SLUG", "ktm-shop-nl").strip()
-SHOPIFY_ADMIN_API_VERSION = os.environ.get("SHOPIFY_ADMIN_API_VERSION", "2024-10").strip()
+# Lege secret in GitHub Actions zet de var wél maar op ""; dan moet de default alsnog gelden.
+_api_ver_raw = os.environ.get("SHOPIFY_ADMIN_API_VERSION", "").strip()
+SHOPIFY_ADMIN_API_VERSION = _api_ver_raw if _api_ver_raw else "2024-10"
 SHOPIFY_CDN_FILES_BASE_URL = os.environ.get(
     "SHOPIFY_CDN_FILES_BASE_URL",
     "https://cdn.shopify.com/s/files/1/0511/7820/9461/files/",

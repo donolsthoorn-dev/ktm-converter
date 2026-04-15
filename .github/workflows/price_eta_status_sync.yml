@@ -1,17 +1,26 @@
-# FTP → KTM prijs-CSV's (0140/0910/0150/1100) → shopify_sync_from_pricelist_csv
-# (delta t.o.v. vorige run, via Actions-cache; later: delta t.o.v. Supabase shopify_variants).
+# FTP → input/ → daarna óf Supabase staging (review), óf direct Shopify (apply).
 #
-# Bedoeld om los van de mirror te draaien: testen met workflow_dispatch; later eventueel koppelen
-# aan het einde van "Job worker" (workflow_run) of een cron enkele minuten ná de mirror-cron.
+# staging: geen Shopify API; vult public.pricelist_sync_staging (migratie 002_*).
+# apply: variant-cache + shopify_sync_from_pricelist_csv.
+#   Let op: dat script vergelijkt nog met JSON-state, niet met goedgekeurde staging-rijen;
+#   gebruik apply pas na review wanneer je de CSV-delta vertrouwt. Later: apply uit staging.
 #
-# Zelfde Actions-secrets als job-worker + FTP (zie .env.example):
-#   SHOPIFY_*, KTM_TRANSFER_PROTOCOL, KTM_SFTP_HOST, KTM_SFTP_USER, KTM_SFTP_PASSWORD, …
+# Secrets staging: SUPABASE_*, KTM_* (FTP). Secrets apply: + SHOPIFY_*.
+#
+# Spiegel (shopify_*) moet actueel zijn → draai job-worker vóór staging als je tegen de laatste Shopify-stand vergelijkt.
 
 name: price_eta_status_sync
 
 on:
   workflow_dispatch:
-  # Na testen: onderstaand uit comment halen om na een geslaagde "Job worker"-run te starten.
+    inputs:
+      mode:
+        description: "staging = alleen Supabase-tabel vullen; apply = Shopify bijwerken"
+        type: choice
+        options:
+          - staging
+          - apply
+        default: staging
   # workflow_run:
   #   workflows: [Job worker]
   #   types: [completed]
@@ -25,8 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Restore prijs/ETA sync cache (variant-map + delta-state)
-        # v5 = Node 24 runtime (v4 = Node 20, deprecated op GitHub-hosted runners)
+      - name: Restore prijs/ETA sync cache (alleen bij apply)
+        if: inputs.mode == 'apply'
         uses: actions/cache/restore@v5
         with:
           path: |
@@ -45,7 +54,8 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Variant-cache bijwerken indien nodig
+      - name: Variant-cache bijwerken indien nodig (alleen bij apply)
+        if: inputs.mode == 'apply'
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
@@ -79,7 +89,15 @@ jobs:
           KTM_PREPARE_FILES: ${{ secrets.KTM_PREPARE_FILES }}
         run: python scripts/prepare_input_from_ftp.py
 
+      - name: CSV vs mirror → Supabase pricelist_sync_staging
+        if: inputs.mode == 'staging'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/build_pricelist_supabase_staging.py
+
       - name: Prijs/ETA/status → Shopify
+        if: inputs.mode == 'apply'
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
@@ -88,8 +106,8 @@ jobs:
           SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
         run: python scripts/shopify_sync_from_pricelist_csv.py
 
-      - name: Zorg dat delta-state bestand bestaat (cache-upload)
-        if: always()
+      - name: Zorg dat delta-state bestand bestaat (cache-upload, apply)
+        if: always() && inputs.mode == 'apply'
         run: |
           mkdir -p cache
           if [ ! -f cache/shopify_pricelist_sync_state.json ]; then
@@ -97,7 +115,7 @@ jobs:
           fi
 
       - name: Save prijs/ETA sync cache
-        if: always()
+        if: always() && inputs.mode == 'apply'
         continue-on-error: true
         uses: actions/cache/save@v5
         with:
