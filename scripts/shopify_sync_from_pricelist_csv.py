@@ -214,7 +214,7 @@ def _parse_sales_price_incl_vat(raw: str) -> str | None:
 def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
     """
     Per SKU (uppercase): eta_iso (None = metafield wissen), price_incl (None = geen prijsupdate),
-    product_status ACTIVE|DRAFT.
+    product_status ACTIVE|DRAFT, plus originele ERP ArticleStatus en afgeleide published-flag.
     """
     encodings = ("utf-8", "utf-8-sig", "cp1252", "latin1")
     out: dict[str, dict] = {}
@@ -259,6 +259,8 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                         "eta_iso": eta_iso,
                         "price_incl": price_incl,
                         "product_status": product_status,
+                        "article_status_code": st,
+                        "published": st != "80",
                     }
             return out
         except UnicodeDecodeError:

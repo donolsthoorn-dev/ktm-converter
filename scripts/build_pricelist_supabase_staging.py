@@ -280,6 +280,8 @@ def main() -> int:
         prop_price = _to_decimal_price(d.get("price_incl"))
         prop_eta = d.get("eta_iso")
         prop_stat = str(d.get("product_status") or "ACTIVE")
+        prop_article_status = str(d.get("article_status_code") or "").strip()
+        prop_published = bool(d.get("published", prop_article_status != "80"))
 
         for v in vrows:
             vid = int(v["shopify_variant_id"])
@@ -306,6 +308,8 @@ def main() -> int:
                 "proposed_price": float(prop_price) if prop_price is not None else None,
                 "proposed_eta_date": _eta_key(prop_eta),
                 "proposed_product_status": prop_stat,
+                "proposed_article_status_code": prop_article_status,
+                "proposed_published": prop_published,
                 "price_changed": pc,
                 "eta_changed": ec,
                 "status_changed": sc,

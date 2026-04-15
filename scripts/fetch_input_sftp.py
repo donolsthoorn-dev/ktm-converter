@@ -45,6 +45,20 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = _env(name)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(
+            f"Ongeldige integer voor {name}={raw!r}; fallback naar {default}.",
+            file=sys.stderr,
+        )
+        return default
+
+
 def _protocol() -> str:
     p = _env("KTM_TRANSFER_PROTOCOL", "sftp").lower()
     if p not in ("sftp", "ftps", "ftp"):
@@ -72,7 +86,7 @@ def _connect_sftp():
         )
         raise SystemExit(2)
 
-    port = int(_env("KTM_SFTP_PORT", "22"))
+    port = _env_int("KTM_SFTP_PORT", 22)
     password = _env("KTM_SFTP_PASSWORD")
     key_path = _env("KTM_SFTP_KEY_PATH")
 
@@ -129,8 +143,7 @@ def _connect_ftp(use_tls: bool):
         )
         raise SystemExit(2)
 
-    default_port = "21"
-    port = int(_env("KTM_SFTP_PORT", default_port))
+    port = _env_int("KTM_SFTP_PORT", 21)
     ftp = FTP_TLS() if use_tls else FTP()
     timeout_sec = float(_env("KTM_FTP_TIMEOUT_SEC", "120") or "120")
     ftp.connect(host=host, port=port, timeout=timeout_sec)
