@@ -99,6 +99,69 @@ jobs:
             exit 1
           fi
 
+      - name: Debug SKU uit ingelezen CSV's
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
+        env:
+          DEBUG_SKU: 3PW250017701
+        run: |
+          python - <<'PY'
+          import csv
+          import os
+          from pathlib import Path
+          from modules.pricing_loader import detect_0150_csv_delimiter
+
+          sku_target = (os.environ.get("DEBUG_SKU") or "").strip().upper()
+          if not sku_target:
+            print("DEBUG_SKU leeg; skip")
+            raise SystemExit(0)
+
+          files = [
+            "1100_35_Z1_EUR_EN_csv.csv",
+            "0910_35_Z1_EUR_EN_csv.csv",
+            "0150_35_Z1_EUR_EN_csv.csv",
+            "0140_35_Z1_EUR_EN_csv.csv",
+          ]
+          input_dir = Path("input")
+          all_hits = []
+          for name in files:
+            p = input_dir / name
+            hits = []
+            with open(p, newline="", encoding="utf-8") as fh:
+              first = fh.readline()
+              fh.seek(0)
+              delim = detect_0150_csv_delimiter(first)
+              r = csv.reader(fh, delimiter=delim)
+              h = next(r, None)
+              if not h:
+                print(f"{name}: lege file")
+                continue
+              try:
+                sku_col = h.index("ArticleNumber")
+                eta_col = h.index("hqETADate")
+                st_col = h.index("ArticleStatus")
+              except ValueError:
+                sku_col, eta_col, st_col = 1, 22, 10
+              for idx, row in enumerate(r, start=2):
+                need = max(sku_col, eta_col, st_col) + 1
+                if len(row) < need:
+                  continue
+                sku = (row[sku_col] or "").strip().upper()
+                if sku == sku_target:
+                  rec = (name, idx, (row[eta_col] or "").strip(), (row[st_col] or "").strip())
+                  hits.append(rec)
+                  all_hits.append(rec)
+            if hits:
+              for rec in hits:
+                print(f"{rec[0]} line {rec[1]} -> hqETADate={rec[2]!r}, ArticleStatus={rec[3]!r}")
+            else:
+              print(f"{name}: geen hit voor {sku_target}")
+
+          if not all_hits:
+            print(f"FOUT: SKU {sku_target} komt in geen van de 4 prijs-CSV's voor.")
+            raise SystemExit(1)
+          print(f"Gekozen waarde (laatste wint): file={all_hits[-1][0]}, eta={all_hits[-1][2]!r}, status={all_hits[-1][3]!r}")
+          PY
+
       - name: CSV vs mirror → Supabase pricelist_sync_staging
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         env:
