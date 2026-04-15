@@ -1,0 +1,51 @@
+name: shopify_auto_deactivate_invalid_products
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = echt op draft zetten, false = alleen controleren"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+  schedule:
+    # Dagelijks om 05:00 (UTC)
+    - cron: "0 5 * * *"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Auto deactiveer producten zonder prijs / uitverkocht
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.apply }}" != "true" ]; then
+            python scripts/shopify_auto_deactivate_invalid_products.py
+          else
+            python scripts/shopify_auto_deactivate_invalid_products.py --apply
+          fi
+
+      - name: Upload rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-deactivate-invalid-products-report
+          path: output/auto_deactivate_invalid_products.csv
+          if-no-files-found: ignore
