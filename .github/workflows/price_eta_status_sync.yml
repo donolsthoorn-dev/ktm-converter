@@ -53,8 +53,8 @@ jobs:
           KTM_SFTP_USER: ${{ secrets.KTM_SFTP_USER }}
           KTM_SFTP_PASSWORD: ${{ secrets.KTM_SFTP_PASSWORD }}
           KTM_SFTP_REMOTE_DIR: ${{ secrets.KTM_SFTP_REMOTE_DIR }}
-          KTM_SFTP_LOCAL_DIR: ${{ secrets.KTM_SFTP_LOCAL_DIR }}
-          KTM_SFTP_FILES: ${{ secrets.KTM_SFTP_FILES }}
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
           KTM_SFTP_PATTERN: ${{ secrets.KTM_SFTP_PATTERN }}
           KTM_FTP_TIMEOUT_SEC: ${{ secrets.KTM_FTP_TIMEOUT_SEC }}
           KTM_FTP_RETRIES: ${{ secrets.KTM_FTP_RETRIES }}
@@ -73,9 +73,9 @@ jobs:
       - name: Staging → input/
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         env:
-          KTM_SFTP_LOCAL_DIR: ${{ secrets.KTM_SFTP_LOCAL_DIR }}
-          KTM_SFTP_FILES: ${{ secrets.KTM_SFTP_FILES }}
-          KTM_PREPARE_FILES: ${{ secrets.KTM_PREPARE_FILES }}
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+          KTM_PREPARE_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
         run: python scripts/prepare_input_from_ftp.py
 
       - name: Valideer complete prijs-CSV set (1100/0910/0150/0140)
