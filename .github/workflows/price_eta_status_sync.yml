@@ -184,7 +184,7 @@ jobs:
 
       - name: Upload missing SKU rapport
         if: always() && (env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: missing-skus-in-shopify-mirror
           path: output/pricelist_missing_in_shopify.csv
