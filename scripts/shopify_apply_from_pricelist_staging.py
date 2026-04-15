@@ -39,6 +39,21 @@ _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
 
 
+def _is_benign_eta_clear_error(err: dict[str, Any]) -> bool:
+    """
+    Clearing a metafield is idempotent: if it is already absent, Shopify may return a userError.
+    Treat those as non-fatal for sync purposes.
+    """
+    msg = str(err.get("message") or "").lower()
+    return (
+        "not found" in msg
+        or "doesn't exist" in msg
+        or "does not exist" in msg
+        or "was not found" in msg
+        or "could not be found" in msg
+    )
+
+
 def _load_sync_module():
     path = ROOT / "scripts" / "shopify_sync_from_pricelist_csv.py"
     spec = importlib.util.spec_from_file_location("shopify_sync_from_pricelist_csv", path)
@@ -193,6 +208,7 @@ def main() -> int:
         return 0
 
     errors = 0
+    benign = 0
     progress_every = 250
 
     # ETA mutaties in batches.
@@ -218,7 +234,13 @@ def main() -> int:
             ]
             data = sync.graphql_metafields_delete(shop, token, api_ver, identifiers)
             uerr = ((data or {}).get("metafieldsDelete") or {}).get("userErrors") or []
-            errors += len(uerr)
+            for err in uerr:
+                if _is_benign_eta_clear_error(err):
+                    benign += 1
+                    continue
+                errors += 1
+                if errors <= 20:
+                    print(f"ETA clear userError: {err}", flush=True)
         else:
             mfs = [
                 {
@@ -232,7 +254,10 @@ def main() -> int:
             ]
             data = sync.graphql_metafields_set(shop, token, api_ver, mfs)
             uerr = ((data or {}).get("metafieldsSet") or {}).get("userErrors") or []
-            errors += len(uerr)
+            for err in uerr:
+                errors += 1
+                if errors <= 20:
+                    print(f"ETA set userError: {err}", flush=True)
         if b == 1 or b % 25 == 0:
             print(f"ETA batch {b}: type={kind}, size={len(batch)}", flush=True)
 
@@ -262,6 +287,8 @@ def main() -> int:
         if idx == 1 or idx % progress_every == 0 or idx == len(deduped):
             print(f"Product status {idx}/{len(deduped)}", flush=True)
 
+    if benign:
+        print(f"Opmerking: {benign} idempotente ETA-clear meldingen genegeerd.", flush=True)
     print(f"Klaar. fouten={errors}", flush=True)
     return 0 if errors == 0 else 2
 
