@@ -1,7 +1,7 @@
-# FTP → input/ → staging-delta in Supabase; apply leest direct uit staging.
+# FTP → input/ → staging-delta in Supabase; apply bouwt staging eerst opnieuw uit CSV.
 #
 # staging: geen Shopify API; vult public.pricelist_sync_staging (migratie 002_*).
-# apply: leest staging-delta en past die toe op Shopify (geen CSV/state-cache).
+# apply: haalt eerst CSV op en bouwt staging opnieuw op, daarna apply naar Shopify.
 #
 # Secrets staging: SUPABASE_*, KTM_* (FTP). Secrets apply: + SHOPIFY_*.
 #
@@ -48,7 +48,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Fetch prijsbestanden (FTP/SFTP/FTPS)
-        if: env.RUN_MODE == 'staging'
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         env:
           KTM_TRANSFER_PROTOCOL: ${{ secrets.KTM_TRANSFER_PROTOCOL }}
           KTM_SFTP_HOST: ${{ secrets.KTM_SFTP_HOST }}
@@ -66,7 +66,7 @@ jobs:
         run: python scripts/fetch_input_sftp.py
 
       - name: Staging → input/
-        if: env.RUN_MODE == 'staging'
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         env:
           KTM_SFTP_LOCAL_DIR: ${{ secrets.KTM_SFTP_LOCAL_DIR }}
           KTM_SFTP_FILES: ${{ secrets.KTM_SFTP_FILES }}
@@ -74,7 +74,7 @@ jobs:
         run: python scripts/prepare_input_from_ftp.py
 
       - name: CSV vs mirror → Supabase pricelist_sync_staging
-        if: env.RUN_MODE == 'staging'
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
