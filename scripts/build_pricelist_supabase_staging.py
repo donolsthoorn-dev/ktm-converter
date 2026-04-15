@@ -273,6 +273,7 @@ def main() -> int:
         )
         return 1
     desired_by_sku = sync.read_pricelist_csv_desired_many(csv_paths, today)
+    desired_product_status_by_pid: dict[str, str] = {}
 
     print(f"Batch: {batch_id}", flush=True)
     print(f"CSV-bronnen: {len(csv_paths)} bestand(en), {len(desired_by_sku)} unieke SKU's na merge", flush=True)
@@ -332,6 +333,17 @@ def main() -> int:
             continue
         by_sku.setdefault(sku, []).append(v)
 
+    if hasattr(sync, "resolve_desired_product_status_by_product_id"):
+        cache_for_status: dict[str, list[tuple[str, str | None]]] = {}
+        for sku, vrows in by_sku.items():
+            cache_for_status[sku] = [
+                (str(v["shopify_variant_id"]), str(v["shopify_product_id"]) if v.get("shopify_product_id") is not None else None)
+                for v in vrows
+            ]
+        desired_product_status_by_pid = sync.resolve_desired_product_status_by_product_id(
+            desired_by_sku, cache_for_status
+        )
+
     rows_out: list[dict[str, Any]] = []
     missing_mirror = 0
 
@@ -343,13 +355,17 @@ def main() -> int:
 
         prop_price = _to_decimal_price(d.get("price_incl"))
         prop_eta = d.get("eta_iso")
-        prop_stat = str(d.get("product_status") or "ACTIVE")
         prop_article_status = str(d.get("article_status_code") or "").strip()
         prop_published = bool(d.get("published", prop_article_status != "80"))
 
         for v in vrows:
             vid = int(v["shopify_variant_id"])
             pid = int(v["shopify_product_id"]) if v.get("shopify_product_id") is not None else None
+            prop_stat = (
+                desired_product_status_by_pid.get(str(pid), str(d.get("product_status") or "ACTIVE"))
+                if pid is not None
+                else str(d.get("product_status") or "ACTIVE")
+            )
             mirror_p = _to_decimal_price(v.get("price"))
             mirror_eta = eta_by_vid.get(vid)
             mirror_stat = status_by_pid.get(pid) if pid is not None else None

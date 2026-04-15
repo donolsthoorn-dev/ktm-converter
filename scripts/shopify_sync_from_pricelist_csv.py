@@ -14,7 +14,8 @@ zelf bestanden en volgorde.
 Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, ArticleStatus, …):
   - hqETADate      → variant-metafield global.inventory_policy_eta_date (type date)
   - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
-  - ArticleStatus  → als waarde 80: product op draft (niet gepubliceerd); anders active
+  - ArticleStatus  → variant-niveau: 80 = niet beschikbaar; product-niveau: alleen draft als
+                     alle varianten binnen dat product status 80 hebben, anders active
 
 Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; geen live variant-fetch per run):
   python3 scripts/shopify_refresh_variant_cache.py
@@ -827,6 +828,33 @@ def needs_update_product_status(
     return False
 
 
+def resolve_desired_product_status_by_product_id(
+    desired_by_sku: dict[str, dict],
+    sku_to_vp: dict[str, list[tuple[str, str | None]]],
+) -> dict[str, str]:
+    """
+    Productstatus wordt uit alle CSV-varianten van hetzelfde product afgeleid:
+    - ACTIVE zodra minimaal één variant niet 80 is
+    - DRAFT alleen als alle varianten 80 zijn
+    """
+    seen_active_by_pid: dict[str, bool] = {}
+    seen_any_by_pid: dict[str, bool] = {}
+    for sku, desired in desired_by_sku.items():
+        pairs = sku_to_vp.get(sku) or []
+        is_active = str(desired.get("product_status") or "ACTIVE").upper() == "ACTIVE"
+        for _vid, pid in pairs:
+            if not pid:
+                continue
+            spid = str(pid)
+            seen_any_by_pid[spid] = True
+            if is_active:
+                seen_active_by_pid[spid] = True
+    out: dict[str, str] = {}
+    for pid in seen_any_by_pid:
+        out[pid] = "ACTIVE" if seen_active_by_pid.get(pid) else "DRAFT"
+    return out
+
+
 def _merge_state(state: dict, sku: str, updates: dict) -> None:
     entry = dict(state.get(sku) or {})
     for k, v in updates.items():
@@ -984,6 +1012,10 @@ def main() -> int:
     eta_clear: list[tuple[str, str]] = []
     price_ops: list[tuple[str, str, str]] = []  # sku, vid, price
     product_ops: list[tuple[str, str, str]] = []  # sku, product_id, ACTIVE|DRAFT
+    product_skus: dict[str, set[str]] = defaultdict(set)
+    desired_product_status_by_pid = resolve_desired_product_status_by_product_id(
+        desired_by_sku, sku_to_vp
+    )
 
     n_skip_no_variant = 0
     for sku, d in desired_by_sku.items():
@@ -1009,29 +1041,19 @@ def main() -> int:
             for vid, _pid in pairs:
                 price_ops.append((sku, vid, d["price_incl"]))
 
-        ps = d["product_status"]
-        if needs_update_product_status(
-            args.force, state, sku, ps, unique_product_ids
-        ):
-            if not unique_product_ids:
-                if args.dry_run:
-                    product_ops.append((sku, "", ps))
-                else:
-                    print(
-                        f"  Waarschuwing: geen product_id in cache voor SKU {sku}; "
-                        "ververs cache met shopify_refresh_variant_cache.py",
-                        flush=True,
-                    )
-            else:
-                seen_pid_local: set[str] = set()
-                for _vid, pid in pairs:
-                    if not pid or pid in seen_pid_local:
-                        continue
-                    seen_pid_local.add(pid)
-                    if args.dry_run:
-                        product_ops.append((sku, pid, ps))
-                    else:
-                        product_ops.append((sku, pid, ps))
+        for pid in unique_product_ids:
+            if pid:
+                product_skus[str(pid)].add(sku)
+
+    # Productstatus op productniveau bepalen (niet laatste SKU-wint):
+    # minstens één ACTIVE-variant => product ACTIVE; anders DRAFT.
+    for pid, desired_ps in desired_product_status_by_pid.items():
+        skus_for_pid = sorted(product_skus.get(pid) or [])
+        if not skus_for_pid:
+            continue
+        sku_ref = skus_for_pid[0]
+        if needs_update_product_status(args.force, state, sku_ref, desired_ps, [pid]):
+            product_ops.append((sku_ref, pid, desired_ps))
 
     total_changes = len(eta_set) + len(eta_clear) + len(price_ops) + len(product_ops)
     print(
@@ -1225,24 +1247,7 @@ def main() -> int:
         save_state(state_path, state)
         time.sleep(0.1)
 
-    # Product status (dedupe op product_id: laatste wint)
-    seen_pid: set[str] = set()
-    product_ops_rev = list(reversed(product_ops))
-    deduped: list[tuple[str, str, str]] = []
-    for sku, pid, ps in product_ops_rev:
-        if not pid:
-            continue
-        if pid in seen_pid:
-            continue
-        seen_pid.add(pid)
-        deduped.append((sku, pid, ps))
-    deduped.reverse()
-
-    skus_by_product_id: dict[str, list[str]] = {}
-    for s, pairs in sku_to_vp.items():
-        for _v, p in pairs:
-            if p:
-                skus_by_product_id.setdefault(str(p), []).append(s)
+    deduped = [(sku, pid, ps) for sku, pid, ps in product_ops if pid]
 
     n_prod = len(deduped)
     if n_prod:
@@ -1272,8 +1277,8 @@ def main() -> int:
                 flush=True,
             )
         if ok:
-            for s in skus_by_product_id.get(str(pid), []):
-                if s in desired_by_sku and desired_by_sku[s]["product_status"] == ps:
+            for s in sorted(product_skus.get(str(pid)) or []):
+                if s in desired_by_sku:
                     _merge_state(
                         state,
                         s,
