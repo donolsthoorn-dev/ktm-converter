@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Eenmalig: vul cache/shopify_0150_sync_state.json vanuit een **Shopify Admin product-export** (CSV).
+Eenmalig: vul cache/shopify_pricelist_sync_state.json vanuit een **Shopify Admin product-export** (CSV).
 
 Dit is wat je bedoelde als “basis uit Shopify”: prijs en productstatus zoals ze nu in de shop staan,
-zonder alles eerst via de sync naar Shopify te duwen. Daarna doet shopify_sync_from_0150.py alleen
-nog delta’s t.o.v. je 0150-bestand.
+zonder alles eerst via de sync naar Shopify te duwen. Daarna doet shopify_sync_from_pricelist_csv.py
+alleen nog delta’s t.o.v. je KTM prijs-CSV’s.
 
 Wat zit **niet** in een standaard product-CSV:
   - Geen variant-numerieke ID’s → de **variant-cache** (shopify_eta_sync_sku_variant.json) blijft
     uit:  python3 scripts/shopify_refresh_variant_cache.py
-  - Geen ETA-metafield → optioneel **--merge-eta-from-0150** om hqETADate uit 0150 in state te zetten.
+  - Geen ETA-metafield → optioneel **--merge-eta-from-pricelist-csv** om hqETADate uit een
+    KTM-export in state te zetten (oude vlag **--merge-eta-from-0150** werkt nog).
 
 Kolomnamen (komma-gescheiden) zoals Shopify exporteert o.a.:
   Handle, …, Variant SKU, Variant Price, Status (active/draft/archived; vaak alleen op eerste rij per product).
@@ -19,8 +20,8 @@ Workflow:
   2) python3 scripts/shopify_refresh_variant_cache.py
   3) python3 scripts/bootstrap_state_from_shopify_export.py \\
        --shopify-csv export1.csv --shopify-csv export2.csv \\
-       --merge-eta-from-0150 input/0150_....csv
-  4) python3 scripts/shopify_sync_from_0150.py --csv input/0150_....csv
+       --merge-eta-from-pricelist-csv input/0150_35_Z1_EUR_EN_csv.csv
+  4) python3 scripts/shopify_sync_from_pricelist_csv.py
 
 Meerdere exports: zelfde optie herhalen; bij dezelfde SKU wint het **laatste** bestand.
 """
@@ -37,8 +38,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_sync_module():
-    path = PROJECT_ROOT / "scripts" / "shopify_sync_from_0150.py"
-    spec = importlib.util.spec_from_file_location("shopify_sync_from_0150", path)
+    path = PROJECT_ROOT / "scripts" / "shopify_sync_from_pricelist_csv.py"
+    spec = importlib.util.spec_from_file_location("shopify_sync_from_pricelist_csv", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Kan module niet laden: {path}")
     mod = importlib.util.module_from_spec(spec)
@@ -133,7 +134,7 @@ def main() -> int:
     sync.load_dotenv()
 
     p = argparse.ArgumentParser(
-        description="Vul shopify_0150_sync_state.json vanuit Shopify product-CSV export"
+        description="Vul shopify_pricelist_sync_state.json vanuit Shopify product-CSV export"
     )
     p.add_argument(
         "--shopify-csv",
@@ -144,10 +145,18 @@ def main() -> int:
         help="Shopify product-export (komma-CSV). Meerdere: optie herhalen; latere file wint bij dubbele SKU.",
     )
     p.add_argument(
+        "--merge-eta-from-pricelist-csv",
+        type=Path,
+        metavar="PAD",
+        dest="merge_eta_csv",
+        help="Optioneel: hqETADate uit KTM prijs-CSV (zelfde logica als sync) in state mergen",
+    )
+    p.add_argument(
         "--merge-eta-from-0150",
         type=Path,
         metavar="PAD",
-        help="Optioneel: hqETADate uit 0150 (zelfde logica als sync) in state mergen",
+        dest="merge_eta_csv",
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "--state-file",
@@ -189,12 +198,12 @@ def main() -> int:
 
     today = date.today()
     eta_by_sku: dict | None = None
-    if args.merge_eta_from_0150:
-        eta_path = args.merge_eta_from_0150.resolve()
+    if args.merge_eta_csv:
+        eta_path = args.merge_eta_csv.resolve()
         if not eta_path.is_file():
-            print(f"0150 niet gevonden: {eta_path}", flush=True)
+            print(f"Prijs-CSV niet gevonden: {eta_path}", flush=True)
             return 1
-        eta_by_sku = sync.read_0150_desired(eta_path, today)
+        eta_by_sku = sync.read_pricelist_csv_desired(eta_path, today)
 
     only_cache = not args.all_export_skus
     sku_to_vp: dict = {}
@@ -230,8 +239,8 @@ def main() -> int:
         f"Shopify-export(s) samen: {len(from_shop)} unieke SKU's\n"
         f"  State-regels geschreven: {len(state)}\n"
         f"  Overgeslagen (niet in variant-cache): {skipped if only_cache else 0}\n"
-        f"  ETA uit 0150 gemerged: "
-        f"{'ja' if eta_by_sku else 'nee — gebruik --merge-eta-from-0150 om ETA’s te alignen'}",
+        f"  ETA uit prijs-CSV gemerged: "
+        f"{'ja' if eta_by_sku else 'nee — gebruik --merge-eta-from-pricelist-csv om ETA’s te alignen'}",
         flush=True,
     )
     print(f"Geschreven: {out}", flush=True)

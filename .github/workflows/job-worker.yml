@@ -1,12 +1,16 @@
-# Elke run: mirror-job in de wachtrij + één job verwerken (zelfde flow als de oude Scheduled mirror).
-# Zo volstaat dit workflow voor periodieke Shopify → Supabase (prijzen op shopify_variants, ETA op shopify_eta).
+# Elke run: mirror-job in de wachtrij + één job verwerken (Shopify → Supabase).
+#
+# Schedule: `17 */6 * * *` = elke 6 uur op :17 UTC (00:17, 06:17, 12:17, 18:17).
+#
+# Prijs/ETA-sync vanuit FTP zit in een aparte workflow: price_eta_status_sync.yml
+# (testen met workflow_dispatch; later eventueel na deze run via workflow_run of een offset-cron).
 #
 # Verwerkt maximaal één `queued` job per run (scripts/supabase_job_worker.py).
 #
-# Actions-secrets (repo → Settings → Secrets and variables → Actions):
+# Actions-secrets:
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 #   SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
-# Optioneel: SHOPIFY_ADMIN_API_VERSION, SHOPIFY_VARIANT_ETA_*, SHOPIFY_PRODUCT_FITS_ON_*
+#   Optioneel: SHOPIFY_ADMIN_API_VERSION, SHOPIFY_VARIANT_ETA_*, SHOPIFY_PRODUCT_FITS_ON_*
 
 name: Job worker
 
@@ -19,7 +23,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      # v6: Node 24-runtime (Node 20-actions worden door GitHub afgeschaft; zie blog changelog 2025-09-19)
       - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6

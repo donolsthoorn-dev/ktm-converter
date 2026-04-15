@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Eenmalig: bouw shopify_0150_sync_state.json vanuit een **0150**-CSV (ERP-export) — **zonder** API.
+Eenmalig: bouw shopify_pricelist_sync_state.json vanuit een **KTM prijs-CSV** (ERP-export) — **zonder** API.
 
 Wil je de basis uit een **Shopify product-export**? Gebruik dan:
   scripts/bootstrap_state_from_shopify_export.py
 
-Zelfde berekening als shopify_sync_from_0150.py (ETA, prijs incl. BTW, draft bij status 80).
+Zelfde berekening als shopify_sync_from_pricelist_csv.py (ETA, prijs incl. BTW, draft bij status 80).
 
 Gebruik dit alleen als de **werkelijke** prijzen/ETA/status in Shopify **al gelijk zijn** aan dit
 bestand (bijv. na een import of als je bewust geen massale eerste sync wilt). Anders liegen we in
@@ -13,8 +13,8 @@ de state en worden echte verschillen niet meer geüpload.
 
 Workflow (eerste keer “rustig”):
   1) python3 scripts/shopify_refresh_variant_cache.py
-  2) python3 scripts/bootstrap_0150_sync_state_from_csv.py --csv input/jouw_0150.csv
-  3) python3 scripts/shopify_sync_from_0150.py --csv input/jouw_0150.csv
+  2) python3 scripts/bootstrap_pricelist_sync_state_from_csv.py --csv input/jouw_export.csv
+  3) python3 scripts/shopify_sync_from_pricelist_csv.py --csv input/jouw_export.csv
      → alleen echte wijzigingen t.o.v. dit bestand
 
 Opties:
@@ -22,7 +22,7 @@ Opties:
   --all-csv-skus           alle SKU-regels uit de CSV in state (ook zonder Shopify-variant)
 
 Maak eerst een backup van je huidige state als die al data bevat:
-  cp cache/shopify_0150_sync_state.json cache/shopify_0150_sync_state.json.bak
+  cp cache/shopify_pricelist_sync_state.json cache/shopify_pricelist_sync_state.json.bak
 """
 
 from __future__ import annotations
@@ -37,8 +37,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_sync_module():
-    path = PROJECT_ROOT / "scripts" / "shopify_sync_from_0150.py"
-    spec = importlib.util.spec_from_file_location("shopify_sync_from_0150", path)
+    path = PROJECT_ROOT / "scripts" / "shopify_sync_from_pricelist_csv.py"
+    spec = importlib.util.spec_from_file_location("shopify_sync_from_pricelist_csv", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Kan module niet laden: {path}")
     mod = importlib.util.module_from_spec(spec)
@@ -51,9 +51,13 @@ def main() -> int:
     sync.load_dotenv()
 
     p = argparse.ArgumentParser(
-        description="Vul shopify_0150_sync_state.json vanuit 0150-CSV (geen API)"
+        description="Vul shopify_pricelist_sync_state.json vanuit KTM prijs-CSV (geen API)"
     )
-    p.add_argument("--csv", metavar="PAD", help="0150-CSV (default: eerste *0150*.csv in input/)")
+    p.add_argument(
+        "--csv",
+        metavar="PAD",
+        help="KTM prijs-CSV (default: eerste bekende merk-export of *_Z1_EUR_EN_csv.csv in input/)",
+    )
     p.add_argument(
         "--state-file",
         type=Path,
@@ -77,7 +81,7 @@ def main() -> int:
 
     csv_path = sync.resolve_csv_path(args.csv)
     today = date.today()
-    desired = sync.read_0150_desired(csv_path, today)
+    desired = sync.read_pricelist_csv_desired(csv_path, today)
 
     if only_cache:
         cache_path = args.variant_cache.resolve()
@@ -124,7 +128,7 @@ def main() -> int:
 
 
 def _state_entry_from_desired(d: dict) -> dict:
-    """Zelfde velden als shopify_sync_from_0150 na succesvolle sync."""
+    """Zelfde velden als shopify_sync_from_pricelist_csv na succesvolle sync."""
     entry: dict = {
         "eta_iso": d["eta_iso"],
         "product_status": d["product_status"],

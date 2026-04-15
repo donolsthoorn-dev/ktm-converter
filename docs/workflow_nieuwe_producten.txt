@@ -5,7 +5,7 @@ Zie ook: docs/workflow.md (volledige operationele handleiding).
 
 Wat je overslaat
 ----------------
-- shopify_refresh_variant_cache.py en shopify_sync_eta_from_0150.py — alleen nodig als je
+- shopify_refresh_variant_cache.py en shopify_sync_eta_from_pricelist_csv.py — alleen nodig als je
   levertijden (ETA) vanuit 0150 naar Shopify wilt pushen via de API.
 - Die scripts zijn géén vervanging voor het 0150-bestand in input/: main.py gebruikt nog
   steeds input/*0150*.csv voor prijzen in de product-CSV.
@@ -70,4 +70,4 @@ Samenvatting
 Niet nodig in dit scenario (tenzij je alsnog ETA in Shopify wilt):
 
   python3 scripts/shopify_refresh_variant_cache.py
-  python3 scripts/shopify_sync_eta_from_0150.py
+  python3 scripts/shopify_sync_eta_from_pricelist_csv.py

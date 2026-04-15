@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stand-alone: leest KTM 0150-CSV (kolommen ArticleNumber + hqETADate) en werkt het
+Stand-alone: leest KTM prijs-CSV (kolommen ArticleNumber + hqETADate) en werkt het
 variant-metafield inventory_policy_eta_date in Shopify bij (type date, ISO YYYY-MM-DD).
 
 - Datum **vandaag of in de toekomst** → metafield zetten op die datum.
@@ -11,9 +11,9 @@ variant-metafield inventory_policy_eta_date in Shopify bij (type date, ISO YYYY-
 Bouw of ververs die cache met:
   python3 scripts/shopify_refresh_variant_cache.py
 
-Delta t.o.v. **cache/shopify_0150_sync_state.json** (zelfde als `shopify_sync_from_0150.py`): alleen
-mutaties waar de gewenste ETA nog niet in die state staat; na elke geslaagde batch wordt de state
-bijgewerkt. `--force` = alles opnieuw pushen (state negeren).
+Delta t.o.v. **cache/shopify_pricelist_sync_state.json** (zelfde als `shopify_sync_from_pricelist_csv.py`):
+alleen mutaties waar de gewenste ETA nog niet in die state staat; na elke geslaagde batch wordt de
+state bijgewerkt. `--force` = alles opnieuw pushen (state negeren).
 
 CSV-scheidingsteken (komma vs `;`) via `pricing_loader.detect_0150_csv_delimiter`.
 
@@ -26,11 +26,11 @@ Configuratie (omgevingsvariabelen, o.a. via project-root .env):
   SHOPIFY_VARIANT_ETA_METAFIELD_KEY — default inventory_policy_eta_date
 
 CLI:
-  python3 scripts/shopify_sync_eta_from_0150.py
-  python3 scripts/shopify_sync_eta_from_0150.py --csv input/0150_00_Z1_EUR_EN_csv.csv
-  python3 scripts/shopify_sync_eta_from_0150.py --dry-run
-  python3 scripts/shopify_sync_eta_from_0150.py --variant-cache pad/naar/sku_variant.json
-  python3 scripts/shopify_sync_eta_from_0150.py --force   # state negeren, volledige ETA-push
+  python3 scripts/shopify_sync_eta_from_pricelist_csv.py
+  python3 scripts/shopify_sync_eta_from_pricelist_csv.py --csv input/0150_35_Z1_EUR_EN_csv.csv
+  python3 scripts/shopify_sync_eta_from_pricelist_csv.py --dry-run
+  python3 scripts/shopify_sync_eta_from_pricelist_csv.py --variant-cache pad/naar/sku_variant.json
+  python3 scripts/shopify_sync_eta_from_pricelist_csv.py --force   # state negeren, volledige ETA-push
 
 Later uitbreidbaar (prijzen + cron) in hetzelfde bestand of een wrapper.
 """
@@ -41,6 +41,7 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import sys
 import time
 from datetime import date
@@ -57,7 +58,27 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
-DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
+DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_pricelist_sync_state.json"
+LEGACY_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
+
+DEFAULT_KTM_PRICE_CSV_NAMES: tuple[str, ...] = (
+    "1100_35_Z1_EUR_EN_csv.csv",
+    "0910_35_Z1_EUR_EN_csv.csv",
+    "0150_35_Z1_EUR_EN_csv.csv",
+    "0140_35_Z1_EUR_EN_csv.csv",
+)
+
+
+def migrate_legacy_state_file(target: Path) -> None:
+    if target.is_file() or target.resolve() != DEFAULT_STATE_FILE.resolve():
+        return
+    if not LEGACY_STATE_FILE.is_file():
+        return
+    shutil.copy2(LEGACY_STATE_FILE, target)
+    print(
+        f"Delta-state gemigreerd: {LEGACY_STATE_FILE.name} → {target.name}",
+        flush=True,
+    )
 
 
 def load_dotenv(path: Path | None = None) -> None:
@@ -149,10 +170,19 @@ def resolve_csv_path(explicit: str | None) -> Path:
             raise FileNotFoundError(f"CSV niet gevonden: {p}")
         return p.resolve()
     input_dir = PROJECT_ROOT / "input"
+    for name in DEFAULT_KTM_PRICE_CSV_NAMES:
+        p = input_dir / name
+        if p.is_file():
+            return p.resolve()
     for name in sorted(os.listdir(input_dir)):
-        if "0150" in name and name.endswith(".csv"):
+        if not name.endswith(".csv"):
+            continue
+        if name.endswith("_Z1_EUR_EN_csv.csv"):
             return (input_dir / name).resolve()
-    raise FileNotFoundError(f"Geen *0150*.csv in {input_dir}; gebruik --csv PAD")
+    raise FileNotFoundError(
+        f"Geen KTM prijs-CSV in {input_dir} (verwacht o.a. {', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)}); "
+        "gebruik --csv PAD"
+    )
 
 
 def load_state(path: Path) -> dict:
@@ -174,7 +204,7 @@ def save_state(path: Path, state: dict) -> None:
 
 
 def merge_eta_state(state: dict, sku: str, vid: str, iso: str | None) -> None:
-    """Zelfde velden als shopify_sync_from_0150 na geslaagde ETA-mutatie."""
+    """Zelfde velden als shopify_sync_from_pricelist_csv na geslaagde ETA-mutatie."""
     entry = dict(state.get(sku) or {})
     ev = dict(entry.get("eta_variants") or {})
     s = str(vid)
@@ -415,12 +445,12 @@ def main() -> int:
     load_dotenv()
 
     p = argparse.ArgumentParser(
-        description="0150 hqETADate -> Shopify variant-metafield inventory_policy_eta_date"
+        description="KTM prijs-CSV hqETADate -> Shopify variant-metafield inventory_policy_eta_date"
     )
     p.add_argument(
         "--csv",
         metavar="PAD",
-        help="0150-CSV (default: eerste *0150*.csv in input/)",
+        help="KTM prijs-CSV (default: eerste bekende merk-export of *_Z1_EUR_EN_csv.csv in input/)",
     )
     p.add_argument("--dry-run", action="store_true", help="Geen Shopify-API-calls")
     p.add_argument(
@@ -447,6 +477,8 @@ def main() -> int:
         help="Geen delta: alle geplande ETA zetten/wissen uitvoeren (state niet gebruiken om te skippen)",
     )
     args = p.parse_args()
+
+    migrate_legacy_state_file(args.state_file.resolve())
 
     token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
     shop = os.environ.get("SHOPIFY_SHOP_DOMAIN", "ktm-shop-nl.myshopify.com").strip()

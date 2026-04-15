@@ -3,15 +3,15 @@
 KTM-prijs-CSV(s) → Shopify: alleen wijzigingen doorzetten (delta) t.o.v. de vorige succesvolle run.
 
 Prijzen, ETA en publicatiestatus (draft/active) gaan **uitsluitend** via dit script; de delta is
-altijd: gewenste waarde uit de CSV-bron(zen) vergeleken met cache/shopify_0150_sync_state.json
+altijd: gewenste waarde uit de CSV-bron(zen) vergeleken met cache/shopify_pricelist_sync_state.json
 (geen massale uitlees van Shopify per run).
 
-**Standaard** worden (als ze in `input/` bestaan) vier exports **samengevoegd** — **laatste bestand
-wint** bij dezelfde SKU: `1100_35_Z1_EUR_EN_csv.csv`, `0910_35_Z1_EUR_EN_csv.csv`,
+**Standaard** worden (als ze in `input/` bestaan) vier merk-exports **samengevoegd** — **laatste
+bestand wint** bij dezelfde SKU: `1100_35_Z1_EUR_EN_csv.csv`, `0910_35_Z1_EUR_EN_csv.csv`,
 `0150_35_Z1_EUR_EN_csv.csv`, `0140_35_Z1_EUR_EN_csv.csv`. Met `--csv PAD` (meerdere keren) kies je
 zelf bestanden en volgorde.
 
-Leest uit dezelfde 0150-export als pricing_loader:
+Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, ArticleStatus, …):
   - hqETADate      → variant-metafield global.inventory_policy_eta_date (type date)
   - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
   - ArticleStatus  → als waarde 80: product op draft (niet gepubliceerd); anders active
@@ -20,17 +20,17 @@ Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; 
   python3 scripts/shopify_refresh_variant_cache.py
 
 Status van de laatst succesvol toegepaste waarden per SKU staat in:
-  cache/shopify_0150_sync_state.json
+  cache/shopify_pricelist_sync_state.json
 Het bestand wordt tussentijds weggeschreven (o.a. na elke geslaagde ETA-batch en periodiek bij
 prijs/product), zodat een onderbroken run niet opnieuw alle ETA-batches hoeft te doen.
 
 Typische workflow:
   1) Eén keer (of na nieuwe producten): python3 scripts/shopify_refresh_variant_cache.py
-  2) Meerdere keren per dag: python3 scripts/shopify_sync_from_0150.py
+  2) Meerdere keren per dag: python3 scripts/shopify_sync_from_pricelist_csv.py
 
 Eerste keer state vullen zonder alles te uploaden:
   • Basis = **Shopify product-export** (prijs/status): scripts/bootstrap_state_from_shopify_export.py
-  • Basis = **0150**-bestand (ERP): scripts/bootstrap_0150_sync_state_from_csv.py
+  • Basis = **KTM prijs-CSV** (ERP): scripts/bootstrap_pricelist_sync_state_from_csv.py
   (variant-ID-cache komt alleen uit shopify_refresh_variant_cache.py, niet uit een CSV.)
 
 Opties: --csv (herhaalbaar), --dry-run, --force, --variant-cache, --state-file, --price-workers,
@@ -43,6 +43,7 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import random
 import sys
 import threading
@@ -65,7 +66,8 @@ from config import VAT_MULTIPLIER  # noqa: E402
 from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
-DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
+DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_pricelist_sync_state.json"
+LEGACY_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
 
 # Standaard merge-volgorde: later in de lijst overschrijft bij dubbele ArticleNumber tussen bestanden.
 DEFAULT_KTM_PRICE_CSV_NAMES: tuple[str, ...] = (
@@ -74,6 +76,19 @@ DEFAULT_KTM_PRICE_CSV_NAMES: tuple[str, ...] = (
     "0150_35_Z1_EUR_EN_csv.csv",
     "0140_35_Z1_EUR_EN_csv.csv",
 )
+
+
+def migrate_legacy_state_file(target: Path) -> None:
+    """Eenmalig: oude bestandsnaam shopify_0150_sync_state.json → shopify_pricelist_sync_state.json."""
+    if target.is_file() or target.resolve() != DEFAULT_STATE_FILE.resolve():
+        return
+    if not LEGACY_STATE_FILE.is_file():
+        return
+    shutil.copy2(LEGACY_STATE_FILE, target)
+    print(
+        f"Delta-state gemigreerd: {LEGACY_STATE_FILE.name} → {target.name}",
+        flush=True,
+    )
 
 
 def load_dotenv(path: Path | None = None) -> None:
@@ -132,17 +147,26 @@ def resolve_csv_path(explicit: str | None) -> Path:
             raise FileNotFoundError(f"CSV niet gevonden: {p}")
         return p.resolve()
     input_dir = PROJECT_ROOT / "input"
+    for name in DEFAULT_KTM_PRICE_CSV_NAMES:
+        p = input_dir / name
+        if p.is_file():
+            return p.resolve()
     for name in sorted(os.listdir(input_dir)):
-        if "0150" in name and name.endswith(".csv"):
+        if not name.endswith(".csv"):
+            continue
+        if name.endswith("_Z1_EUR_EN_csv.csv"):
             return (input_dir / name).resolve()
-    raise FileNotFoundError(f"Geen *0150*.csv in {input_dir}; gebruik --csv PAD")
+    raise FileNotFoundError(
+        f"Geen KTM prijs-CSV in {input_dir} (verwacht o.a. {', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)}); "
+        "gebruik --csv PAD"
+    )
 
 
 def resolve_csv_paths(explicit: list[str] | None) -> list[Path]:
     """
     Lijst van prijs-CSV-paden. Zonder --csv: de vier standaard KTM-bestanden die in input/ bestaan
     (merge in vaste volgorde; ontbrekende namen worden overgeslagen met waarschuwing), anders
-    fallback naar één automatisch 0150-bestand. Met expliciete paden: alle moeten bestaan.
+    fallback naar één automatisch prijs-CSV-bestand. Met expliciete paden: alle moeten bestaan.
     """
     input_dir = PROJECT_ROOT / "input"
     if explicit:
@@ -187,7 +211,7 @@ def _parse_sales_price_incl_vat(raw: str) -> str | None:
         return None
 
 
-def read_0150_desired(csv_path: Path, today: date) -> dict[str, dict]:
+def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
     """
     Per SKU (uppercase): eta_iso (None = metafield wissen), price_incl (None = geen prijsupdate),
     product_status ACTIVE|DRAFT.
@@ -242,14 +266,14 @@ def read_0150_desired(csv_path: Path, today: date) -> dict[str, dict]:
     raise OSError(f"CSV kon niet worden gelezen: {csv_path}")
 
 
-def read_0150_desired_many(csv_paths: list[Path], today: date) -> dict[str, dict]:
+def read_pricelist_csv_desired_many(csv_paths: list[Path], today: date) -> dict[str, dict]:
     """
     Leest meerdere KTM-exporten; bij dezelfde SKU wint de **laatste** file in de lijst
     (zelfde semantiek als meerdere regels in één CSV: laatste wint).
     """
     merged: dict[str, dict] = {}
     for p in csv_paths:
-        merged.update(read_0150_desired(p, today))
+        merged.update(read_pricelist_csv_desired(p, today))
     return merged
 
 
@@ -829,7 +853,7 @@ def main() -> int:
     load_dotenv()
 
     p = argparse.ArgumentParser(
-        description="0150 → Shopify: ETA, prijs (×BTW), draft bij status 80 — alleen bij wijziging"
+        description="KTM prijs-CSV → Shopify: ETA, prijs (×BTW), draft bij status 80 — alleen bij wijziging"
     )
     p.add_argument(
         "--csv",
@@ -837,10 +861,10 @@ def main() -> int:
         metavar="PAD",
         dest="csv_paths",
         help=(
-            "Prijs-CSV in 0150-formaat (herhaalbaar voor merge). "
+            "KTM prijs-CSV (zelfde kolommen als ERP-export; herhaalbaar voor merge). "
             f"Default zonder deze vlag: merge van {', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)} "
             "die in input/ bestaan (volgorde = 1100 → 0910 → 0150 → 0140; laatste wint bij dubbele SKU), "
-            "of anders eerste *0150*.csv in input/."
+            "of anders eerste *_Z1_EUR_EN_csv.csv in input/."
         ),
     )
     p.add_argument("--dry-run", action="store_true", help="Geen API-calls; wel delta-tonen")
@@ -870,6 +894,9 @@ def main() -> int:
     )
     args = p.parse_args()
 
+    state_path = args.state_file.resolve()
+    migrate_legacy_state_file(state_path)
+
     graphql_inflight = args.graphql_inflight
     if graphql_inflight <= 0:
         graphql_inflight = int(os.environ.get("SHOPIFY_GRAPHQL_INFLIGHT", "4"))
@@ -890,7 +917,7 @@ def main() -> int:
 
     csv_paths = resolve_csv_paths(args.csv_paths)
     today = date.today()
-    desired_by_sku = read_0150_desired_many(csv_paths, today)
+    desired_by_sku = read_pricelist_csv_desired_many(csv_paths, today)
     print(
         "CSV-bronnen (volgorde: latere bestand wint bij dubbele SKU tussen bestanden):",
         flush=True,
@@ -927,7 +954,6 @@ def main() -> int:
             flush=True,
         )
 
-    state_path = args.state_file.resolve()
     state: dict = load_state(state_path) if not args.force else {}
     if args.force:
         print("--force: state genegeerd (volledige sync).", flush=True)

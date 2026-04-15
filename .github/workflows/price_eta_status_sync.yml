@@ -1,0 +1,106 @@
+# FTP → KTM prijs-CSV's (0140/0910/0150/1100) → shopify_sync_from_pricelist_csv
+# (delta t.o.v. vorige run, via Actions-cache; later: delta t.o.v. Supabase shopify_variants).
+#
+# Bedoeld om los van de mirror te draaien: testen met workflow_dispatch; later eventueel koppelen
+# aan het einde van "Job worker" (workflow_run) of een cron enkele minuten ná de mirror-cron.
+#
+# Zelfde Actions-secrets als job-worker + FTP (zie .env.example):
+#   SHOPIFY_*, KTM_TRANSFER_PROTOCOL, KTM_SFTP_HOST, KTM_SFTP_USER, KTM_SFTP_PASSWORD, …
+
+name: price_eta_status_sync
+
+on:
+  workflow_dispatch:
+  # Na testen: onderstaand uit comment halen om na een geslaagde "Job worker"-run te starten.
+  # workflow_run:
+  #   workflows: [Job worker]
+  #   types: [completed]
+
+jobs:
+  sync:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Restore prijs/ETA sync cache (variant-map + delta-state)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            cache/shopify_eta_sync_sku_variant.json
+            cache/shopify_pricelist_sync_state.json
+          key: ktm-pricelist-sync-never-${{ github.run_id }}
+          restore-keys: |
+            ktm-pricelist-sync-${{ runner.os }}-
+            ktm-0150-sync-${{ runner.os }}-
+          fail-on-cache-miss: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Variant-cache bijwerken indien nodig
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+        run: |
+          if [ ! -s cache/shopify_eta_sync_sku_variant.json ]; then
+            python scripts/shopify_refresh_variant_cache.py
+          fi
+
+      - name: Fetch prijsbestanden (FTP/SFTP/FTPS)
+        env:
+          KTM_TRANSFER_PROTOCOL: ${{ secrets.KTM_TRANSFER_PROTOCOL }}
+          KTM_SFTP_HOST: ${{ secrets.KTM_SFTP_HOST }}
+          KTM_SFTP_PORT: ${{ secrets.KTM_SFTP_PORT }}
+          KTM_SFTP_USER: ${{ secrets.KTM_SFTP_USER }}
+          KTM_SFTP_PASSWORD: ${{ secrets.KTM_SFTP_PASSWORD }}
+          KTM_SFTP_REMOTE_DIR: ${{ secrets.KTM_SFTP_REMOTE_DIR }}
+          KTM_SFTP_LOCAL_DIR: ${{ secrets.KTM_SFTP_LOCAL_DIR }}
+          KTM_SFTP_FILES: ${{ secrets.KTM_SFTP_FILES }}
+          KTM_SFTP_PATTERN: ${{ secrets.KTM_SFTP_PATTERN }}
+          KTM_FTP_TIMEOUT_SEC: ${{ secrets.KTM_FTP_TIMEOUT_SEC }}
+          KTM_FTP_RETRIES: ${{ secrets.KTM_FTP_RETRIES }}
+          KTM_FTP_RETRY_SLEEP_SEC: ${{ secrets.KTM_FTP_RETRY_SLEEP_SEC }}
+          KTM_FTP_BLOCKSIZE: ${{ secrets.KTM_FTP_BLOCKSIZE }}
+        run: python scripts/fetch_input_sftp.py
+
+      - name: Staging → input/
+        env:
+          KTM_SFTP_LOCAL_DIR: ${{ secrets.KTM_SFTP_LOCAL_DIR }}
+          KTM_SFTP_FILES: ${{ secrets.KTM_SFTP_FILES }}
+          KTM_PREPARE_FILES: ${{ secrets.KTM_PREPARE_FILES }}
+        run: python scripts/prepare_input_from_ftp.py
+
+      - name: Prijs/ETA/status → Shopify
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE }}
+          SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
+        run: python scripts/shopify_sync_from_pricelist_csv.py
+
+      - name: Zorg dat delta-state bestand bestaat (cache-upload)
+        if: always()
+        run: |
+          mkdir -p cache
+          if [ ! -f cache/shopify_pricelist_sync_state.json ]; then
+            echo '{}' > cache/shopify_pricelist_sync_state.json
+          fi
+
+      - name: Save prijs/ETA sync cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            cache/shopify_eta_sync_sku_variant.json
+            cache/shopify_pricelist_sync_state.json
+          key: ktm-pricelist-sync-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}

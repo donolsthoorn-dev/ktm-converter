@@ -61,7 +61,7 @@ def _header_index_ci(header: list[str], names: tuple[str, ...], default: int) ->
 
 def _resolve_0150_column_indices(header: list[str]) -> tuple[int, int, int, int | None]:
     """
-    Kolommen op naam (zelfde idee als shopify_sync_from_0150.read_0150_desired).
+    Kolommen op naam (zelfde idee als shopify_sync_from_pricelist_csv.read_pricelist_csv_desired).
     Fallback: vaste indices uit oudere vaste-layout export (B,E,K,X).
     """
     h = [x.strip() for x in header]

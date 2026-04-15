@@ -50,7 +50,7 @@ if str(PROJECT_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import config  # noqa: E402
-import shopify_sync_from_0150 as sync  # noqa: E402
+import shopify_sync_from_pricelist_csv as sync  # noqa: E402
 
 _REQUEST_TIMEOUT = (12, 120)
 

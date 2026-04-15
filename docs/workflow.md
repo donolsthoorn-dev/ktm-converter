@@ -33,7 +33,7 @@ Python-versie: zie `requires-python` in `pyproject.toml` (≥ 3.10).
    ```
 
 6. Apps: YMM → `output/ymm/ymm_APP_import_DELTA*.csv`; Metafields Manager → `output/metafields/product_metafields_metafields_manager_delta.csv`
-7. Optioneel 0150 → Shopify API (ETA): na nieuwe productimport eerst `python3 scripts/shopify_refresh_variant_cache.py`, daarna `python3 scripts/shopify_sync_eta_from_0150.py` (zie §3b)
+7. Optioneel KTM prijs-CSV → Shopify API (ETA): na nieuwe productimport eerst `python3 scripts/shopify_refresh_variant_cache.py`, daarna `python3 scripts/shopify_sync_eta_from_pricelist_csv.py` (zie §3b)
 
 **Alternatief — hele catalogus:** `export_product_ids_and_ymm.py` en `export_product_metafields.py` zonder `--delta-handles-csv` (zie `docs/metafields_manager_export.md`).
 
@@ -79,16 +79,16 @@ Opties: `--dry-run`, `--move`, `--files "a.zip,b.csv"`.
 
 ---
 
-## 3b. Shopify: variant-cache + 0150-API (ETA)
+## 3b. Shopify: variant-cache + KTM prijs-CSV (ETA)
 
-Het 0150-bestand in `input/` hoort bij dezelfde bron als `pricing_loader` / product-CSV; API-scripts (`shopify_sync_*.py`) muteren Shopify rechtstreeks.
+De prijs-CSV’s in `input/` (o.a. 0140/0910/0150/1100) horen bij dezelfde bron als `pricing_loader`; API-scripts (`shopify_sync_*.py`) muteren Shopify rechtstreeks.
 
 **SKU → variant-id-cache** (`cache/shopify_eta_sync_sku_variant.json`):
 
 - Opbouwen/verversen: `python3 scripts/shopify_refresh_variant_cache.py`
 - Na **nieuwe** productimport in Shopify opnieuw draaien, anders ontbreken nieuwe SKU’s.
 
-**ETA-sync:** `python3 scripts/shopify_sync_eta_from_0150.py` (optioneel `--dry-run`). Namespace/metafield: zie `.env` en `docs/shopify_env.md`.
+**ETA-sync:** `python3 scripts/shopify_sync_eta_from_pricelist_csv.py` (optioneel `--dry-run`). Namespace/metafield: zie `.env` en `docs/shopify_env.md`.
 
 ---
 
@@ -144,6 +144,6 @@ Uitgebreide commando’s, delta vs. volledig, `export_delta_app_imports.py`: **`
 3. Shopify: delta-CSV importeren (wachten)
 4. `export_product_ids_and_ymm.py` + `export_product_metafields.py` met jouw delta-pad
 5. Outputs controleren; YMM + metafields uploaden
-6. Optioneel §3b: variant-cache → `shopify_sync_eta_from_0150.py`
+6. Optioneel §3b: variant-cache → `shopify_sync_eta_from_pricelist_csv.py`
 
 Eerste keer / volledige resync: zonder delta-flags; zie `docs/metafields_manager_export.md`.

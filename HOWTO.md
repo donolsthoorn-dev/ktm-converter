@@ -69,9 +69,9 @@ Output o.a.: `output/metafields/product_metafields_metafields_manager_delta.csv`
 
 ---
 
-## Sync prijzen / ETA / draft-status (0150 → Shopify API)
+## Sync prijzen / ETA / draft-status (KTM prijs-CSV → Shopify API)
 
-Prijzen, ETA-datum en publicatiestatus gaan via **`shopify_sync_from_0150.py`** (niet via `main.py`-CSV).
+Prijzen, ETA-datum en publicatiestatus gaan via **`shopify_sync_from_pricelist_csv.py`** (niet via `main.py`-CSV).
 
 **Eén keer (of na nieuwe producten in Shopify, zodat SKU’s → variant-id’s kloppen):**
 
@@ -82,12 +82,12 @@ python3 scripts/shopify_refresh_variant_cache.py
 **Daarna sync:**
 
 ```bash
-python3 scripts/shopify_sync_from_0150.py
+python3 scripts/shopify_sync_from_pricelist_csv.py
 ```
 
-Opties o.a.: `--dry-run`, `--csv pad/naar/0150.csv` — zie docstring in het script.
+Opties o.a.: `--dry-run`, `--csv pad/naar/prijs-export.csv` (meerdere `--csv` voor merge) — zie docstring in het script.
 
-*Alleen* ETA via apart script (als je die flow gebruikt): `scripts/shopify_sync_eta_from_0150.py` — zie [`docs/workflow.md`](docs/workflow.md) §3b.
+*Alleen* ETA via apart script (als je die flow gebruikt): `scripts/shopify_sync_eta_from_pricelist_csv.py` — zie [`docs/workflow.md`](docs/workflow.md) §3b.
 
 ---
 

@@ -19,7 +19,7 @@ alwaysApply: false
 
 1. Shebang + docstring (Dutch, describes purpose, required env, usage examples).
 2. `PROJECT_ROOT = Path(__file__).resolve().parent.parent` and `sys.path.insert(0, str(PROJECT_ROOT))`.
-3. `import config` for Shopify credentials; `import shopify_sync_from_0150 as sync` for `load_variant_cache` / `DEFAULT_VARIANT_CACHE`.
+3. `import config` for Shopify credentials; `import shopify_sync_from_pricelist_csv as sync` for `load_variant_cache` / `DEFAULT_VARIANT_CACHE`.
 4. Own `load_dotenv()` function (copy pattern from existing scripts).
 5. `argparse` with sensible defaults pointing to `input/`, `output/`, `cache/`.
 6. `main() -> int` returning exit code; `if __name__ == "__main__": raise SystemExit(main())`.

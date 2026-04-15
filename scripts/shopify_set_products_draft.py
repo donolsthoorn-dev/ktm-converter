@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Zet Shopify-producten op status **DRAFT** via REST (zelfde aanpak als shopify_sync_from_0150).
+Zet Shopify-producten op status **DRAFT** via REST (zelfde aanpak als shopify_sync_from_pricelist_csv).
 
 Bron: CSV met **product_id_numeric**, door komma’s gescheiden **ID’s**, of **handles**
 (Admin → product-URL slug; wordt met GET ``products.json?handle=`` opgezocht).

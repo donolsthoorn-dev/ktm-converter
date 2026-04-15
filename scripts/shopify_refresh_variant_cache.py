@@ -4,7 +4,7 @@ Haalt alle variant-SKU's uit Shopify op en schrijft SKU → lijst van { variant_
 naar JSON (alle varianten met dezelfde SKU; duplicaat-SKU's worden allemaal opgenomen).
 
 Los aan te roepen (handmatig, of later op een server op vaste tijden). Scripts zoals
-`shopify_sync_eta_from_0150.py` en `shopify_sync_from_0150.py` gebruiken deze cache;
+`shopify_sync_eta_from_pricelist_csv.py` en `shopify_sync_from_pricelist_csv.py` gebruiken deze cache;
 ze halen zelf geen volledige variantlijst meer op. Oude cache (alleen variant-id string)
 wordt nog ondersteund bij inlezen.
 

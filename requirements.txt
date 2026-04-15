@@ -1,6 +1,6 @@
 # Voor scripts/fetch_input_sftp.py
 paramiko>=3.0.0,<4
-# Voor modules/shopify_client.py en scripts/shopify_sync_eta_from_0150.py
+# Voor modules/shopify_client.py en scripts/shopify_sync_eta_from_pricelist_csv.py
 requests>=2.28.0,<3
 # Voor modules/xml_loader.py en modules/ymm_export.py
 lxml>=5.0.0,<6

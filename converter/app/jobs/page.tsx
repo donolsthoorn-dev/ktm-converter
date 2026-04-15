@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 /** Gelijk aan Supabase `jobs_nl.*_nl`: altijd Europe/Amsterdam, niet de browser-tijdzone. */
@@ -22,6 +22,37 @@ type JobRow = {
   error_message: string | null;
 };
 
+function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  if (h < 24) return min ? `${h}u ${min}m` : `${h}u`;
+  const d = Math.floor(h / 24);
+  const hr = h % 24;
+  return hr ? `${d}d ${hr}u` : `${d}d`;
+}
+
+/** Looptijd: `started_at` → `finished_at` (of tot nu bij status running). Geen aparte duration-kolom in DB. */
+function jobDurationLabel(j: JobRow, nowMs: number): string {
+  const start = j.started_at ? new Date(j.started_at).getTime() : null;
+  const end = j.finished_at ? new Date(j.finished_at).getTime() : null;
+  const created = new Date(j.created_at).getTime();
+
+  if (j.status === "running" && start != null) {
+    return `${formatDurationMs(nowMs - start)} (bezig)`;
+  }
+  if (end != null) {
+    const t0 = start ?? created;
+    return formatDurationMs(end - t0);
+  }
+  return "—";
+}
+
 const JOB_TYPES = [
   { value: "worker_stub", label: "Worker stub (test)" },
   {
@@ -39,6 +70,7 @@ export default function JobsDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [jobType, setJobType] = useState(JOB_TYPES[0].value);
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const authHeader = useCallback(() => {
     return { Authorization: `Bearer ${secret.trim()}` };
@@ -77,6 +109,13 @@ export default function JobsDashboardPage() {
       setError(e instanceof Error ? e.message : "Trigger mislukt");
     }
   }, [authHeader, jobType, loadJobs]);
+
+  useEffect(() => {
+    if (!jobs?.some((j) => j.status === "running")) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 10_000);
+    return () => window.clearInterval(id);
+  }, [jobs]);
 
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1.25rem" }}>
@@ -169,6 +208,7 @@ export default function JobsDashboardPage() {
                   <th style={th}>Aangemaakt</th>
                   <th style={th}>Type</th>
                   <th style={th}>Status</th>
+                  <th style={th}>Duur</th>
                   <th style={th}>Trigger</th>
                   <th style={th}>Log / fout</th>
                 </tr>
@@ -181,6 +221,7 @@ export default function JobsDashboardPage() {
                     </td>
                     <td style={td}>{j.job_type}</td>
                     <td style={td}>{j.status}</td>
+                    <td style={td}>{jobDurationLabel(j, nowMs)}</td>
                     <td style={td}>{j.trigger_source}</td>
                     <td style={td}>
                       {j.error_message && (
