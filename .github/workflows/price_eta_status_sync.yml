@@ -182,6 +182,14 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python scripts/build_pricelist_supabase_staging.py
 
+      - name: Upload missing SKU rapport
+        if: always() && (env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply')
+        uses: actions/upload-artifact@v4
+        with:
+          name: missing-skus-in-shopify-mirror
+          path: output/pricelist_missing_in_shopify.csv
+          if-no-files-found: ignore
+
       - name: Apply staging delta → Shopify
         if: env.RUN_MODE == 'apply'
         env:

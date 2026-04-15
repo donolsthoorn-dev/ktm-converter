@@ -17,6 +17,7 @@ Tip: draai eerst de catalogus-mirror (job worker) zodat shopify_* actueel is.
 from __future__ import annotations
 
 import argparse
+import csv
 import importlib.util
 import json
 import os
@@ -279,6 +280,11 @@ def main() -> int:
         default=None,
         help="Vaste batch UUID (default: nieuwe uuid4)",
     )
+    p.add_argument(
+        "--missing-skus-csv",
+        default=str(ROOT / "output" / "pricelist_missing_in_shopify.csv"),
+        help="Pad voor rapport met CSV-SKU's zonder match in shopify_variants (leeg = niet schrijven)",
+    )
     args = p.parse_args()
 
     batch_id = args.batch_id or uuid.uuid4()
@@ -368,11 +374,22 @@ def main() -> int:
 
     rows_out: list[dict[str, Any]] = []
     missing_mirror = 0
+    missing_rows: list[dict[str, Any]] = []
 
     for sku, d in sorted(desired_by_sku.items()):
         vrows = by_sku.get(sku)
         if not vrows:
             missing_mirror += 1
+            missing_rows.append(
+                {
+                    "sku": sku,
+                    "proposed_eta_date": d.get("eta_iso"),
+                    "proposed_price": d.get("price_incl"),
+                    "proposed_product_status": d.get("product_status"),
+                    "proposed_article_status_code": d.get("article_status_code"),
+                    "reason": "sku_not_found_in_shopify_variants_mirror",
+                }
+            )
             continue
 
         prop_price = _to_decimal_price(d.get("price_incl"))
@@ -446,6 +463,24 @@ def main() -> int:
         flush=True,
     )
     print(f"SKU's in CSV zonder match in shopify_variants: {missing_mirror}", flush=True)
+    out_missing_csv = (args.missing_skus_csv or "").strip()
+    if out_missing_csv:
+        out_path = Path(out_missing_csv)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fields = [
+            "sku",
+            "proposed_eta_date",
+            "proposed_price",
+            "proposed_product_status",
+            "proposed_article_status_code",
+            "reason",
+        ]
+        with open(out_path, "w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=fields)
+            writer.writeheader()
+            for row in missing_rows:
+                writer.writerow(row)
+        print(f"Rapport missing SKUs geschreven: {out_path} ({len(missing_rows)} rijen)", flush=True)
 
     if args.dry_run:
         for i, row in enumerate(rows_out[:25]):
