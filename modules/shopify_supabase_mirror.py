@@ -5,7 +5,10 @@ Vereist: config (of env) met SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN, SHOPIFY_
 
 Optioneel (env):
   SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE / SHOPIFY_VARIANT_ETA_METAFIELD_KEY — variant-ETA → shopify_eta
+    (defaults: global / inventory_policy_eta_date; lege KEY = geen ETA-sync)
   SHOPIFY_PRODUCT_FITS_ON_NAMESPACE / SHOPIFY_PRODUCT_FITS_ON_KEY — product JSON → shopify_ymm.ymm_json
+
+Prijzen (price, compareAtPrice) gaan altijd mee naar shopify_variants.
 """
 
 from __future__ import annotations
@@ -33,13 +36,24 @@ def _fits_on_ns_key() -> tuple[str, str]:
     return (ns, key)
 
 
+def _eta_metafield_ns_key() -> tuple[str, str] | None:
+    """ETA-metafield voor GraphQL; None = niet ophalen (zet SHOPIFY_VARIANT_ETA_METAFIELD_KEY leeg)."""
+    key = os.environ.get(
+        "SHOPIFY_VARIANT_ETA_METAFIELD_KEY", "inventory_policy_eta_date"
+    ).strip()
+    if not key:
+        return None
+    ns = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE", "global").strip() or "global"
+    return (ns, key)
+
+
 def _mirror_queries() -> tuple[str, str, bool, bool]:
     """(query_products, query_variant_page, use_fits_meta, use_eta_meta)."""
     fits_ns, fits_key = _fits_on_ns_key()
     use_fits = bool(fits_ns and fits_key)
-    eta_ns = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE", "").strip()
-    eta_key = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_KEY", "").strip()
-    use_eta = bool(eta_ns and eta_key)
+    eta_cfg = _eta_metafield_ns_key()
+    use_eta = eta_cfg is not None
+    eta_ns, eta_key = eta_cfg if eta_cfg else ("", "")
 
     fits_block = ""
     if use_fits:
@@ -260,7 +274,7 @@ def run_mirror(
     synced = _iso_now()
     shop_sess = _http_session()
 
-    q_products, q_variants, use_fits, _use_eta = _mirror_queries()
+    q_products, q_variants, use_fits, use_eta = _mirror_queries()
 
     product_cursor: str | None = None
 
@@ -338,10 +352,14 @@ def run_mirror(
                             "synced_at": synced,
                         }
                     )
-                    em = v.get("etaMeta")
-                    ev = (em or {}).get("value") if em else None
-                    if ev is not None and str(ev).strip():
-                        d, raw_t = _parse_eta_value(str(ev).strip())
+                    if use_eta:
+                        em = v.get("etaMeta")
+                        ev = (em or {}).get("value") if em else None
+                        evs = str(ev).strip() if ev is not None else ""
+                        if evs:
+                            d, raw_t = _parse_eta_value(evs)
+                        else:
+                            d, raw_t = None, None
                         eta_rows.append(
                             {
                                 "shopify_variant_id": vid_int,
@@ -376,7 +394,7 @@ def run_mirror(
                     ymm_rows,
                     "shopify_product_id",
                 )
-            if eta_rows:
+            if use_eta and eta_rows:
                 _supabase_upsert(
                     supabase_sess,
                     rest_base,

@@ -1,18 +1,9 @@
-# Dagelijks: mirror-job in de wachtrij zetten + worker draaien (één run).
-#
-# GitHub-cron is ALLEEN UTC.
-# - 11:30 Amsterdam tijdens CEST (UTC+2) = 09:30 UTC → cron "30 9 * * *".
-# - Zelfde lokale tijd in CET (winter, UTC+1) = 10:30 UTC → wijzig dan naar "30 10 * * *".
-#
-# GitHub kan geplande runs enkele minuten uitstellen.
-#
-# Zelfde secrets als job-worker.yml + queue-script.
+# Alleen handmatig: de periodieke mirror zit nu in job-worker.yml (elke 6 uur).
+# Zelfde secrets als job-worker.yml.
 
-name: Scheduled Shopify mirror
+name: Manual Shopify mirror (queue + worker)
 
 on:
-  schedule:
-    - cron: "30 9 * * *"
   workflow_dispatch:
 
 jobs:

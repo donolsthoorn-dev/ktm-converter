@@ -1,4 +1,7 @@
-# Verwerkt maximaal één `queued` job (scripts/supabase_job_worker.py).
+# Elke run: mirror-job in de wachtrij + één job verwerken (zelfde flow als de oude Scheduled mirror).
+# Zo volstaat dit workflow voor periodieke Shopify → Supabase (prijzen op shopify_variants, ETA op shopify_eta).
+#
+# Verwerkt maximaal één `queued` job per run (scripts/supabase_job_worker.py).
 #
 # Actions-secrets (repo → Settings → Secrets and variables → Actions):
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -25,6 +28,12 @@ jobs:
 
       - name: Install requests
         run: pip install "requests>=2.28,<3"
+
+      - name: Queue shopify_catalog_mirror
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/queue_supabase_job.py shopify_catalog_mirror --trigger schedule
 
       - name: Process one queued job
         env:
