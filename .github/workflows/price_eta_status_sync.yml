@@ -62,6 +62,14 @@ jobs:
           KTM_FTP_BLOCKSIZE: ${{ secrets.KTM_FTP_BLOCKSIZE }}
         run: python scripts/fetch_input_sftp.py
 
+      - name: Verwijder oude prijs-CSV's uit input (stale guard)
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
+        run: |
+          rm -f input/1100_35_Z1_EUR_EN_csv.csv
+          rm -f input/0910_35_Z1_EUR_EN_csv.csv
+          rm -f input/0150_35_Z1_EUR_EN_csv.csv
+          rm -f input/0140_35_Z1_EUR_EN_csv.csv
+
       - name: Staging → input/
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         env:

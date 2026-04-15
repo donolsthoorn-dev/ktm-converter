@@ -129,6 +129,8 @@ def _run_shopify_mirror(
 
     def _log(msg: str) -> None:
         log_lines.append(msg)
+        # Realtime output in GitHub Actions; zonder dit lijkt de job "vast" te hangen.
+        print(msg, flush=True)
 
     stats, err = run_mirror(session, base, headers, log=_log)
     summary = "\n".join(log_lines).strip()
