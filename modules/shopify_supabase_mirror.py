@@ -5,7 +5,9 @@ Vereist: config (of env) met SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN, SHOPIFY_
 
 Optioneel (env):
   SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE / SHOPIFY_VARIANT_ETA_METAFIELD_KEY — variant-ETA → shopify_eta
-    (defaults: global / inventory_policy_eta_date; lege KEY = geen ETA-sync)
+    (defaults: global / inventory_policy_eta_date; lege waarde = defaults — GitHub Actions zet ontbrekende
+    secrets vaak als "" en zou anders ETA uitzetten)
+  SHOPIFY_SYNC_VARIANT_ETA=0 — ETA-sync volledig uitschakelen
   SHOPIFY_PRODUCT_FITS_ON_NAMESPACE / SHOPIFY_PRODUCT_FITS_ON_KEY — product JSON → shopify_ymm.ymm_json
 
 Prijzen (price, compareAtPrice) gaan altijd mee naar shopify_variants.
@@ -37,13 +39,15 @@ def _fits_on_ns_key() -> tuple[str, str]:
 
 
 def _eta_metafield_ns_key() -> tuple[str, str] | None:
-    """ETA-metafield voor GraphQL; None = niet ophalen (zet SHOPIFY_VARIANT_ETA_METAFIELD_KEY leeg)."""
-    key = os.environ.get(
-        "SHOPIFY_VARIANT_ETA_METAFIELD_KEY", "inventory_policy_eta_date"
-    ).strip()
-    if not key:
+    """ETA-metafield voor GraphQL. None = uit (alleen bij SHOPIFY_SYNC_VARIANT_ETA=0/false/no)."""
+    off = os.environ.get("SHOPIFY_SYNC_VARIANT_ETA", "").strip().lower()
+    if off in ("0", "false", "no", "off"):
         return None
-    ns = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE", "global").strip() or "global"
+    # Lege string (o.a. ontbrekende GitHub secret → env "") telt als “niet gezet”: gebruik defaults.
+    raw_key = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_KEY")
+    raw_ns = os.environ.get("SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE")
+    key = (raw_key or "").strip() or "inventory_policy_eta_date"
+    ns = (raw_ns or "").strip() or "global"
     return (ns, key)
 
 
