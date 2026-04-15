@@ -253,7 +253,7 @@ def _build_notes(
     if code == "80":
         reasons.append("ArticleStatus=80 => variant sell_when_out_of_stock=false (inventory_policy=deny)")
     else:
-        reasons.append(f"ArticleStatus={code} => geen variant policy wijziging in deze flow")
+        reasons.append(f"ArticleStatus={code} => variant sell_when_out_of_stock=true (inventory_policy=continue)")
     return "; ".join(reasons)
 
 

@@ -16,7 +16,7 @@ Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, Artic
   - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
   - ArticleStatus  → variant-signaal; deze flow zet producten niet meer naar draft.
                      Product-draft gebeurt in een apart script.
-  - Variant policy  → bij status 80: `Sell when out of stock` uit (`inventory_policy=deny`)
+  - Variant policy  → bij status 80: `inventory_policy=deny`, anders `inventory_policy=continue`
 
 Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; geen live variant-fetch per run):
   python3 scripts/shopify_refresh_variant_cache.py
@@ -263,7 +263,7 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                         "product_status": product_status,
                         "article_status_code": st,
                         "published": st != "80",
-                        "inventory_policy": "DENY" if st == "80" else None,
+                        "inventory_policy": "DENY" if st == "80" else "CONTINUE",
                     }
             return out
         except UnicodeDecodeError:
@@ -935,7 +935,7 @@ def main() -> int:
     load_dotenv()
 
     p = argparse.ArgumentParser(
-        description="KTM prijs-CSV → Shopify: ETA, prijs, variant policy (80=>deny), en alleen product-reactivatie naar active — alleen bij wijziging"
+        description="KTM prijs-CSV → Shopify: ETA, prijs, variant policy (80=>deny, anders continue), en alleen product-reactivatie naar active — alleen bij wijziging"
     )
     p.add_argument(
         "--csv",
@@ -1307,7 +1307,7 @@ def main() -> int:
         save_state(state_path, state)
         time.sleep(0.1)
 
-    # Variant policy (status 80 => sell when out of stock OFF => inventory_policy=deny)
+    # Variant policy rechtstreeks uit CSV: status 80 => DENY, anders CONTINUE.
     n_policy = len(policy_ops)
     if n_policy:
         print(f"Prijzen afgerond. Start variant policy-updates: {n_policy} varianten…", flush=True)
