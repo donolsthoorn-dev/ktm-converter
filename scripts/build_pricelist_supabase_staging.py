@@ -122,6 +122,43 @@ def _fetch_paginated(
     return out
 
 
+def _delete_pending_for_variants(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    variant_ids: list[int],
+) -> int:
+    """
+    Verwijder oude pending-rows voor dezelfde varianten, zodat herhaalde staging-runs
+    geen dubbele reviewregels tonen.
+    """
+    if not variant_ids:
+        return 0
+    deleted = 0
+    chunk_size = 300
+    for i in range(0, len(variant_ids), chunk_size):
+        chunk = variant_ids[i : i + chunk_size]
+        ids = ",".join(str(v) for v in chunk)
+        r = sess.delete(
+            f"{base}/pricelist_sync_staging",
+            headers=headers,
+            params={
+                "review_status": "eq.pending",
+                "shopify_variant_id": f"in.({ids})",
+            },
+            timeout=_REQUEST_TIMEOUT,
+        )
+        if not r.ok:
+            print(
+                f"Supabase delete pending fout {r.status_code}: {r.text[:2000]}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise SystemExit(1)
+        deleted += len(chunk)
+    return deleted
+
+
 def _to_decimal_price(raw: object | None) -> Decimal | None:
     if raw is None or raw == "":
         return None
@@ -333,6 +370,19 @@ def main() -> int:
     if not rows_out:
         print("Niets te inserten.", flush=True)
         return 0
+
+    # Upsert-achtig gedrag voor review-werkvoorraad:
+    # oude pending-rows voor dezelfde varianten eerst weg, zodat je geen dubbele pending ziet
+    # na meerdere staging-runs.
+    pending_variant_ids = sorted(
+        {int(r["shopify_variant_id"]) for r in rows_out if r.get("shopify_variant_id") is not None}
+    )
+    if pending_variant_ids:
+        _delete_pending_for_variants(sess, base, headers, pending_variant_ids)
+        print(
+            f"Oude pending-regels opgeschoond voor {len(pending_variant_ids)} varianten.",
+            flush=True,
+        )
 
     # Bulk insert in chunks (PostgREST)
     url = f"{base}/pricelist_sync_staging"
