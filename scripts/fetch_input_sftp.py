@@ -45,6 +45,13 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.environ.get(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
 def _env_int(name: str, default: int) -> int:
     raw = _env(name)
     if not raw:
@@ -222,6 +229,10 @@ def _display_remote_file(remote_dir: str, name: str) -> str:
 
 
 def _skip_if_exists(dest: Path) -> bool:
+    # CSV is leidend: default is overschrijven van bestaande lokale bestanden.
+    # Optioneel oud gedrag via KTM_SFTP_SKIP_EXISTING=1.
+    if not _env_bool("KTM_SFTP_SKIP_EXISTING", False):
+        return False
     if dest.exists():
         print(f"Overslaan (bestaat al): {dest}")
         return True
