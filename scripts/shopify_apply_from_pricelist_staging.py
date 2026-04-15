@@ -23,6 +23,7 @@ import importlib.util
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,10 @@ load_dotenv()
 
 _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _is_benign_eta_clear_error(err: dict[str, Any]) -> bool:
@@ -122,6 +127,27 @@ def _fetch_paginated(
     return out
 
 
+def _supabase_upsert(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    table: str,
+    rows: list[dict[str, Any]],
+    on_conflict: str,
+) -> None:
+    if not rows:
+        return
+    h = {**headers, "Prefer": "resolution=merge-duplicates,return=minimal"}
+    r = sess.post(
+        f"{base}/{table}",
+        params={"on_conflict": on_conflict},
+        headers=h,
+        json=rows,
+        timeout=_REQUEST_TIMEOUT,
+    )
+    r.raise_for_status()
+
+
 def main() -> int:
     sync = _load_sync_module()
     sync.load_dotenv()
@@ -185,11 +211,14 @@ def main() -> int:
     eta_clear: list[tuple[str, str]] = []
     policy_ops: list[tuple[str, str, str]] = []
     product_ops_by_pid: dict[str, tuple[str, str]] = {}
+    variant_to_product_id: dict[str, str] = {}
 
     for r in rows:
         sku = str(r.get("sku") or "").strip().upper()
         vid = str(r.get("shopify_variant_id") or "").strip()
         pid = str(r.get("shopify_product_id") or "").strip()
+        if vid and pid:
+            variant_to_product_id[vid] = pid
 
         if r.get("price_changed") and vid:
             pp = r.get("proposed_price")
@@ -225,6 +254,10 @@ def main() -> int:
     errors = 0
     benign = 0
     progress_every = 250
+    eta_success: list[tuple[str, str | None]] = []
+    price_success: list[tuple[str, str]] = []
+    policy_success: list[tuple[str, str]] = []
+    product_success: list[tuple[str, str]] = []
 
     # ETA mutaties in batches.
     batch_size = 25
@@ -256,6 +289,9 @@ def main() -> int:
                 errors += 1
                 if errors <= 20:
                     print(f"ETA clear userError: {err}", flush=True)
+            if not uerr:
+                for op in batch:
+                    eta_success.append((str(op[1][1]), None))
         else:
             mfs = [
                 {
@@ -273,6 +309,9 @@ def main() -> int:
                 errors += 1
                 if errors <= 20:
                     print(f"ETA set userError: {err}", flush=True)
+            if not uerr:
+                for op in batch:
+                    eta_success.append((str(op[1][1]), str(op[1][2])))
         if b == 1 or b % 25 == 0:
             print(f"ETA batch {b}: type={kind}, size={len(batch)}", flush=True)
 
@@ -281,6 +320,8 @@ def main() -> int:
     for idx, (sku, vid, price) in enumerate(price_ops, start=1):
         if not sync.rest_variant_price(shop, token, api_ver, vid, price, sess=price_sess):
             errors += 1
+        else:
+            price_success.append((vid, price))
         if idx == 1 or idx % progress_every == 0 or idx == len(price_ops):
             print(f"Prijs {idx}/{len(price_ops)}", flush=True)
 
@@ -289,6 +330,8 @@ def main() -> int:
     for idx, (_sku, vid, pol) in enumerate(policy_ops, start=1):
         if not sync.rest_variant_inventory_policy(shop, token, api_ver, vid, pol, sess=policy_sess):
             errors += 1
+        else:
+            policy_success.append((vid, pol))
         if idx == 1 or idx % progress_every == 0 or idx == len(policy_ops):
             print(f"Variant policy {idx}/{len(policy_ops)}", flush=True)
 
@@ -304,10 +347,59 @@ def main() -> int:
         st_rest = "draft" if ps == "DRAFT" else "active"
         if not sync.rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess):
             errors += 1
+        else:
+            product_success.append((pid, st_rest.upper()))
         if idx == 1 or idx % progress_every == 0 or idx == len(deduped):
             print(f"Product status {idx}/{len(deduped)}", flush=True)
         if product_status_sleep_sec > 0:
             time.sleep(product_status_sleep_sec)
+
+    # Richt de Supabase mirror direct bij op basis van succesvolle mutaties.
+    ts = _iso_now()
+    try:
+        if eta_success:
+            eta_rows = [
+                {
+                    "shopify_variant_id": int(vid),
+                    "eta_date": eta,
+                    "eta_raw": eta,
+                    "synced_at": ts,
+                }
+                for vid, eta in eta_success
+            ]
+            _supabase_upsert(sess, base, headers, "shopify_eta", eta_rows, "shopify_variant_id")
+
+        if price_success or policy_success:
+            by_vid: dict[str, dict[str, Any]] = {}
+            for vid, price in price_success:
+                row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
+                row["price"] = price
+            for vid, pol in policy_success:
+                row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
+                row["inventory_policy"] = pol
+            variant_rows: list[dict[str, Any]] = []
+            for vid, row in by_vid.items():
+                pid = variant_to_product_id.get(vid)
+                if pid:
+                    row["shopify_product_id"] = int(pid)
+                variant_rows.append(row)
+            _supabase_upsert(
+                sess, base, headers, "shopify_variants", variant_rows, "shopify_variant_id"
+            )
+
+        if product_success:
+            product_rows = [
+                {"shopify_product_id": int(pid), "status": st, "synced_at": ts}
+                for pid, st in product_success
+            ]
+            _supabase_upsert(
+                sess, base, headers, "shopify_products", product_rows, "shopify_product_id"
+            )
+    except requests.RequestException as e:
+        errors += 1
+        print(f"Mirror partial update fout: {e}", file=sys.stderr, flush=True)
+        if e.response is not None:
+            print((e.response.text or "")[:1500], file=sys.stderr, flush=True)
 
     if benign:
         print(f"Opmerking: {benign} idempotente ETA-clear meldingen genegeerd.", flush=True)

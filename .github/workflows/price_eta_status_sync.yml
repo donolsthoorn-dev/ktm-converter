@@ -202,23 +202,3 @@ jobs:
           SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
         run: python scripts/shopify_apply_from_pricelist_staging.py
 
-      - name: Queue mirror refresh na apply
-        if: success() && env.RUN_MODE == 'apply'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/queue_supabase_job.py shopify_catalog_mirror --trigger api
-
-      - name: Process mirror refresh na apply
-        if: success() && env.RUN_MODE == 'apply'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
-          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
-          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
-          SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE }}
-          SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
-          SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
-          SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
-        run: python scripts/supabase_job_worker.py
