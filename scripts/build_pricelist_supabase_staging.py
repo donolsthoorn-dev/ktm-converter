@@ -122,41 +122,30 @@ def _fetch_paginated(
     return out
 
 
-def _delete_pending_for_variants(
+def _reset_staging_table(
     sess: requests.Session,
     base: str,
     headers: dict[str, str],
-    variant_ids: list[int],
-) -> int:
-    """
-    Verwijder oude pending-rows voor dezelfde varianten, zodat herhaalde staging-runs
-    geen dubbele reviewregels tonen.
-    """
-    if not variant_ids:
-        return 0
-    deleted = 0
-    chunk_size = 300
-    for i in range(0, len(variant_ids), chunk_size):
-        chunk = variant_ids[i : i + chunk_size]
-        ids = ",".join(str(v) for v in chunk)
-        r = sess.delete(
-            f"{base}/pricelist_sync_staging",
-            headers=headers,
-            params={
-                "review_status": "eq.pending",
-                "shopify_variant_id": f"in.({ids})",
-            },
-            timeout=_REQUEST_TIMEOUT,
+    dry_run: bool,
+) -> None:
+    if dry_run:
+        print("[dry-run] pricelist_sync_staging zou volledig geleegd worden.", flush=True)
+        return
+    # Volledige heropbouw per run: eerst alles weg uit staging.
+    r = sess.delete(
+        f"{base}/pricelist_sync_staging",
+        headers=headers,
+        params={"id": "not.is.null"},
+        timeout=_REQUEST_TIMEOUT,
+    )
+    if not r.ok:
+        print(
+            f"Supabase reset staging fout {r.status_code}: {r.text[:2000]}",
+            file=sys.stderr,
+            flush=True,
         )
-        if not r.ok:
-            print(
-                f"Supabase delete pending fout {r.status_code}: {r.text[:2000]}",
-                file=sys.stderr,
-                flush=True,
-            )
-            raise SystemExit(1)
-        deleted += len(chunk)
-    return deleted
+        raise SystemExit(1)
+    print("pricelist_sync_staging geleegd (full rebuild).", flush=True)
 
 
 def _to_decimal_price(raw: object | None) -> Decimal | None:
@@ -209,6 +198,42 @@ def _status_changed(mirror: str | None, proposed: str) -> bool:
     return _canonical_shop_status(mirror) != proposed
 
 
+def _fmt_decimal(v: Decimal | None) -> str:
+    if v is None:
+        return "NULL"
+    return f"{v.quantize(Decimal('0.01'))}"
+
+
+def _build_notes(
+    mirror_price: Decimal | None,
+    proposed_price: Decimal | None,
+    mirror_eta: object | None,
+    proposed_eta: str | None,
+    mirror_status: str | None,
+    proposed_status: str,
+    article_status_code: str,
+    proposed_published: bool,
+    price_changed: bool,
+    eta_changed: bool,
+    status_changed: bool,
+) -> str:
+    reasons: list[str] = []
+    if price_changed:
+        reasons.append(f"price {_fmt_decimal(mirror_price)} -> {_fmt_decimal(proposed_price)}")
+    if eta_changed:
+        reasons.append(f"eta {_eta_key(mirror_eta) or 'NULL'} -> {_eta_key(proposed_eta) or 'NULL'}")
+    if status_changed:
+        reasons.append(
+            f"product_status {_canonical_shop_status(mirror_status)} -> {proposed_status}"
+        )
+    code = article_status_code or "UNKNOWN"
+    if code == "80":
+        reasons.append("ArticleStatus=80 => published=false (draft)")
+    else:
+        reasons.append(f"ArticleStatus={code} => published={'true' if proposed_published else 'false'}")
+    return "; ".join(reasons)
+
+
 def main() -> int:
     sync = _load_sync_module()
     sync.load_dotenv()
@@ -256,6 +281,8 @@ def main() -> int:
     headers = _headers()
     sess = requests.Session()
     sess.trust_env = False
+
+    _reset_staging_table(sess, base, headers, args.dry_run)
 
     print("Supabase: shopify_variants ophalen…", flush=True)
     variants = _fetch_paginated(
@@ -350,7 +377,19 @@ def main() -> int:
                 "price_changed": pc,
                 "eta_changed": ec,
                 "status_changed": sc,
-                "review_status": "pending",
+                "notes": _build_notes(
+                    mirror_p,
+                    prop_price,
+                    mirror_eta,
+                    prop_eta,
+                    mirror_stat,
+                    prop_stat,
+                    prop_article_status,
+                    prop_published,
+                    pc,
+                    ec,
+                    sc,
+                ),
             }
             rows_out.append(row)
 
@@ -368,21 +407,8 @@ def main() -> int:
         return 0
 
     if not rows_out:
-        print("Niets te inserten.", flush=True)
+        print("Niets te inserten (staging is wel leeg gemaakt voor deze run).", flush=True)
         return 0
-
-    # Upsert-achtig gedrag voor review-werkvoorraad:
-    # oude pending-rows voor dezelfde varianten eerst weg, zodat je geen dubbele pending ziet
-    # na meerdere staging-runs.
-    pending_variant_ids = sorted(
-        {int(r["shopify_variant_id"]) for r in rows_out if r.get("shopify_variant_id") is not None}
-    )
-    if pending_variant_ids:
-        _delete_pending_for_variants(sess, base, headers, pending_variant_ids)
-        print(
-            f"Oude pending-regels opgeschoond voor {len(pending_variant_ids)} varianten.",
-            flush=True,
-        )
 
     # Bulk insert in chunks (PostgREST)
     url = f"{base}/pricelist_sync_staging"
