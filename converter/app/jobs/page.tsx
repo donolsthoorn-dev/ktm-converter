@@ -4,6 +4,11 @@ import type { CSSProperties } from "react";
 import { useCallback, useState } from "react";
 import Link from "next/link";
 
+/** Weergave altijd NL-tijd (winter/zomer automatisch via DST). */
+const dateTimeNlAmsterdam: Intl.DateTimeFormatOptions = {
+  timeZone: "Europe/Amsterdam",
+};
+
 type JobRow = {
   id: string;
   created_at: string;
@@ -171,7 +176,9 @@ export default function JobsDashboardPage() {
               <tbody>
                 {jobs.map((j) => (
                   <tr key={j.id} style={{ borderBottom: "1px solid #1e293b" }}>
-                    <td style={td}>{new Date(j.created_at).toLocaleString("nl-NL")}</td>
+                    <td style={td}>
+                      {new Date(j.created_at).toLocaleString("nl-NL", dateTimeNlAmsterdam)}
+                    </td>
                     <td style={td}>{j.job_type}</td>
                     <td style={td}>{j.status}</td>
                     <td style={td}>{j.trigger_source}</td>
