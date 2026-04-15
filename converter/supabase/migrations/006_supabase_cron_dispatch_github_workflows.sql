@@ -1,8 +1,8 @@
 -- Supabase-driven scheduling for GitHub workflows (more reliable than GitHub schedule).
 --
 -- Schedules:
---   - Job worker: hourly at :00 UTC
---   - price_eta_status_sync (apply): hourly at :30 UTC
+--   - Job worker: daily at 02:10 UTC
+--   - price_eta_status_sync (apply): every 3 hours at :30 UTC
 --
 -- Prerequisites (run once in Supabase SQL editor, project admin role):
 --   select vault.create_secret('<github_pat_with_actions_write>', 'github_actions_pat', 'PAT for workflow dispatch');
@@ -148,20 +148,40 @@ do $$
 declare
   v_jobid bigint;
 begin
+  select jobid into v_jobid from cron.job where jobname = 'ktm_job_worker_nightly';
+  if v_jobid is not null then
+    perform cron.unschedule(v_jobid);
+  end if;
+end $$;
+
+do $$
+declare
+  v_jobid bigint;
+begin
   select jobid into v_jobid from cron.job where jobname = 'ktm_price_eta_apply_half_hourly';
   if v_jobid is not null then
     perform cron.unschedule(v_jobid);
   end if;
 end $$;
 
+do $$
+declare
+  v_jobid bigint;
+begin
+  select jobid into v_jobid from cron.job where jobname = 'ktm_price_eta_apply_3hourly';
+  if v_jobid is not null then
+    perform cron.unschedule(v_jobid);
+  end if;
+end $$;
+
 select cron.schedule(
-  'ktm_job_worker_hourly',
-  '0 * * * *',
+  'ktm_job_worker_nightly',
+  '10 2 * * *',
   $$select public.dispatch_job_worker_workflow();$$
 );
 
 select cron.schedule(
-  'ktm_price_eta_apply_half_hourly',
-  '30 * * * *',
+  'ktm_price_eta_apply_3hourly',
+  '30 */3 * * *',
   $$select public.dispatch_price_eta_apply_workflow();$$
 );

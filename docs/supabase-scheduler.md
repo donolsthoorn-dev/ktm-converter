@@ -4,8 +4,8 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
 
 ## What It Triggers
 
-- `job-worker.yml` every hour (`0 * * * *`)
-- `price_eta_status_sync.yml` in `apply` mode every half hour (`30 * * * *`)
+- `job-worker.yml` daily at `02:10 UTC` (`10 2 * * *`)
+- `price_eta_status_sync.yml` in `apply` mode every 3 hours at minute `:30` (`30 */3 * * *`)
 
 ## Why
 
@@ -55,7 +55,7 @@ Check cron jobs:
 ```sql
 select jobid, jobname, schedule, command, active
 from cron.job
-where jobname in ('ktm_job_worker_hourly', 'ktm_price_eta_apply_half_hourly');
+where jobname in ('ktm_job_worker_nightly', 'ktm_price_eta_apply_3hourly');
 ```
 
 ## Notes

@@ -287,6 +287,7 @@ def run_mirror(
     try:
         while True:
             stats["pages"] += 1
+            _log(f"Mirror pagina {stats['pages']} ophalen…")
             body = _graphql(shop_sess, q_products, {"cursor": product_cursor})
             conn = ((body.get("data") or {}).get("products") or {})
             page_info = conn.get("pageInfo") or {}
@@ -415,6 +416,10 @@ def run_mirror(
             stats["variants_upserted"] += len(var_rows)
             stats["ymm_rows"] += len(ymm_rows)
             stats["eta_rows"] += len(eta_rows)
+            _log(
+                f"Mirror voortgang: pagina {stats['pages']} verwerkt, "
+                f"totaal producten={stats['products_upserted']}, varianten={stats['variants_upserted']}"
+            )
 
             if not page_info.get("hasNextPage"):
                 break
