@@ -18,10 +18,15 @@ create table if not exists public.pricelist_sync_staging (
   proposed_price numeric(18, 4),
   proposed_eta_date date,
   proposed_product_status text,
+  mirror_inventory_policy text,
+  proposed_inventory_policy text,
+  proposed_sell_when_out_of_stock boolean,
+  proposed_article_status_code text,
 
   price_changed boolean not null default false,
   eta_changed boolean not null default false,
   status_changed boolean not null default false,
+  inventory_policy_changed boolean not null default false,
 
   notes text,
 

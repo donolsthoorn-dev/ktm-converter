@@ -198,6 +198,21 @@ def _status_changed(mirror: str | None, proposed: str) -> bool:
     return _canonical_shop_status(mirror) != proposed
 
 
+def _canonical_inventory_policy(raw: str | None) -> str:
+    s = (raw or "").strip().upper()
+    if s == "DENY":
+        return "DENY"
+    if s == "CONTINUE":
+        return "CONTINUE"
+    return ""
+
+
+def _inventory_policy_changed(mirror: str | None, proposed: str | None) -> bool:
+    if not proposed:
+        return False
+    return _canonical_inventory_policy(mirror) != _canonical_inventory_policy(proposed)
+
+
 def _fmt_decimal(v: Decimal | None) -> str:
     if v is None:
         return "NULL"
@@ -212,10 +227,12 @@ def _build_notes(
     mirror_status: str | None,
     proposed_status: str,
     article_status_code: str,
-    proposed_published: bool,
+    mirror_inventory_policy: str | None,
+    proposed_inventory_policy: str | None,
     price_changed: bool,
     eta_changed: bool,
     status_changed: bool,
+    inventory_policy_changed: bool,
 ) -> str:
     reasons: list[str] = []
     if price_changed:
@@ -226,11 +243,16 @@ def _build_notes(
         reasons.append(
             f"product_status {_canonical_shop_status(mirror_status)} -> {proposed_status}"
         )
+    if inventory_policy_changed:
+        reasons.append(
+            f"inventory_policy {_canonical_inventory_policy(mirror_inventory_policy) or 'UNKNOWN'} -> "
+            f"{_canonical_inventory_policy(proposed_inventory_policy) or 'UNKNOWN'}"
+        )
     code = article_status_code or "UNKNOWN"
     if code == "80":
-        reasons.append("ArticleStatus=80 => published=false (draft)")
+        reasons.append("ArticleStatus=80 => variant sell_when_out_of_stock=false (inventory_policy=deny)")
     else:
-        reasons.append(f"ArticleStatus={code} => published={'true' if proposed_published else 'false'}")
+        reasons.append(f"ArticleStatus={code} => geen variant policy wijziging in deze flow")
     return "; ".join(reasons)
 
 
@@ -291,7 +313,7 @@ def main() -> int:
         base,
         headers,
         "shopify_variants",
-        "shopify_variant_id,shopify_product_id,sku,price",
+        "shopify_variant_id,shopify_product_id,sku,price,inventory_policy",
         order="shopify_variant_id.asc",
     )
     print(f"  → {len(variants)} variant-rijen", flush=True)
@@ -356,25 +378,30 @@ def main() -> int:
         prop_price = _to_decimal_price(d.get("price_incl"))
         prop_eta = d.get("eta_iso")
         prop_article_status = str(d.get("article_status_code") or "").strip()
-        prop_published = bool(d.get("published", prop_article_status != "80"))
+        prop_inventory_policy = str(d.get("inventory_policy") or "").strip().upper() or None
+        prop_sell_when_out_of_stock = None
+        if prop_inventory_policy:
+            prop_sell_when_out_of_stock = prop_inventory_policy == "CONTINUE"
 
         for v in vrows:
             vid = int(v["shopify_variant_id"])
             pid = int(v["shopify_product_id"]) if v.get("shopify_product_id") is not None else None
-            prop_stat = (
-                desired_product_status_by_pid.get(str(pid), str(d.get("product_status") or "ACTIVE"))
-                if pid is not None
-                else str(d.get("product_status") or "ACTIVE")
-            )
             mirror_p = _to_decimal_price(v.get("price"))
             mirror_eta = eta_by_vid.get(vid)
             mirror_stat = status_by_pid.get(pid) if pid is not None else None
+            mirror_policy = v.get("inventory_policy")
+            if pid is not None and str(pid) in desired_product_status_by_pid:
+                prop_stat = desired_product_status_by_pid[str(pid)]
+            else:
+                # Deze flow zet product niet meer naar DRAFT; bij all-80 blijft productstatus ongewijzigd.
+                prop_stat = _canonical_shop_status(mirror_stat)
 
             pc = _price_changed(mirror_p, prop_price)
             ec = _eta_changed(mirror_eta, prop_eta)
             sc = _status_changed(mirror_stat, prop_stat)
+            ic = _inventory_policy_changed(mirror_policy, prop_inventory_policy)
 
-            if not (pc or ec or sc):
+            if not (pc or ec or sc or ic):
                 continue
 
             row: dict[str, Any] = {
@@ -388,11 +415,14 @@ def main() -> int:
                 "proposed_price": float(prop_price) if prop_price is not None else None,
                 "proposed_eta_date": _eta_key(prop_eta),
                 "proposed_product_status": prop_stat,
+                "mirror_inventory_policy": _canonical_inventory_policy(str(mirror_policy) if mirror_policy is not None else None) or None,
+                "proposed_inventory_policy": prop_inventory_policy,
+                "proposed_sell_when_out_of_stock": prop_sell_when_out_of_stock,
                 "proposed_article_status_code": prop_article_status,
-                "proposed_published": prop_published,
                 "price_changed": pc,
                 "eta_changed": ec,
                 "status_changed": sc,
+                "inventory_policy_changed": ic,
                 "notes": _build_notes(
                     mirror_p,
                     prop_price,
@@ -401,10 +431,12 @@ def main() -> int:
                     mirror_stat,
                     prop_stat,
                     prop_article_status,
-                    prop_published,
+                    mirror_policy,
+                    prop_inventory_policy,
                     pc,
                     ec,
                     sc,
+                    ic,
                 ),
             }
             rows_out.append(row)

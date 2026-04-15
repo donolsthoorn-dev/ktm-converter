@@ -31,6 +31,7 @@ create table if not exists public.shopify_variants (
   title text,
   price numeric(18, 4),
   compare_at_price numeric(18, 4),
+  inventory_policy text,
   updated_at_shopify timestamptz,
   raw jsonb,
   synced_at timestamptz not null default now()

@@ -14,8 +14,9 @@ zelf bestanden en volgorde.
 Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, ArticleStatus, …):
   - hqETADate      → variant-metafield global.inventory_policy_eta_date (type date)
   - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
-  - ArticleStatus  → variant-niveau: 80 = niet beschikbaar; product-niveau: alleen draft als
-                     alle varianten binnen dat product status 80 hebben, anders active
+  - ArticleStatus  → variant-signaal; deze flow zet producten niet meer naar draft.
+                     Product-draft gebeurt in een apart script.
+  - Variant policy  → bij status 80: `Sell when out of stock` uit (`inventory_policy=deny`)
 
 Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; geen live variant-fetch per run):
   python3 scripts/shopify_refresh_variant_cache.py
@@ -262,6 +263,7 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                         "product_status": product_status,
                         "article_status_code": st,
                         "published": st != "80",
+                        "inventory_policy": "DENY" if st == "80" else None,
                     }
             return out
         except UnicodeDecodeError:
@@ -701,6 +703,35 @@ def rest_variant_price(
     return ok
 
 
+def rest_variant_inventory_policy(
+    shop: str,
+    token: str,
+    api_version: str,
+    variant_id: str,
+    inventory_policy: str,
+    sess: requests.Session | None = None,
+) -> bool:
+    try:
+        vid_int = int(variant_id)
+    except ValueError:
+        return False
+    pol = (inventory_policy or "").strip().lower()
+    if pol not in ("deny", "continue"):
+        pol = "deny"
+    url = f"https://{shop}/admin/api/{api_version}/variants/{vid_int}.json"
+    ok, err = rest_put_json(
+        shop,
+        token,
+        api_version,
+        url,
+        {"variant": {"id": vid_int, "inventory_policy": pol}},
+        sess=sess,
+    )
+    if not ok:
+        print(f"  Variant inventory_policy-fout {variant_id}: {err}", flush=True)
+    return ok
+
+
 def rest_product_status(
     shop: str,
     token: str,
@@ -828,17 +859,42 @@ def needs_update_product_status(
     return False
 
 
+def needs_update_inventory_policy(
+    force: bool,
+    state: dict,
+    sku: str,
+    desired: str | None,
+    variant_ids: list[str],
+) -> bool:
+    if desired is None:
+        return False
+    if force:
+        return True
+    st = state.get(sku) or {}
+    pv = st.get("inventory_policy_variants") or {}
+    legacy = st.get("inventory_policy")
+    vids = [str(x) for x in variant_ids]
+    if len(vids) <= 1:
+        vid = vids[0] if vids else None
+        if vid and vid in pv:
+            return pv[vid] != desired
+        return legacy != desired
+    for vid in vids:
+        if pv.get(vid) != desired:
+            return True
+    return False
+
+
 def resolve_desired_product_status_by_product_id(
     desired_by_sku: dict[str, dict],
     sku_to_vp: dict[str, list[tuple[str, str | None]]],
 ) -> dict[str, str]:
     """
-    Productstatus wordt uit alle CSV-varianten van hetzelfde product afgeleid:
+    Productstatus in deze flow:
     - ACTIVE zodra minimaal één variant niet 80 is
-    - DRAFT alleen als alle varianten 80 zijn
+    - geen update als alle varianten 80 zijn (draft gebeurt in apart script)
     """
     seen_active_by_pid: dict[str, bool] = {}
-    seen_any_by_pid: dict[str, bool] = {}
     for sku, desired in desired_by_sku.items():
         pairs = sku_to_vp.get(sku) or []
         is_active = str(desired.get("product_status") or "ACTIVE").upper() == "ACTIVE"
@@ -846,13 +902,9 @@ def resolve_desired_product_status_by_product_id(
             if not pid:
                 continue
             spid = str(pid)
-            seen_any_by_pid[spid] = True
             if is_active:
                 seen_active_by_pid[spid] = True
-    out: dict[str, str] = {}
-    for pid in seen_any_by_pid:
-        out[pid] = "ACTIVE" if seen_active_by_pid.get(pid) else "DRAFT"
-    return out
+    return {pid: "ACTIVE" for pid, is_active in seen_active_by_pid.items() if is_active}
 
 
 def _merge_state(state: dict, sku: str, updates: dict) -> None:
@@ -883,7 +935,7 @@ def main() -> int:
     load_dotenv()
 
     p = argparse.ArgumentParser(
-        description="KTM prijs-CSV → Shopify: ETA, prijs (×BTW), draft bij status 80 — alleen bij wijziging"
+        description="KTM prijs-CSV → Shopify: ETA, prijs, variant policy (80=>deny), en alleen product-reactivatie naar active — alleen bij wijziging"
     )
     p.add_argument(
         "--csv",
@@ -1007,10 +1059,11 @@ def main() -> int:
             product_id_memo[variant_id] = pid
         return pid
 
-    # Werklijst (prijs/ETA/status: delta = CSV vs state, zelfde model voor alles)
+    # Werklijst (delta = CSV vs state)
     eta_set: list[tuple[str, str, str]] = []  # sku, vid, iso
     eta_clear: list[tuple[str, str]] = []
     price_ops: list[tuple[str, str, str]] = []  # sku, vid, price
+    policy_ops: list[tuple[str, str, str]] = []  # sku, vid, DENY|CONTINUE
     product_ops: list[tuple[str, str, str]] = []  # sku, product_id, ACTIVE|DRAFT
     product_skus: dict[str, set[str]] = defaultdict(set)
     desired_product_status_by_pid = resolve_desired_product_status_by_product_id(
@@ -1041,6 +1094,11 @@ def main() -> int:
             for vid, _pid in pairs:
                 price_ops.append((sku, vid, d["price_incl"]))
 
+        desired_policy = str(d.get("inventory_policy") or "").upper() or None
+        if needs_update_inventory_policy(args.force, state, sku, desired_policy, variant_ids):
+            for vid, _pid in pairs:
+                policy_ops.append((sku, vid, desired_policy or "DENY"))
+
         for pid in unique_product_ids:
             if pid:
                 product_skus[str(pid)].add(sku)
@@ -1055,10 +1113,10 @@ def main() -> int:
         if needs_update_product_status(args.force, state, sku_ref, desired_ps, [pid]):
             product_ops.append((sku_ref, pid, desired_ps))
 
-    total_changes = len(eta_set) + len(eta_clear) + len(price_ops) + len(product_ops)
+    total_changes = len(eta_set) + len(eta_clear) + len(price_ops) + len(policy_ops) + len(product_ops)
     print(
         f"Delta: ETA zetten {len(eta_set)}, ETA wissen {len(eta_clear)}, "
-        f"prijs {len(price_ops)}, product status {len(product_ops)} "
+        f"prijs {len(price_ops)}, variant policy {len(policy_ops)}, product status {len(product_ops)} "
         f"(totaal mutaties {total_changes})",
         flush=True,
     )
@@ -1071,12 +1129,14 @@ def main() -> int:
             [("eta_set", x) for x in eta_set]
             + [("eta_clear", x) for x in eta_clear]
             + [("price", x) for x in price_ops]
+            + [("policy", x) for x in policy_ops]
             + [("product", x) for x in product_ops]
         )
         combined = combined[: args.limit]
         eta_set = [x[1] for x in combined if x[0] == "eta_set"]
         eta_clear = [x[1] for x in combined if x[0] == "eta_clear"]
         price_ops = [x[1] for x in combined if x[0] == "price"]
+        policy_ops = [x[1] for x in combined if x[0] == "policy"]
         product_ops = [x[1] for x in combined if x[0] == "product"]
         print(f"--limit {args.limit}: uitgevoerde subset", flush=True)
 
@@ -1247,12 +1307,35 @@ def main() -> int:
         save_state(state_path, state)
         time.sleep(0.1)
 
+    # Variant policy (status 80 => sell when out of stock OFF => inventory_policy=deny)
+    n_policy = len(policy_ops)
+    if n_policy:
+        print(f"Prijzen afgerond. Start variant policy-updates: {n_policy} varianten…", flush=True)
+    policy_sess = _http_session()
+    for pidx, (sku, vid, pol) in enumerate(policy_ops, start=1):
+        if pidx == 1 or pidx == n_policy or pidx % progress_every == 0:
+            print(f"  Variant policy {pidx}/{n_policy} (variant {vid}) -> {pol}", flush=True)
+        if rest_variant_inventory_policy(shop, token, api_ver, vid, pol, sess=policy_sess):
+            _merge_state(
+                state,
+                sku,
+                {
+                    "inventory_policy": pol,
+                    "inventory_policy_variants": {str(vid): pol},
+                },
+            )
+        else:
+            errors += 1
+        if pidx % progress_every == 0 or pidx == n_policy:
+            save_state(state_path, state)
+        time.sleep(0.1)
+
     deduped = [(sku, pid, ps) for sku, pid, ps in product_ops if pid]
 
     n_prod = len(deduped)
     if n_prod:
         print(
-            f"Prijzen afgerond. Start productstatus: {n_prod} unieke producten…",
+            f"Variant policy afgerond. Start productstatus: {n_prod} unieke producten…",
             flush=True,
         )
 

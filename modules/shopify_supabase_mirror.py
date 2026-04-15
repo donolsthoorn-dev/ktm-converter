@@ -92,6 +92,7 @@ query MirrorProducts($cursor: String) {{
               title
               price
               compareAtPrice
+              inventoryPolicy
               updatedAt{eta_block}
             }}
           }}
@@ -115,6 +116,7 @@ query MirrorVariants($id: ID!, $cursor: String) {{
           title
           price
           compareAtPrice
+          inventoryPolicy
           updatedAt{eta_block}
         }}
       }}
@@ -351,6 +353,7 @@ def run_mirror(
                             "title": v.get("title"),
                             "price": _dec_price(v.get("price")),
                             "compare_at_price": _dec_price(v.get("compareAtPrice")),
+                            "inventory_policy": (v.get("inventoryPolicy") or "").upper() or None,
                             "updated_at_shopify": v.get("updatedAt"),
                             "raw": raw_v,
                             "synced_at": synced,
