@@ -7,6 +7,8 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
 - `job-worker.yml` daily at `03:00 UTC` (`0 3 * * *`)
 - `price_eta_status_sync.yml` in `apply` mode hourly from `07:00` to `23:00 UTC` (`0 7-23 * * *`)
   - standaard `apply_scope=price_eta` (policy draait los via handmatige run met `apply_scope=policy`)
+  - guard: `price_eta` start niet als er al een `scope=policy` run in progress is (tussenliggende uren worden dan bewust overgeslagen)
+  - zulke overgeslagen runs worden gelogd met `run_state=skipped` en reden `policy_run_in_progress`
 - `shopify_auto_deactivate_invalid_products.yml` daily at `05:00 UTC` (`0 5 * * *`, with `apply=true`)
 
 ## Why

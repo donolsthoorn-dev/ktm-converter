@@ -40,6 +40,7 @@ load_dotenv()
 _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
 _STAMP_FLUSH_CHUNK = 250
+_POLICY_FLUSH_CHUNK = 25
 
 
 def _iso_now() -> str:
@@ -298,6 +299,11 @@ def main() -> int:
     product_status_sleep_sec = float(
         (os.environ.get("SHOPIFY_PRODUCT_STATUS_SLEEP_SEC") or "").strip() or "0.25"
     )
+    policy_flush_chunk = int(
+        (os.environ.get("SHOPIFY_POLICY_FLUSH_CHUNK") or "").strip() or str(_POLICY_FLUSH_CHUNK)
+    )
+    if policy_flush_chunk < 1:
+        policy_flush_chunk = 1
 
     base = _rest_base()
     headers = _headers()
@@ -530,14 +536,22 @@ def main() -> int:
                 sid = variant_to_staging_row_id.get(vid)
                 if sid:
                     policy_stamp_by_row_id[sid] = _iso_now()
-                if len(policy_stamp_by_row_id) >= _STAMP_FLUSH_CHUNK:
+                if len(policy_stamp_by_row_id) >= policy_flush_chunk:
                     _flush_staging_timestamps(
                         sess, base, headers, "policy_updated_at", policy_stamp_by_row_id
                     )
+                    print(
+                        f"Policy progress flushed naar staging (+{len(policy_stamp_by_row_id)}).",
+                        flush=True,
+                    )
                     policy_stamp_by_row_id.clear()
-                if len(policy_success) >= _STAMP_FLUSH_CHUNK:
+                if len(policy_success) >= policy_flush_chunk:
                     _flush_policy_success_to_mirror(
                         sess, base, headers, policy_success, variant_to_product_id, _iso_now()
+                    )
+                    print(
+                        f"Policy progress flushed naar mirror (+{len(policy_success)}).",
+                        flush=True,
                     )
                     policy_success.clear()
             if idx == 1 or idx % progress_every == 0 or idx == len(policy_ops):

@@ -9,6 +9,7 @@
 # Spiegel (shopify_*) moet actueel zijn → draai job-worker vóór staging als je tegen de laatste Shopify-stand vergelijkt.
 
 name: price_eta_status_sync
+run-name: price_eta_status_sync (mode=${{ github.event.inputs.mode || 'apply' }}, scope=${{ github.event.inputs.apply_scope || 'price_eta' }})
 
 on:
   workflow_dispatch:
@@ -48,11 +49,144 @@ jobs:
       - name: Modus
         run: echo "mode=${{ env.RUN_MODE }}"
 
+      - name: Skip price_eta wanneer policy-run actief is
+        if: env.RUN_MODE == 'apply' && env.APPLY_SCOPE == 'price_eta'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_FILE: price_eta_status_sync.yml
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          token = (os.environ.get("GITHUB_TOKEN") or "").strip()
+          repo = (os.environ.get("REPO") or "").strip()
+          wf = (os.environ.get("WORKFLOW_FILE") or "").strip()
+          current_run_id = int((os.environ.get("CURRENT_RUN_ID") or "0").strip() or "0")
+          if not token or not repo or not wf or not current_run_id:
+              print("Guard-check mist context; ga door zonder skip.")
+              raise SystemExit(0)
+
+          url = f"https://api.github.com/repos/{repo}/actions/workflows/{wf}/runs?status=in_progress&event=workflow_dispatch&per_page=100"
+          req = urllib.request.Request(
+              url,
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              body = json.loads(resp.read().decode("utf-8", "replace"))
+
+          blocking = []
+          for run in body.get("workflow_runs") or []:
+              rid = int(run.get("id") or 0)
+              if rid == current_run_id:
+                  continue
+              title = str(run.get("display_title") or "").lower()
+              if "scope=policy" in title:
+                  blocking.append((rid, title))
+
+          if blocking:
+              print("Policy-run actief; deze price_eta-run wordt overgeslagen.")
+              print("Blokkerende run(s):")
+              for rid, title in blocking[:10]:
+                  print(f"- {rid}: {title}")
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+                  f.write("RUN_MODE=skip\n")
+          else:
+              print("Geen actieve policy-run gevonden; price_eta mag door.")
+          PY
+
       - uses: actions/setup-python@v6
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         with:
           python-version: "3.12"
 
+      - name: Log skip naar workflow_dispatch_log
+        if: env.RUN_MODE == 'skip'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WORKFLOW_FILE: price_eta_status_sync.yml
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          APPLY_SCOPE: ${{ env.APPLY_SCOPE }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime, timezone
+
+          base = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+          key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+          wf = (os.environ.get("WORKFLOW_FILE") or "").strip()
+          run_id_raw = (os.environ.get("GITHUB_RUN_ID") or "").strip()
+          scope = (os.environ.get("APPLY_SCOPE") or "").strip()
+          if not base or not key or not wf or not run_id_raw.isdigit():
+              print("Skip-log: context ontbreekt, sla Supabase-log update over.")
+              raise SystemExit(0)
+
+          run_id = int(run_id_raw)
+          now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+          hdr = {
+              "apikey": key,
+              "Authorization": f"Bearer {key}",
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+          }
+
+          # Pak de meest recente dispatch-logrij voor dit workflow_file.
+          q = urllib.parse.urlencode(
+              {
+                  "select": "id",
+                  "workflow_file": f"eq.{wf}",
+                  "order": "created_at.desc",
+                  "limit": "1",
+              }
+          )
+          req = urllib.request.Request(f"{base}/rest/v1/workflow_dispatch_log?{q}", headers=hdr)
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              rows = json.loads(resp.read().decode("utf-8", "replace")) or []
+          if not rows:
+              print("Skip-log: geen workflow_dispatch_log rij gevonden.")
+              raise SystemExit(0)
+          row_id = rows[0].get("id")
+          if row_id is None:
+              print("Skip-log: gevonden rij heeft geen id.")
+              raise SystemExit(0)
+
+          patch_body = {
+              "run_state": "skipped",
+              "run_started_at": now,
+              "run_finished_at": now,
+              "github_run_id": run_id,
+              "run_summary": f"scope={scope}; skipped (policy run already in progress)",
+              "run_stats": {
+                  "scope": scope,
+                  "skipped": True,
+                  "reason": "policy_run_in_progress",
+              },
+          }
+          patch_url = f"{base}/rest/v1/workflow_dispatch_log?id=eq.{row_id}"
+          patch_req = urllib.request.Request(
+              patch_url,
+              data=json.dumps(patch_body).encode("utf-8"),
+              headers=hdr,
+              method="PATCH",
+          )
+          with urllib.request.urlopen(patch_req, timeout=20) as _:
+              pass
+          print(f"Skip-log bijgewerkt voor workflow_dispatch_log.id={row_id}.")
+          PY
+
       - name: Install Python dependencies
+        if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         run: pip install -r requirements.txt
 
       - name: Fetch prijsbestanden (FTP/SFTP/FTPS)
