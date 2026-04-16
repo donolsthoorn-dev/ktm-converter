@@ -507,6 +507,11 @@ def main() -> int:
         metavar="PAD",
         help="CSV-rapport pad (default: output/auto_deactivate_invalid_products.csv)",
     )
+    ap.add_argument(
+        "--require-status-index",
+        action="store_true",
+        help="Faalt de run als er geen ArticleStatus-index uit CSV geladen kan worden.",
+    )
     args = ap.parse_args()
 
     if not TOKEN or not SHOP:
@@ -523,6 +528,13 @@ def main() -> int:
             flush=True,
         )
     else:
+        if args.require_status_index:
+            print(
+                "FOUT: geen ArticleStatus-index uit CSV geladen, strict status80-regel kan niet worden toegepast.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 2
         print(
             "Waarschuwing: geen ArticleStatus-index uit CSV geladen; strict status80-regel zal niets doen.",
             flush=True,

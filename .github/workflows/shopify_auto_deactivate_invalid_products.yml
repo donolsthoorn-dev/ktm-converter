@@ -27,6 +27,57 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Fetch prijsbestanden (FTP/SFTP/FTPS)
+        env:
+          KTM_TRANSFER_PROTOCOL: ${{ secrets.KTM_TRANSFER_PROTOCOL }}
+          KTM_SFTP_HOST: ${{ secrets.KTM_SFTP_HOST }}
+          KTM_SFTP_PORT: ${{ secrets.KTM_SFTP_PORT }}
+          KTM_SFTP_USER: ${{ secrets.KTM_SFTP_USER }}
+          KTM_SFTP_PASSWORD: ${{ secrets.KTM_SFTP_PASSWORD }}
+          KTM_SFTP_REMOTE_DIR: ${{ secrets.KTM_SFTP_REMOTE_DIR }}
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+          KTM_SFTP_PATTERN: ${{ secrets.KTM_SFTP_PATTERN }}
+          KTM_FTP_TIMEOUT_SEC: ${{ secrets.KTM_FTP_TIMEOUT_SEC }}
+          KTM_FTP_RETRIES: ${{ secrets.KTM_FTP_RETRIES }}
+          KTM_FTP_RETRY_SLEEP_SEC: ${{ secrets.KTM_FTP_RETRY_SLEEP_SEC }}
+          KTM_FTP_BLOCKSIZE: ${{ secrets.KTM_FTP_BLOCKSIZE }}
+        run: python scripts/fetch_input_sftp.py
+
+      - name: Verwijder oude prijs-CSV's uit input (stale guard)
+        run: |
+          rm -f input/1100_35_Z1_EUR_EN_csv.csv
+          rm -f input/0910_35_Z1_EUR_EN_csv.csv
+          rm -f input/0150_35_Z1_EUR_EN_csv.csv
+          rm -f input/0140_35_Z1_EUR_EN_csv.csv
+
+      - name: Staging → input/
+        env:
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+          KTM_PREPARE_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+        run: python scripts/prepare_input_from_ftp.py
+
+      - name: Valideer complete prijs-CSV set (1100/0910/0150/0140)
+        run: |
+          missing=0
+          for f in \
+            1100_35_Z1_EUR_EN_csv.csv \
+            0910_35_Z1_EUR_EN_csv.csv \
+            0150_35_Z1_EUR_EN_csv.csv \
+            0140_35_Z1_EUR_EN_csv.csv; do
+            if [ ! -s "input/$f" ]; then
+              echo "Ontbreekt of leeg: input/$f"
+              missing=1
+            else
+              ls -l "input/$f"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Onvolledige CSV-set; stop om verkeerde deactivaties te voorkomen."
+            exit 1
+          fi
+
       - name: Auto deactiveer producten zonder prijs / uitverkocht
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
@@ -34,9 +85,9 @@ jobs:
           SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.apply }}" != "true" ]; then
-            python scripts/shopify_auto_deactivate_invalid_products.py
+            python scripts/shopify_auto_deactivate_invalid_products.py --require-status-index
           else
-            python scripts/shopify_auto_deactivate_invalid_products.py --apply
+            python scripts/shopify_auto_deactivate_invalid_products.py --apply --require-status-index
           fi
 
       - name: Upload rapport
