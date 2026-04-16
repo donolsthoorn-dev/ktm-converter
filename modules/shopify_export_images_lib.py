@@ -15,11 +15,15 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import requests
 
 import config
+from modules.image_manager import ensure_image, load_cache, save_cache_safe
+from modules.image_resolve import build_basename_index, resolve_local_image
 from modules.xml_loader import normalize_shopify_product_handle
 
 SHOP = config.SHOPIFY_SHOP_DOMAIN
@@ -68,25 +72,26 @@ def default_tasks_path() -> str:
     return os.path.join(config.LOG_OUTPUT_DIR, DEFAULT_TASKS_BASENAME)
 
 
-def norm_src(url: str) -> str:
-    if not url or not str(url).strip():
-        return ""
-    u = str(url).strip().split("?", 1)[0].rstrip("/")
+def _export_url_clean_basename(url: str) -> str:
+    """
+    Laatste URL-segment met Shopify-kopie-suffix uit de stam gehaald (zelfde regels als norm_src).
+    Gebruikt voor match met bestanden onder input/.
+    """
+    u = str(url or "").strip().split("?", 1)[0].rstrip("/")
     if not u:
         return ""
-
-    # Shopify kan bij productimages een kopie-suffix toevoegen in de bestandsnaam
-    # (bijv. _<uuid>) terwijl de bron-CSV vaak de "schone" .jpg bevat.
-    # Door dit suffix te strippen voorkomen we vals-positieve "missing image" taken.
     slash = u.rfind("/")
-    base = u[slash + 1 :] if slash >= 0 else u
+    base = unquote(u[slash + 1 :] if slash >= 0 else u)
     stem, ext = os.path.splitext(base)
     if stem:
         stem = _SHOPIFY_FILE_COPY_SUFFIX_RE.sub("", stem)
-    # Vergelijk op bestandsnaam i.p.v. volledig pad:
-    # Shopify kan dezelfde afbeelding tonen onder /products/... of /files/...
-    # en dat moet als identiek tellen.
-    clean_base = f"{stem}{ext}"
+    return f"{stem}{ext}"
+
+
+def norm_src(url: str) -> str:
+    if not url or not str(url).strip():
+        return ""
+    clean_base = _export_url_clean_basename(url)
     return clean_base.lower()
 
 
@@ -433,12 +438,18 @@ def post_product_image(
     return True, ""
 
 
+def _is_product_locked_error(err: str) -> bool:
+    e = (err or "").lower()
+    return "currently being modified" in e or "being modified" in e
+
+
 def post_product_image_retries(
     sess: requests.Session,
     product_id: str,
     src: str,
 ) -> tuple[bool, str]:
-    for attempt in range(12):
+    max_attempts = 22
+    for attempt in range(max_attempts):
         ok, err = post_product_image(sess, product_id, src)
         if ok:
             return True, ""
@@ -448,17 +459,50 @@ def post_product_image_retries(
         if err.startswith("HTTP 5"):
             time.sleep(2 + attempt * 0.25)
             continue
+        if _is_product_locked_error(err):
+            time.sleep(0.85 + min(attempt, 12) * 0.45)
+            continue
         return False, err
     return False, "te veel retries"
+
+
+_product_post_locks: dict[str, threading.Lock] = {}
+_product_post_locks_guard = threading.Lock()
+
+
+def _product_post_lock(product_id: str) -> threading.Lock:
+    with _product_post_locks_guard:
+        if product_id not in _product_post_locks:
+            _product_post_locks[product_id] = threading.Lock()
+        return _product_post_locks[product_id]
 
 
 def apply_missing_images_parallel(
     tasks: list[tuple[str, str, str]],
     workers: int,
+    *,
+    input_dir: str | None = None,
+    prefer_input: bool = True,
 ) -> tuple[int, int]:
     total = len(tasks)
     if total == 0:
         return 0, 0
+
+    cache: dict[str, Any] | None = None
+    input_root: Path | None = None
+    by_exact: dict[str, list[Path]] | None = None
+    by_lower: dict[str, list[Path]] | None = None
+    cache_lock = threading.Lock()
+
+    if prefer_input:
+        cache = load_cache()
+        input_root = Path(input_dir or config.INPUT_DIR).resolve()
+        by_exact, by_lower = build_basename_index(input_root)
+        print(
+            f"  Lokale bron: {input_root} ({len(by_exact)} unieke bestandsnamen). "
+            "Per taak: match op CSV-URL → bestand in deze map → upload/resolve via image_cache → product koppelen.",
+            flush=True,
+        )
 
     lock = threading.Lock()
     done = 0
@@ -469,7 +513,34 @@ def apply_missing_images_parallel(
         nonlocal done, ok_c, fail_c
         handle, pid, src = item
         sess = session_for_thread()
-        success, err = post_product_image_retries(sess, pid, src)
+        attach_src = src
+
+        if (
+            prefer_input
+            and cache is not None
+            and input_root is not None
+            and by_exact is not None
+            and by_lower is not None
+        ):
+            ref = _export_url_clean_basename(src)
+            if ref:
+                local_path = resolve_local_image(
+                    ref, input_root, by_exact, by_lower
+                )
+                if local_path is not None:
+                    with cache_lock:
+                        resolved, _ = ensure_image(
+                            local_path.name,
+                            local_path,
+                            cache,
+                            strict_delta=True,
+                        )
+                    if resolved:
+                        attach_src = resolved
+
+        with _product_post_lock(pid):
+            success, err = post_product_image_retries(sess, pid, attach_src)
+
         with lock:
             done += 1
             if success:
@@ -487,6 +558,9 @@ def apply_missing_images_parallel(
     w = max(1, min(workers, total))
     with ThreadPoolExecutor(max_workers=w) as pool:
         list(pool.map(run_one, tasks))
+
+    if prefer_input and cache is not None:
+        save_cache_safe(cache)
 
     return ok_c, fail_c
 

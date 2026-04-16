@@ -7,6 +7,8 @@ afbeeldingen aan producten in Shopify (parallelle POST’s).
   python3 scripts/shopify_apply_missing_images.py --tasks output/logs/shopify_missing_image_tasks.json
   python3 scripts/shopify_apply_missing_images.py --dry-run
   python3 scripts/shopify_apply_missing_images.py --apply-workers 12
+  python3 scripts/shopify_apply_missing_images.py --skip-input
+  python3 scripts/shopify_apply_missing_images.py --input-dir /pad/naar/images
 
 Stap 1: scripts/shopify_compare_export_images.py
 """
@@ -53,6 +55,17 @@ def main() -> None:
         action="store_true",
         help="Toon aantal POST’s, voer geen wijzigingen uit",
     )
+    ap.add_argument(
+        "--skip-input",
+        action="store_true",
+        help="Geen lokale bestanden onder input/ gebruiken (alleen CSV-URL’s naar Shopify)",
+    )
+    ap.add_argument(
+        "--input-dir",
+        metavar="DIR",
+        default=None,
+        help=f"Zoekmap voor lokale afbeeldingen (default: {config.INPUT_DIR})",
+    )
     args = ap.parse_args()
 
     if os.environ.get("KTM_SKIP_SHOPIFY_API", "").strip().lower() in (
@@ -94,11 +107,24 @@ def main() -> None:
         print("Dry-run: geen POST’s uitgevoerd.", flush=True)
         return
 
+    prefer_input = not args.skip_input
+    input_dir = args.input_dir or config.INPUT_DIR
     print(
-        f"\nImages koppelen (parallel, apply-workers={args.apply_workers})...",
+        f"\nImages koppelen (parallel, apply-workers={args.apply_workers}"
+        + (
+            f", lokale bron={input_dir!r}"
+            if prefer_input
+            else ", alleen CSV-URL’s"
+        )
+        + ")...",
         flush=True,
     )
-    ok, fail = apply_missing_images_parallel(tasks, args.apply_workers)
+    ok, fail = apply_missing_images_parallel(
+        tasks,
+        args.apply_workers,
+        input_dir=input_dir,
+        prefer_input=prefer_input,
+    )
     print(f"\nKlaar: toegevoegd OK={ok}, mislukt={fail}.", flush=True)
 
 
