@@ -256,14 +256,26 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                             eta_iso = None
                     price_incl = _parse_sales_price_incl_vat(row[price_col] or "")
                     st = (row[status_col] or "").strip()
-                    product_status = "DRAFT" if st == "80" else "ACTIVE"
+                    if st == "80":
+                        product_status: str | None = "DRAFT"
+                        inventory_policy: str | None = "DENY"
+                        published: bool | None = False
+                    elif st:
+                        product_status = "ACTIVE"
+                        inventory_policy = "CONTINUE"
+                        published = True
+                    else:
+                        # Lege ArticleStatus betekent: geen status/policy-mutatie afleiden.
+                        product_status = None
+                        inventory_policy = None
+                        published = None
                     out[sku] = {
                         "eta_iso": eta_iso,
                         "price_incl": price_incl,
                         "product_status": product_status,
                         "article_status_code": st,
-                        "published": st != "80",
-                        "inventory_policy": "DENY" if st == "80" else "CONTINUE",
+                        "published": published,
+                        "inventory_policy": inventory_policy,
                     }
             return out
         except UnicodeDecodeError:
@@ -891,13 +903,17 @@ def resolve_desired_product_status_by_product_id(
 ) -> dict[str, str]:
     """
     Productstatus in deze flow:
-    - ACTIVE zodra minimaal één variant niet 80 is
+    - ACTIVE zodra minimaal één variant expliciet niet-80 is
     - geen update als alle varianten 80 zijn (draft gebeurt in apart script)
+    - geen update als ArticleStatus leeg/onbekend is
     """
     seen_active_by_pid: dict[str, bool] = {}
     for sku, desired in desired_by_sku.items():
         pairs = sku_to_vp.get(sku) or []
-        is_active = str(desired.get("product_status") or "ACTIVE").upper() == "ACTIVE"
+        desired_ps = str(desired.get("product_status") or "").upper()
+        if desired_ps != "ACTIVE":
+            continue
+        is_active = True
         for _vid, pid in pairs:
             if not pid:
                 continue
