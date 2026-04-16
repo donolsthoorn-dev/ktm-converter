@@ -5,7 +5,7 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
 ## What It Triggers
 
 - `job-worker.yml` daily at `03:00 UTC` (`0 3 * * *`)
-- `price_eta_status_sync.yml` in `apply` mode every 3 hours starting at `04:00 UTC` (`0 1,4,7,10,13,16,19,22 * * *`)
+- `price_eta_status_sync.yml` in `apply` mode hourly from `07:00` to `23:00 UTC` (`0 7-23 * * *`)
   - standaard `apply_scope=price_eta` (policy draait los via handmatige run met `apply_scope=policy`)
 - `shopify_auto_deactivate_invalid_products.yml` daily at `05:00 UTC` (`0 5 * * *`, with `apply=true`)
 
@@ -19,6 +19,7 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
 1. Run migration:
    - `converter/supabase/migrations/006_supabase_cron_dispatch_github_workflows.sql`
    - `converter/supabase/migrations/007_update_supabase_cron_dispatch_times_and_deactivate.sql`
+   - `converter/supabase/migrations/009_price_eta_hourly_0700_2300.sql`
 2. Create vault secret for GitHub API token (required):
 
 ```sql
@@ -60,7 +61,7 @@ select jobid, jobname, schedule, command, active
 from cron.job
 where jobname in (
   'ktm_job_worker_nightly',
-  'ktm_price_eta_apply_3hourly',
+  'ktm_price_eta_apply_hourly_0700_2300',
   'ktm_shopify_auto_deactivate_0500'
 );
 ```
