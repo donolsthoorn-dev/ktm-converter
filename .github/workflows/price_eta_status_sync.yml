@@ -2,6 +2,7 @@
 #
 # staging: geen Shopify API; vult public.pricelist_sync_staging (migratie 002_*).
 # apply: haalt eerst CSV op en bouwt staging opnieuw op, daarna apply naar Shopify.
+#        apply_scope bepaalt of alleen price+eta, alleen policy(+productstatus), of alles draait.
 #
 # Secrets staging: SUPABASE_*, KTM_* (FTP). Secrets apply: + SHOPIFY_*.
 #
@@ -19,6 +20,14 @@ on:
           - staging
           - apply
         default: staging
+      apply_scope:
+        description: "Bij mode=apply: price_eta, policy of all"
+        type: choice
+        options:
+          - price_eta
+          - policy
+          - all
+        default: price_eta
   # workflow_run:
   #   workflows: [Job worker]
   #   types: [completed]
@@ -31,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}
+      APPLY_SCOPE: ${{ github.event.inputs.apply_scope || 'price_eta' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -200,5 +210,5 @@ jobs:
           SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
           SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE }}
           SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
-        run: python scripts/shopify_apply_from_pricelist_staging.py
+        run: python scripts/shopify_apply_from_pricelist_staging.py --scope "${{ env.APPLY_SCOPE }}"
 

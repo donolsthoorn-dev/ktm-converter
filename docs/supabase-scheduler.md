@@ -6,6 +6,7 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
 
 - `job-worker.yml` daily at `03:00 UTC` (`0 3 * * *`)
 - `price_eta_status_sync.yml` in `apply` mode every 3 hours starting at `04:00 UTC` (`0 1,4,7,10,13,16,19,22 * * *`)
+  - standaard `apply_scope=price_eta` (policy draait los via handmatige run met `apply_scope=policy`)
 - `shopify_auto_deactivate_invalid_products.yml` daily at `05:00 UTC` (`0 5 * * *`, with `apply=true`)
 
 ## Why

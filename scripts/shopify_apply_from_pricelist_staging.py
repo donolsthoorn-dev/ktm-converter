@@ -39,6 +39,7 @@ load_dotenv()
 
 _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
+_STAMP_FLUSH_CHUNK = 250
 
 
 def _iso_now() -> str:
@@ -148,6 +149,23 @@ def _supabase_upsert(
     r.raise_for_status()
 
 
+def _flush_staging_timestamps(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    column_name: str,
+    stamp_by_row_id: dict[str, str],
+) -> None:
+    """Schrijf succesvolle Shopify-updates terug naar staging (per type timestamp)."""
+    if not stamp_by_row_id:
+        return
+    items = list(stamp_by_row_id.items())
+    for i in range(0, len(items), _STAMP_FLUSH_CHUNK):
+        chunk = items[i : i + _STAMP_FLUSH_CHUNK]
+        rows = [{"id": rid, column_name: ts} for rid, ts in chunk]
+        _supabase_upsert(sess, base, headers, "pricelist_sync_staging", rows, "id")
+
+
 def main() -> int:
     sync = _load_sync_module()
     sync.load_dotenv()
@@ -155,6 +173,12 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dry-run", action="store_true", help="Geen Shopify writes")
     p.add_argument("--batch-id", default="", help="Optioneel: alleen 1 batch_id toepassen")
+    p.add_argument(
+        "--scope",
+        choices=("all", "price_eta", "policy"),
+        default="all",
+        help="Welke mutaties toepassen: all (default), price_eta, of policy",
+    )
     args = p.parse_args()
 
     token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
@@ -196,7 +220,7 @@ def main() -> int:
         headers,
         "pricelist_sync_staging",
         (
-            "sku,shopify_variant_id,shopify_product_id,"
+            "id,sku,shopify_variant_id,shopify_product_id,"
             "proposed_price,proposed_eta_date,proposed_product_status,proposed_inventory_policy,"
             "price_changed,eta_changed,status_changed,inventory_policy_changed"
         ),
@@ -212,13 +236,17 @@ def main() -> int:
     policy_ops: list[tuple[str, str, str]] = []
     product_ops_by_pid: dict[str, tuple[str, str]] = {}
     variant_to_product_id: dict[str, str] = {}
+    variant_to_staging_row_id: dict[str, str] = {}
 
     for r in rows:
         sku = str(r.get("sku") or "").strip().upper()
+        sid = str(r.get("id") or "").strip()
         vid = str(r.get("shopify_variant_id") or "").strip()
         pid = str(r.get("shopify_product_id") or "").strip()
         if vid and pid:
             variant_to_product_id[vid] = pid
+        if vid and sid:
+            variant_to_staging_row_id[vid] = sid
 
         if r.get("price_changed") and vid:
             pp = r.get("proposed_price")
@@ -251,6 +279,10 @@ def main() -> int:
         print("Dry-run: geen mutaties naar Shopify.", flush=True)
         return 0
 
+    run_price_eta = args.scope in ("all", "price_eta")
+    run_policy = args.scope in ("all", "policy")
+    print(f"Apply scope: {args.scope}", flush=True)
+
     errors = 0
     benign = 0
     progress_every = 250
@@ -258,101 +290,156 @@ def main() -> int:
     price_success: list[tuple[str, str]] = []
     policy_success: list[tuple[str, str]] = []
     product_success: list[tuple[str, str]] = []
+    price_stamp_by_row_id: dict[str, str] = {}
+    eta_stamp_by_row_id: dict[str, str] = {}
+    policy_stamp_by_row_id: dict[str, str] = {}
 
     # ETA mutaties in batches.
     batch_size = 25
-    all_eta_ops = [("set", x) for x in eta_set] + [("clear", x) for x in eta_clear]
-    i = 0
-    b = 0
-    while i < len(all_eta_ops):
-        kind = all_eta_ops[i][0]
-        batch: list[tuple[str, tuple[str, str] | tuple[str, str, str]]] = []
-        while i < len(all_eta_ops) and len(batch) < batch_size and all_eta_ops[i][0] == kind:
-            batch.append(all_eta_ops[i])
-            i += 1
-        b += 1
-        if kind == "clear":
-            identifiers = [
-                {
-                    "ownerId": f"gid://shopify/ProductVariant/{op[1][1]}",
-                    "namespace": ns,
-                    "key": key_mf,
-                }
-                for op in batch
-            ]
-            data = sync.graphql_metafields_delete(shop, token, api_ver, identifiers)
-            uerr = ((data or {}).get("metafieldsDelete") or {}).get("userErrors") or []
-            for err in uerr:
-                if _is_benign_eta_clear_error(err):
-                    benign += 1
-                    continue
-                errors += 1
-                if errors <= 20:
-                    print(f"ETA clear userError: {err}", flush=True)
-            if not uerr:
-                for op in batch:
-                    eta_success.append((str(op[1][1]), None))
-        else:
-            mfs = [
-                {
-                    "ownerId": f"gid://shopify/ProductVariant/{op[1][1]}",
-                    "namespace": ns,
-                    "key": key_mf,
-                    "type": "date",
-                    "value": op[1][2],
-                }
-                for op in batch
-            ]
-            data = sync.graphql_metafields_set(shop, token, api_ver, mfs)
-            uerr = ((data or {}).get("metafieldsSet") or {}).get("userErrors") or []
-            for err in uerr:
-                errors += 1
-                if errors <= 20:
-                    print(f"ETA set userError: {err}", flush=True)
-            if not uerr:
-                for op in batch:
-                    eta_success.append((str(op[1][1]), str(op[1][2])))
-        if b == 1 or b % 25 == 0:
-            print(f"ETA batch {b}: type={kind}, size={len(batch)}", flush=True)
+    if run_price_eta:
+        all_eta_ops = [("set", x) for x in eta_set] + [("clear", x) for x in eta_clear]
+        i = 0
+        b = 0
+        while i < len(all_eta_ops):
+            kind = all_eta_ops[i][0]
+            batch: list[tuple[str, tuple[str, str] | tuple[str, str, str]]] = []
+            while i < len(all_eta_ops) and len(batch) < batch_size and all_eta_ops[i][0] == kind:
+                batch.append(all_eta_ops[i])
+                i += 1
+            b += 1
+            if kind == "clear":
+                identifiers = [
+                    {
+                        "ownerId": f"gid://shopify/ProductVariant/{op[1][1]}",
+                        "namespace": ns,
+                        "key": key_mf,
+                    }
+                    for op in batch
+                ]
+                data = sync.graphql_metafields_delete(shop, token, api_ver, identifiers)
+                uerr = ((data or {}).get("metafieldsDelete") or {}).get("userErrors") or []
+                for err in uerr:
+                    if _is_benign_eta_clear_error(err):
+                        benign += 1
+                        continue
+                    errors += 1
+                    if errors <= 20:
+                        print(f"ETA clear userError: {err}", flush=True)
+                if not uerr:
+                    for op in batch:
+                        vid = str(op[1][1])
+                        eta_success.append((vid, None))
+                        sid = variant_to_staging_row_id.get(vid)
+                        if sid:
+                            eta_stamp_by_row_id[sid] = _iso_now()
+                    _flush_staging_timestamps(
+                        sess, base, headers, "eta_updated_at", eta_stamp_by_row_id
+                    )
+                    eta_stamp_by_row_id.clear()
+            else:
+                mfs = [
+                    {
+                        "ownerId": f"gid://shopify/ProductVariant/{op[1][1]}",
+                        "namespace": ns,
+                        "key": key_mf,
+                        "type": "date",
+                        "value": op[1][2],
+                    }
+                    for op in batch
+                ]
+                data = sync.graphql_metafields_set(shop, token, api_ver, mfs)
+                uerr = ((data or {}).get("metafieldsSet") or {}).get("userErrors") or []
+                for err in uerr:
+                    errors += 1
+                    if errors <= 20:
+                        print(f"ETA set userError: {err}", flush=True)
+                if not uerr:
+                    for op in batch:
+                        vid = str(op[1][1])
+                        eta_success.append((vid, str(op[1][2])))
+                        sid = variant_to_staging_row_id.get(vid)
+                        if sid:
+                            eta_stamp_by_row_id[sid] = _iso_now()
+                    _flush_staging_timestamps(
+                        sess, base, headers, "eta_updated_at", eta_stamp_by_row_id
+                    )
+                    eta_stamp_by_row_id.clear()
+            if b == 1 or b % 25 == 0:
+                print(f"ETA batch {b}: type={kind}, size={len(batch)}", flush=True)
+    else:
+        print("Skip ETA (scope zonder price_eta).", flush=True)
 
     # Prijs mutaties
-    price_sess = sync._http_session()
-    for idx, (sku, vid, price) in enumerate(price_ops, start=1):
-        if not sync.rest_variant_price(shop, token, api_ver, vid, price, sess=price_sess):
-            errors += 1
-        else:
-            price_success.append((vid, price))
-        if idx == 1 or idx % progress_every == 0 or idx == len(price_ops):
-            print(f"Prijs {idx}/{len(price_ops)}", flush=True)
+    if run_price_eta:
+        price_sess = sync._http_session()
+        for idx, (sku, vid, price) in enumerate(price_ops, start=1):
+            if not sync.rest_variant_price(shop, token, api_ver, vid, price, sess=price_sess):
+                errors += 1
+            else:
+                price_success.append((vid, price))
+                sid = variant_to_staging_row_id.get(vid)
+                if sid:
+                    price_stamp_by_row_id[sid] = _iso_now()
+                if len(price_stamp_by_row_id) >= _STAMP_FLUSH_CHUNK:
+                    _flush_staging_timestamps(
+                        sess, base, headers, "price_updated_at", price_stamp_by_row_id
+                    )
+                    price_stamp_by_row_id.clear()
+            if idx == 1 or idx % progress_every == 0 or idx == len(price_ops):
+                print(f"Prijs {idx}/{len(price_ops)}", flush=True)
+        _flush_staging_timestamps(sess, base, headers, "price_updated_at", price_stamp_by_row_id)
+        price_stamp_by_row_id.clear()
+    else:
+        print("Skip prijs (scope zonder price_eta).", flush=True)
 
     # Variant inventory policy
-    policy_sess = sync._http_session()
-    for idx, (_sku, vid, pol) in enumerate(policy_ops, start=1):
-        if not sync.rest_variant_inventory_policy(shop, token, api_ver, vid, pol, sess=policy_sess):
-            errors += 1
-        else:
-            policy_success.append((vid, pol))
-        if idx == 1 or idx % progress_every == 0 or idx == len(policy_ops):
-            print(f"Variant policy {idx}/{len(policy_ops)}", flush=True)
+    if run_policy:
+        policy_sess = sync._http_session()
+        for idx, (_sku, vid, pol) in enumerate(policy_ops, start=1):
+            if not sync.rest_variant_inventory_policy(
+                shop, token, api_ver, vid, pol, sess=policy_sess
+            ):
+                errors += 1
+            else:
+                policy_success.append((vid, pol))
+                sid = variant_to_staging_row_id.get(vid)
+                if sid:
+                    policy_stamp_by_row_id[sid] = _iso_now()
+                if len(policy_stamp_by_row_id) >= _STAMP_FLUSH_CHUNK:
+                    _flush_staging_timestamps(
+                        sess, base, headers, "policy_updated_at", policy_stamp_by_row_id
+                    )
+                    policy_stamp_by_row_id.clear()
+            if idx == 1 or idx % progress_every == 0 or idx == len(policy_ops):
+                print(f"Variant policy {idx}/{len(policy_ops)}", flush=True)
+        _flush_staging_timestamps(
+            sess, base, headers, "policy_updated_at", policy_stamp_by_row_id
+        )
+        policy_stamp_by_row_id.clear()
+    else:
+        print("Skip variant policy (scope zonder policy).", flush=True)
 
     # Product status (dedupe per product)
-    product_sess = sync._http_session()
-    deduped = [(pid, sku_ps[1]) for pid, sku_ps in product_ops_by_pid.items()]
-    if deduped:
-        print(
-            f"Product status pacing: {product_status_sleep_sec:.2f}s tussen requests",
-            flush=True,
-        )
-    for idx, (pid, ps) in enumerate(deduped, start=1):
-        st_rest = "draft" if ps == "DRAFT" else "active"
-        if not sync.rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess):
-            errors += 1
-        else:
-            product_success.append((pid, st_rest.upper()))
-        if idx == 1 or idx % progress_every == 0 or idx == len(deduped):
-            print(f"Product status {idx}/{len(deduped)}", flush=True)
-        if product_status_sleep_sec > 0:
-            time.sleep(product_status_sleep_sec)
+    if run_policy:
+        product_sess = sync._http_session()
+        deduped = [(pid, sku_ps[1]) for pid, sku_ps in product_ops_by_pid.items()]
+        if deduped:
+            print(
+                f"Product status pacing: {product_status_sleep_sec:.2f}s tussen requests",
+                flush=True,
+            )
+        for idx, (pid, ps) in enumerate(deduped, start=1):
+            st_rest = "draft" if ps == "DRAFT" else "active"
+            if not sync.rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess):
+                errors += 1
+            else:
+                product_success.append((pid, st_rest.upper()))
+            if idx == 1 or idx % progress_every == 0 or idx == len(deduped):
+                print(f"Product status {idx}/{len(deduped)}", flush=True)
+            if product_status_sleep_sec > 0:
+                time.sleep(product_status_sleep_sec)
+    else:
+        print("Skip product status (scope zonder policy).", flush=True)
 
     # Richt de Supabase mirror direct bij op basis van succesvolle mutaties.
     ts = _iso_now()
