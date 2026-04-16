@@ -79,6 +79,7 @@ query MirrorProducts($cursor: String) {{
         legacyResourceId
         handle
         title
+        productType
         status
         publishedAt
         updatedAt{fits_block}
@@ -307,12 +308,14 @@ def run_mirror(
                 raw_p = {
                     "gid": p.get("id"),
                     "status": p.get("status"),
+                    "productType": p.get("productType"),
                 }
                 prod_rows.append(
                     {
                         "shopify_product_id": pid_int,
                         "handle": p.get("handle"),
                         "title": p.get("title"),
+                        "type": p.get("productType"),
                         "status": (p.get("status") or "").upper() or None,
                         "published_at": p.get("publishedAt"),
                         "updated_at_shopify": p.get("updatedAt"),
