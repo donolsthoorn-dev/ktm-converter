@@ -345,6 +345,7 @@ def main() -> int:
         (
             "id,sku,shopify_variant_id,shopify_product_id,"
             "proposed_price,proposed_eta_date,proposed_product_status,proposed_inventory_policy,"
+            "policy_updated_at,"
             "price_changed,eta_changed,status_changed,inventory_policy_changed"
         ),
         where=where,
@@ -360,6 +361,7 @@ def main() -> int:
     product_ops_by_pid: dict[str, tuple[str, str]] = {}
     variant_to_product_id: dict[str, str] = {}
     variant_to_staging_row_id: dict[str, str] = {}
+    policy_already_done_skipped = 0
 
     for r in rows:
         sku = str(r.get("sku") or "").strip().upper()
@@ -384,6 +386,10 @@ def main() -> int:
                 eta_clear.append((sku, vid))
 
         if r.get("inventory_policy_changed") and vid:
+            policy_done = r.get("policy_updated_at") is not None
+            if args.scope == "policy" and policy_done:
+                policy_already_done_skipped += 1
+                continue
             pol = (str(r.get("proposed_inventory_policy") or "").strip().upper() or "DENY")
             if pol in ("DENY", "CONTINUE"):
                 policy_ops.append((sku, vid, pol))
@@ -397,6 +403,11 @@ def main() -> int:
         f"variant_policy {len(policy_ops)}, product_status {len(product_ops_by_pid)}",
         flush=True,
     )
+    if args.scope == "policy" and policy_already_done_skipped:
+        print(
+            f"Policy resume: {policy_already_done_skipped} al-verwerkte policy-rij(en) overgeslagen.",
+            flush=True,
+        )
 
     if args.dry_run:
         print("Dry-run: geen mutaties naar Shopify.", flush=True)

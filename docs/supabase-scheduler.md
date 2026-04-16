@@ -9,6 +9,8 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
   - standaard `apply_scope=price_eta` (policy draait los via handmatige run met `apply_scope=policy`)
   - guard: `price_eta` start niet als er al een `scope=policy` run in progress is (tussenliggende uren worden dan bewust overgeslagen)
   - zulke overgeslagen runs worden gelogd met `run_state=skipped` en reden `policy_run_in_progress`
+  - missing-SKU CSV/artifact wordt alleen gemaakt bij `apply_scope=policy` (of `all`)
+  - policy rerun-resume: als er nog `inventory_policy_changed=true` + `policy_updated_at is null` rows in staging staan, wordt staging rebuild overgeslagen en pakt apply alleen de resterende policy-rows
 - `shopify_auto_deactivate_invalid_products.yml` daily at `05:00 UTC` (`0 5 * * *`, with `apply=true`)
 
 ## Why

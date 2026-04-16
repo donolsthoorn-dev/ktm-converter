@@ -43,6 +43,7 @@ jobs:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}
       APPLY_SCOPE: ${{ github.event.inputs.apply_scope || 'price_eta' }}
       WORKFLOW_FILE_NAME: price_eta_status_sync.yml
+      SKIP_STAGING_REBUILD: "0"
     steps:
       - uses: actions/checkout@v6
 
@@ -185,6 +186,53 @@ jobs:
           print(f"Skip-log bijgewerkt voor workflow_dispatch_log.id={row_id}.")
           PY
 
+      - name: Policy resume-check op open staging-rows
+        if: env.RUN_MODE == 'apply' && env.APPLY_SCOPE == 'policy'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          base = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+          key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+          if not base or not key:
+            print("Resume-check: Supabase secrets ontbreken; staging wordt opnieuw opgebouwd.")
+            raise SystemExit(0)
+
+          hdr = {
+              "apikey": key,
+              "Authorization": f"Bearer {key}",
+              "Accept": "application/json",
+          }
+          q = urllib.parse.urlencode(
+              {
+                  "select": "id",
+                  "inventory_policy_changed": "eq.true",
+                  "policy_updated_at": "is.null",
+                  "limit": "1",
+              }
+          )
+          req = urllib.request.Request(f"{base}/rest/v1/pricelist_sync_staging?{q}", headers=hdr)
+          try:
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  rows = json.loads(resp.read().decode("utf-8", "replace")) or []
+          except Exception as e:
+              print(f"Resume-check mislukt ({e}); staging wordt opnieuw opgebouwd.")
+              raise SystemExit(0)
+
+          if rows:
+              print("Policy resume: open staging-rows gevonden; staging rebuild wordt overgeslagen.")
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+                  f.write("SKIP_STAGING_REBUILD=1\n")
+          else:
+              print("Policy resume: geen open staging-rows; staging wordt opnieuw opgebouwd.")
+          PY
+
       - name: Install Python dependencies
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         run: pip install -r requirements.txt
@@ -249,10 +297,17 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/build_pricelist_supabase_staging.py
+        run: |
+          if [ "${{ env.RUN_MODE }}" = "apply" ] && [ "${{ env.APPLY_SCOPE }}" = "policy" ] && [ "${{ env.SKIP_STAGING_REBUILD }}" = "1" ]; then
+            echo "Policy resume actief: staging rebuild overgeslagen."
+          elif [ "${{ env.RUN_MODE }}" = "apply" ] && { [ "${{ env.APPLY_SCOPE }}" = "policy" ] || [ "${{ env.APPLY_SCOPE }}" = "all" ]; }; then
+            python scripts/build_pricelist_supabase_staging.py
+          else
+            python scripts/build_pricelist_supabase_staging.py --missing-skus-csv ""
+          fi
 
       - name: Upload missing SKU rapport
-        if: always() && (env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply')
+        if: always() && env.RUN_MODE == 'apply' && (env.APPLY_SCOPE == 'policy' || env.APPLY_SCOPE == 'all')
         uses: actions/upload-artifact@v6
         with:
           name: missing-skus-in-shopify-mirror
