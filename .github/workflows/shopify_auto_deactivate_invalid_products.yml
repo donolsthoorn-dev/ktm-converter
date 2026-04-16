@@ -41,7 +41,7 @@ jobs:
 
       - name: Upload rapport
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: auto-deactivate-invalid-products-report
           path: output/auto_deactivate_invalid_products.csv
