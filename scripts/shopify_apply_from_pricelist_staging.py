@@ -162,8 +162,15 @@ def _flush_staging_timestamps(
     items = list(stamp_by_row_id.items())
     for i in range(0, len(items), _STAMP_FLUSH_CHUNK):
         chunk = items[i : i + _STAMP_FLUSH_CHUNK]
-        rows = [{"id": rid, column_name: ts} for rid, ts in chunk]
-        _supabase_upsert(sess, base, headers, "pricelist_sync_staging", rows, "id")
+        for rid, ts in chunk:
+            r = sess.patch(
+                f"{base}/pricelist_sync_staging",
+                headers=headers,
+                params={"id": f"eq.{rid}"},
+                json={column_name: ts},
+                timeout=_REQUEST_TIMEOUT,
+            )
+            r.raise_for_status()
 
 
 def main() -> int:
