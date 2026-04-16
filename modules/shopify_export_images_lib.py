@@ -51,6 +51,17 @@ query ProductsImageBatch($q: String!) {
 """
 
 DEFAULT_TASKS_BASENAME = "shopify_missing_image_tasks.json"
+_SHOPIFY_FILE_COPY_SUFFIX_RE = re.compile(
+    r"_(?:"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"|[0-9a-f]{12,64}"
+    r")$",
+    re.IGNORECASE,
+)
+_FALLBACK_IMAGE_BASENAME_RE = re.compile(
+    r"^pho_fallback_fallback_no_picture(?:__.*)?\.(?:jpg|jpeg|png|webp)$",
+    re.IGNORECASE,
+)
 
 
 def default_tasks_path() -> str:
@@ -61,7 +72,29 @@ def norm_src(url: str) -> str:
     if not url or not str(url).strip():
         return ""
     u = str(url).strip().split("?", 1)[0].rstrip("/")
-    return u.lower()
+    if not u:
+        return ""
+
+    # Shopify kan bij productimages een kopie-suffix toevoegen in de bestandsnaam
+    # (bijv. _<uuid>) terwijl de bron-CSV vaak de "schone" .jpg bevat.
+    # Door dit suffix te strippen voorkomen we vals-positieve "missing image" taken.
+    slash = u.rfind("/")
+    base = u[slash + 1 :] if slash >= 0 else u
+    stem, ext = os.path.splitext(base)
+    if stem:
+        stem = _SHOPIFY_FILE_COPY_SUFFIX_RE.sub("", stem)
+    # Vergelijk op bestandsnaam i.p.v. volledig pad:
+    # Shopify kan dezelfde afbeelding tonen onder /products/... of /files/...
+    # en dat moet als identiek tellen.
+    clean_base = f"{stem}{ext}"
+    return clean_base.lower()
+
+
+def is_fallback_image_url(url: str) -> bool:
+    key = norm_src(url)
+    if not key:
+        return False
+    return bool(_FALLBACK_IMAGE_BASENAME_RE.match(key))
 
 
 def latest_all_csv(products_dir: str) -> str | None:
@@ -88,6 +121,8 @@ def parse_csv_images(path: str) -> dict[str, list[str]]:
                 continue
             src = (row.get("Image Src") or "").strip()
             if not src:
+                continue
+            if is_fallback_image_url(src):
                 continue
             raw_pos = (row.get("Image Position") or "").strip()
             try:
