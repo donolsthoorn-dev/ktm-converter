@@ -41,6 +41,8 @@ _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
 _STAMP_FLUSH_CHUNK = 250
 _POLICY_FLUSH_CHUNK = 25
+_SUPABASE_RETRY_ATTEMPTS = 5
+_SUPABASE_RETRY_BASE_SLEEP_SEC = 1.5
 
 
 def _iso_now() -> str:
@@ -150,6 +152,58 @@ def _supabase_upsert(
     r.raise_for_status()
 
 
+def _supabase_request_with_retry(
+    sess: requests.Session,
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str],
+    params: dict[str, str] | None = None,
+    json: dict[str, Any] | list[dict[str, Any]] | None = None,
+    timeout: tuple[int, int] = _REQUEST_TIMEOUT,
+    retry_attempts: int = _SUPABASE_RETRY_ATTEMPTS,
+) -> requests.Response:
+    """Voer Supabase REST call uit met retry op tijdelijke fouten (429/5xx)."""
+    last_exc: requests.RequestException | None = None
+    for attempt in range(1, retry_attempts + 1):
+        try:
+            response = sess.request(
+                method,
+                url,
+                headers=headers,
+                params=params,
+                json=json,
+                timeout=timeout,
+            )
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt == retry_attempts:
+                    response.raise_for_status()
+                wait_sec = _SUPABASE_RETRY_BASE_SLEEP_SEC * attempt
+                print(
+                    f"Supabase transient fout ({response.status_code}) bij {method} {url}; retry {attempt}/{retry_attempts} na {wait_sec:.1f}s.",
+                    flush=True,
+                )
+                time.sleep(wait_sec)
+                continue
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            last_exc = exc
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            retryable = status is None or status == 429 or status >= 500
+            if (not retryable) or attempt == retry_attempts:
+                raise
+            wait_sec = _SUPABASE_RETRY_BASE_SLEEP_SEC * attempt
+            print(
+                f"Supabase request fout bij {method} {url}; retry {attempt}/{retry_attempts} na {wait_sec:.1f}s ({exc}).",
+                flush=True,
+            )
+            time.sleep(wait_sec)
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Onbereikbare code in _supabase_request_with_retry")
+
+
 def _flush_staging_timestamps(
     sess: requests.Session,
     base: str,
@@ -164,14 +218,14 @@ def _flush_staging_timestamps(
     for i in range(0, len(items), _STAMP_FLUSH_CHUNK):
         chunk = items[i : i + _STAMP_FLUSH_CHUNK]
         for rid, ts in chunk:
-            r = sess.patch(
+            _supabase_request_with_retry(
+                sess,
+                "PATCH",
                 f"{base}/pricelist_sync_staging",
                 headers=headers,
                 params={"id": f"eq.{rid}"},
                 json={column_name: ts},
-                timeout=_REQUEST_TIMEOUT,
             )
-            r.raise_for_status()
 
 
 def _workflow_dispatch_log_row_id(

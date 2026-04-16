@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Controleer actieve/gepubliceerde Shopify-producten en zet ze op DRAFT als:
-1) minstens één variant geen geldige prijs heeft (leeg/null/<= 0), of
-2) het product volledig uitverkocht is (alle varianten inventoryPolicy=DENY en quantity<=0).
+Periodieke publicatiecheck op productniveau (Shopify):
 
-Standaard is dry-run (alleen rapporteren). Voeg --apply toe om echt te deactiveren.
+- Zet product op DRAFT als:
+  1) alle varianten uitverkocht zijn (inventoryPolicy=DENY en quantity<=0), of
+  2) strict-regel: alle Shopify-varianten hebben CSV-match, overal ArticleStatus=80 en geen voorraad.
+- Zet product terug op ACTIVE als:
+  - product nu DRAFT staat, alle varianten CSV-match hebben, en strict-regel niet meer geldt.
+
+Standaard is dry-run (alleen rapporteren). Voeg --apply toe om echt te wijzigen.
 
 Voorbeelden:
   python3 scripts/shopify_auto_deactivate_invalid_products.py
@@ -22,6 +26,7 @@ import json
 import os
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 try:
@@ -36,6 +41,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config  # noqa: E402
+from modules.pricing_loader import (  # noqa: E402
+    load_article_status_from_35_z1_csv_files,
+    normalize_sku_key,
+)
 
 SHOP = config.SHOPIFY_SHOP_DOMAIN
 TOKEN = config.SHOPIFY_ACCESS_TOKEN
@@ -175,18 +184,6 @@ def _variant_price_bad(raw: object) -> bool:
         return True
 
 
-def _product_published_active_gql(p: dict) -> bool:
-    st = (p.get("status") or "").strip().upper()
-    if st != "ACTIVE":
-        return False
-    pub = p.get("publishedAt")
-    if pub is None:
-        return False
-    if isinstance(pub, str) and not pub.strip():
-        return False
-    return True
-
-
 def _gid_numeric(gid: str) -> str:
     return gid.rsplit("/", 1)[-1]
 
@@ -204,16 +201,79 @@ def _variant_is_sold_out(v: dict) -> bool:
         return False
 
 
-def _extract_candidate_reasons(variants: list[dict]) -> tuple[bool, bool]:
-    if not variants:
-        return False, False
+def _variant_qty_no_stock(v: dict) -> bool:
+    qty = v.get("inventoryQuantity")
+    if qty is None:
+        return False
+    try:
+        return int(qty) <= 0
+    except (TypeError, ValueError):
+        return False
 
+
+def _product_relevant_for_status_rules(p: dict) -> bool:
+    st = (p.get("status") or "").strip().upper()
+    return st in ("ACTIVE", "DRAFT")
+
+
+def _evaluate_product(
+    product: dict,
+    variants: list[dict],
+    article_status_by_sku: dict[str, str],
+) -> dict:
+    current_status = (product.get("status") or "").strip().upper()
     has_bad_price = any(_variant_price_bad(v.get("price")) for v in variants)
-    all_sold_out = all(_variant_is_sold_out(v) for v in variants)
-    return has_bad_price, all_sold_out
+    all_sold_out = bool(variants) and all(_variant_is_sold_out(v) for v in variants)
+    all_no_stock = bool(variants) and all(_variant_qty_no_stock(v) for v in variants)
+
+    status_values: list[str] = []
+    all_variants_have_csv_status = bool(variants)
+    for v in variants:
+        sku = normalize_sku_key(v.get("sku"))
+        if not sku:
+            all_variants_have_csv_status = False
+            break
+        st = (article_status_by_sku.get(sku) or "").strip()
+        if not st:
+            all_variants_have_csv_status = False
+            break
+        status_values.append(st)
+
+    all_variants_status80 = all_variants_have_csv_status and all(
+        st == "80" for st in status_values
+    )
+    status80_no_stock_strict = all_variants_status80 and all_no_stock
+    reactivate_candidate = (
+        current_status == "DRAFT"
+        and all_variants_have_csv_status
+        and not status80_no_stock_strict
+    )
+
+    action = "noop"
+    if current_status == "ACTIVE" and (all_sold_out or status80_no_stock_strict):
+        action = "set_draft"
+    elif reactivate_candidate:
+        action = "set_active"
+
+    return {
+        "product_gid": product.get("id") or "",
+        "product_id_numeric": _gid_numeric(product.get("id") or ""),
+        "handle": (product.get("handle") or "").strip(),
+        "title": (product.get("title") or "").strip(),
+        "current_status": current_status,
+        "published_at": product.get("publishedAt"),
+        "variant_count": len(variants),
+        "reason_bad_price": has_bad_price,
+        "reason_sold_out": all_sold_out,
+        "reason_status80_no_stock_strict": status80_no_stock_strict,
+        "all_variants_have_csv_status": all_variants_have_csv_status,
+        "all_variants_status80": all_variants_status80,
+        "all_variants_no_stock": all_no_stock,
+        "action": action,
+    }
 
 
-def _run_bulk(sess: requests.Session) -> list[dict]:
+def _run_bulk(sess: requests.Session, article_status_by_sku: dict[str, str]) -> list[dict]:
     q = _GQL_BULK_START.replace("BULK_QUERY_PLACEHOLDER", json.dumps(_BULK_QUERY))
     body = _graphql_post(sess, q)
     gerrs = body.get("errors")
@@ -263,7 +323,7 @@ def _run_bulk(sess: requests.Session) -> list[dict]:
             if not url:
                 print("\nGeen resultaat-URL (lege shop?).", flush=True)
                 return []
-            return _download_and_scan_jsonl(sess, url)
+            return _download_and_scan_jsonl(sess, url, article_status_by_sku)
 
         if status in ("FAILED", "CANCELED"):
             err = node.get("errorCode")
@@ -277,12 +337,16 @@ def _run_bulk(sess: requests.Session) -> list[dict]:
         poll_interval = min(poll_interval + 0.5, 15.0)
 
 
-def _download_and_scan_jsonl(sess: requests.Session, url: str) -> list[dict]:
+def _download_and_scan_jsonl(
+    sess: requests.Session,
+    url: str,
+    article_status_by_sku: dict[str, str],
+) -> list[dict]:
     print("JSONL downloaden en regel voor regel verwerken...", flush=True)
     products: dict[str, dict] = {}
     variants_by_product: dict[str, list[dict]] = {}
     prev_product_gid: str | None = None
-    candidates: list[dict] = []
+    evaluated: list[dict] = []
 
     r = sess.get(
         url,
@@ -314,44 +378,22 @@ def _download_and_scan_jsonl(sess: requests.Session, url: str) -> list[dict]:
             if prev_product_gid and prev_product_gid in products:
                 product = products[prev_product_gid]
                 variants = variants_by_product.get(prev_product_gid, [])
-                has_bad_price, all_sold_out = _extract_candidate_reasons(variants)
-                if has_bad_price or all_sold_out:
-                    candidates.append(
-                        {
-                            "product_gid": prev_product_gid,
-                            "product_id_numeric": _gid_numeric(prev_product_gid),
-                            "handle": (product.get("handle") or "").strip(),
-                            "title": (product.get("title") or "").strip(),
-                            "reason_bad_price": has_bad_price,
-                            "reason_sold_out": all_sold_out,
-                            "variant_count": len(variants),
-                        }
-                    )
+                evaluated.append(
+                    _evaluate_product(product, variants, article_status_by_sku)
+                )
                 del products[prev_product_gid]
                 variants_by_product.pop(prev_product_gid, None)
             prev_product_gid = gid
-            if _product_published_active_gql(obj):
+            if _product_relevant_for_status_rules(obj):
                 products[gid] = obj
             continue
 
     if prev_product_gid and prev_product_gid in products:
         product = products[prev_product_gid]
         variants = variants_by_product.get(prev_product_gid, [])
-        has_bad_price, all_sold_out = _extract_candidate_reasons(variants)
-        if has_bad_price or all_sold_out:
-            candidates.append(
-                {
-                    "product_gid": prev_product_gid,
-                    "product_id_numeric": _gid_numeric(prev_product_gid),
-                    "handle": (product.get("handle") or "").strip(),
-                    "title": (product.get("title") or "").strip(),
-                    "reason_bad_price": has_bad_price,
-                    "reason_sold_out": all_sold_out,
-                    "variant_count": len(variants),
-                }
-            )
+        evaluated.append(_evaluate_product(product, variants, article_status_by_sku))
 
-    return candidates
+    return evaluated
 
 
 def _reason_label(item: dict) -> str:
@@ -360,6 +402,14 @@ def _reason_label(item: dict) -> str:
         reasons.append("bad_price")
     if item.get("reason_sold_out"):
         reasons.append("sold_out")
+    if item.get("reason_status80_no_stock_strict"):
+        reasons.append("status80_no_stock_strict")
+    if (
+        item.get("action") == "set_active"
+        and item.get("all_variants_have_csv_status")
+        and not item.get("reason_status80_no_stock_strict")
+    ):
+        reasons.append("reactivate_candidate")
     return ",".join(reasons)
 
 
@@ -375,6 +425,12 @@ def _write_csv(rows: list[dict], out_path: Path) -> None:
                 "title",
                 "reason_bad_price",
                 "reason_sold_out",
+                "reason_status80_no_stock_strict",
+                "current_status",
+                "all_variants_have_csv_status",
+                "all_variants_status80",
+                "all_variants_no_stock",
+                "action",
                 "reasons",
                 "variant_count",
             ]
@@ -388,21 +444,29 @@ def _write_csv(rows: list[dict], out_path: Path) -> None:
                     row["title"],
                     "1" if row["reason_bad_price"] else "0",
                     "1" if row["reason_sold_out"] else "0",
+                    "1" if row["reason_status80_no_stock_strict"] else "0",
+                    row["current_status"],
+                    "1" if row["all_variants_have_csv_status"] else "0",
+                    "1" if row["all_variants_status80"] else "0",
+                    "1" if row["all_variants_no_stock"] else "0",
+                    row["action"],
                     _reason_label(row),
                     row["variant_count"],
                 ]
             )
 
 
-def _set_products_draft(sess: requests.Session, rows: list[dict]) -> tuple[int, list[str]]:
+def _set_products_status(sess: requests.Session, rows: list[dict]) -> tuple[int, list[str]]:
     ok_count = 0
     failed: list[str] = []
     for idx, row in enumerate(rows, start=1):
         gid = row["product_gid"]
+        action = row.get("action") or "noop"
+        target_status = "DRAFT" if action == "set_draft" else "ACTIVE"
         body = _graphql_post(
             sess,
             _GQL_SET_DRAFT,
-            {"input": {"id": gid, "status": "DRAFT"}},
+            {"input": {"id": gid, "status": target_status}},
             timeout=_REQUEST_TIMEOUT,
         )
         errs = body.get("errors") or []
@@ -415,12 +479,12 @@ def _set_products_draft(sess: requests.Session, rows: list[dict]) -> tuple[int, 
             failed.append(f"{gid} userErrors: {json.dumps(user_errors)}")
             continue
         status = (((upd.get("product") or {}).get("status")) or "").strip().upper()
-        if status != "DRAFT":
-            failed.append(f"{gid} onverwachte status: {status!r}")
+        if status != target_status:
+            failed.append(f"{gid} onverwachte status: {status!r} (verwacht {target_status})")
             continue
         ok_count += 1
         print(
-            f"  [{idx}/{len(rows)}] DRAFT gezet: {row['title'] or '(zonder titel)'} ({row['product_id_numeric']})",
+            f"  [{idx}/{len(rows)}] {target_status} gezet: {row['title'] or '(zonder titel)'} ({row['product_id_numeric']})",
             flush=True,
         )
         time.sleep(0.15)
@@ -452,48 +516,89 @@ def main() -> int:
         )
         return 2
 
+    article_status_by_sku = load_article_status_from_35_z1_csv_files(config.INPUT_DIR)
+    if article_status_by_sku:
+        print(
+            f"CSV ArticleStatus-index geladen: {len(article_status_by_sku)} SKU's.",
+            flush=True,
+        )
+    else:
+        print(
+            "Waarschuwing: geen ArticleStatus-index uit CSV geladen; strict status80-regel zal niets doen.",
+            flush=True,
+        )
+
     sess = _http_session()
-    rows = _run_bulk(sess)
+    rows = _run_bulk(sess, article_status_by_sku)
 
     rows_sorted = sorted(
         rows,
         key=lambda r: ((r.get("title") or "").lower(), str(r.get("product_id_numeric") or "")),
     )
-    _write_csv(rows_sorted, args.output_csv)
+    report_rows = [
+        r
+        for r in rows_sorted
+        if (
+            r.get("reason_bad_price")
+            or r.get("reason_sold_out")
+            or r.get("reason_status80_no_stock_strict")
+            or r.get("action") != "noop"
+        )
+    ]
+    _write_csv(report_rows, args.output_csv)
 
-    if not rows_sorted:
-        print("Geen producten gevonden die aan de deactivatie-regels voldoen.", flush=True)
+    if not report_rows:
+        print("Geen producten gevonden met relevante signalen of acties.", flush=True)
         print(f"CSV-rapport geschreven: {args.output_csv}", flush=True)
         return 0
 
+    action_counter = Counter(r.get("action") or "noop" for r in report_rows)
+    reason_counter = Counter()
+    for r in report_rows:
+        if r.get("reason_bad_price"):
+            reason_counter["bad_price"] += 1
+        if r.get("reason_sold_out"):
+            reason_counter["sold_out"] += 1
+        if r.get("reason_status80_no_stock_strict"):
+            reason_counter["status80_no_stock_strict"] += 1
+
     print(
-        f"Gevonden: {len(rows_sorted)} product(en) met reden bad_price en/of sold_out.",
+        "Gevonden: "
+        f"{len(report_rows)} relevante product(en); "
+        f"acties: draft={action_counter.get('set_draft', 0)}, "
+        f"active={action_counter.get('set_active', 0)}, "
+        f"noop={action_counter.get('noop', 0)}; "
+        f"redenen: bad_price={reason_counter.get('bad_price', 0)}, "
+        f"sold_out={reason_counter.get('sold_out', 0)}, "
+        f"status80_no_stock_strict={reason_counter.get('status80_no_stock_strict', 0)}.",
         flush=True,
     )
     print(f"CSV-rapport geschreven: {args.output_csv}", flush=True)
-    for row in rows_sorted[:25]:
+    for row in report_rows[:25]:
         print(
-            f"- {row['title'] or '(zonder titel)'} ({row['product_id_numeric']}) [{_reason_label(row)}]",
+            f"- {row['title'] or '(zonder titel)'} ({row['product_id_numeric']}) "
+            f"[actie={row.get('action')}, redenen={_reason_label(row)}]",
             flush=True,
         )
-    if len(rows_sorted) > 25:
-        print(f"... en {len(rows_sorted) - 25} meer", flush=True)
+    if len(report_rows) > 25:
+        print(f"... en {len(report_rows) - 25} meer", flush=True)
 
     if not args.apply:
         print("Dry-run: geen producten aangepast. Voeg --apply toe om op DRAFT te zetten.", flush=True)
         return 0
 
-    apply_rows = [row for row in rows_sorted if bool(row.get("reason_sold_out"))]
+    apply_rows = [row for row in report_rows if row.get("action") in ("set_draft", "set_active")]
     print(
-        f"Apply-modus: alleen sold_out-producten op DRAFT zetten ({len(apply_rows)} van {len(rows_sorted)} kandidaten).",
+        f"Apply-modus: {len(apply_rows)} product(en) bijwerken "
+        f"(draft={action_counter.get('set_draft', 0)}, active={action_counter.get('set_active', 0)}).",
         flush=True,
     )
     if not apply_rows:
-        print("Geen sold_out-producten gevonden; er is niets aangepast.", flush=True)
+        print("Geen statuswijzigingen nodig; er is niets aangepast.", flush=True)
         return 0
 
-    ok_count, failed = _set_products_draft(sess, apply_rows)
-    print(f"Klaar: {ok_count}/{len(apply_rows)} succesvol op DRAFT gezet.", flush=True)
+    ok_count, failed = _set_products_status(sess, apply_rows)
+    print(f"Klaar: {ok_count}/{len(apply_rows)} succesvol aangepast.", flush=True)
 
     if failed:
         print("Mislukte updates:", file=sys.stderr)

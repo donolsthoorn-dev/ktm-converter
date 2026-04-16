@@ -11,6 +11,9 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
   - zulke overgeslagen runs worden gelogd met `run_state=skipped` en reden `policy_run_in_progress`
   - missing-SKU CSV/artifact wordt alleen gemaakt bij `apply_scope=policy` (of `all`)
   - policy rerun-resume: als er nog `inventory_policy_changed=true` + `policy_updated_at is null` rows in staging staan, wordt staging rebuild overgeslagen en pakt apply alleen de resterende policy-rows
+- `price_eta_status_sync.yml` in `apply` mode met `apply_scope=policy` dagelijks `01:00 UTC` (`0 1 * * *`)
+- `shopify_auto_deactivate_invalid_products.yml` dagelijks `05:30 UTC` (`30 5 * * *`, apply=true)
+  - zet producten op DRAFT bij `status80_no_stock_strict` en activeert automatisch terug naar ACTIVE wanneer die regel niet meer geldt
 - `shopify_auto_deactivate_invalid_products.yml` daily at `05:00 UTC` (`0 5 * * *`, with `apply=true`)
 
 ## Why
@@ -25,6 +28,7 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
    - `converter/supabase/migrations/007_update_supabase_cron_dispatch_times_and_deactivate.sql`
    - `converter/supabase/migrations/009_price_eta_hourly_0700_2300.sql`
    - `converter/supabase/migrations/010_workflow_dispatch_log_run_stats.sql`
+   - `converter/supabase/migrations/011_policy_nightly_and_deactivate_after.sql`
 2. Create vault secret for GitHub API token (required):
 
 ```sql
@@ -76,7 +80,8 @@ from cron.job
 where jobname in (
   'ktm_job_worker_nightly',
   'ktm_price_eta_apply_hourly_0700_2300',
-  'ktm_shopify_auto_deactivate_0500'
+  'ktm_price_eta_policy_nightly',
+  'ktm_shopify_auto_deactivate_after_policy'
 );
 ```
 
