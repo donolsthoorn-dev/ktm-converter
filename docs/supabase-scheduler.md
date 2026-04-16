@@ -20,6 +20,7 @@ This project can trigger both workers from Supabase (`pg_cron + pg_net`) instead
    - `converter/supabase/migrations/006_supabase_cron_dispatch_github_workflows.sql`
    - `converter/supabase/migrations/007_update_supabase_cron_dispatch_times_and_deactivate.sql`
    - `converter/supabase/migrations/009_price_eta_hourly_0700_2300.sql`
+   - `converter/supabase/migrations/010_workflow_dispatch_log_run_stats.sql`
 2. Create vault secret for GitHub API token (required):
 
 ```sql
@@ -52,6 +53,15 @@ select *
 from public.workflow_dispatch_log
 order by created_at desc
 limit 100;
+```
+
+Voor compacte run-statistieken (bijv. `price 13 / eta 50 / policy 300`):
+
+```sql
+select created_at, workflow_file, mode, run_state, run_summary, run_stats
+from public.workflow_dispatch_log
+order by created_at desc
+limit 50;
 ```
 
 Check cron jobs:

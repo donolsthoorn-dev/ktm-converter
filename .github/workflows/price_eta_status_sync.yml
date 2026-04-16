@@ -41,6 +41,7 @@ jobs:
     env:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}
       APPLY_SCOPE: ${{ github.event.inputs.apply_scope || 'price_eta' }}
+      WORKFLOW_FILE_NAME: price_eta_status_sync.yml
     steps:
       - uses: actions/checkout@v6
 

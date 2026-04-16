@@ -173,6 +173,94 @@ def _flush_staging_timestamps(
             r.raise_for_status()
 
 
+def _workflow_dispatch_log_row_id(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    workflow_file: str,
+) -> int | None:
+    r = sess.get(
+        f"{base}/workflow_dispatch_log",
+        headers=headers,
+        params={
+            "select": "id",
+            "workflow_file": f"eq.{workflow_file}",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+        timeout=_REQUEST_TIMEOUT,
+    )
+    r.raise_for_status()
+    rows = r.json() or []
+    if not rows:
+        return None
+    rid = rows[0].get("id")
+    if rid is None:
+        return None
+    return int(rid)
+
+
+def _workflow_dispatch_log_patch(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    row_id: int | None,
+    body: dict[str, Any],
+) -> None:
+    if row_id is None:
+        return
+    r = sess.patch(
+        f"{base}/workflow_dispatch_log",
+        headers=headers,
+        params={"id": f"eq.{row_id}"},
+        json=body,
+        timeout=_REQUEST_TIMEOUT,
+    )
+    r.raise_for_status()
+
+
+def _flush_policy_success_to_mirror(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    policy_success: list[tuple[str, str]],
+    variant_to_product_id: dict[str, str],
+    ts: str,
+) -> None:
+    """Schrijf succesvolle policy-updates direct door naar shopify_variants mirror."""
+    if not policy_success:
+        return
+    variant_rows: list[dict[str, Any]] = []
+    for vid, pol in policy_success:
+        row: dict[str, Any] = {
+            "shopify_variant_id": int(vid),
+            "inventory_policy": pol,
+            "synced_at": ts,
+        }
+        pid = variant_to_product_id.get(vid)
+        if pid:
+            row["shopify_product_id"] = int(pid)
+        variant_rows.append(row)
+    _supabase_upsert(sess, base, headers, "shopify_variants", variant_rows, "shopify_variant_id")
+
+
+def _flush_product_success_to_mirror(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    product_success: list[tuple[str, str]],
+    ts: str,
+) -> None:
+    """Schrijf succesvolle productstatus-updates direct door naar shopify_products mirror."""
+    if not product_success:
+        return
+    product_rows = [
+        {"shopify_product_id": int(pid), "status": st, "synced_at": ts}
+        for pid, st in product_success
+    ]
+    _supabase_upsert(sess, base, headers, "shopify_products", product_rows, "shopify_product_id")
+
+
 def main() -> int:
     sync = _load_sync_module()
     sync.load_dotenv()
@@ -215,6 +303,28 @@ def main() -> int:
     headers = _headers()
     sess = requests.Session()
     sess.trust_env = False
+    workflow_file = os.environ.get("WORKFLOW_FILE_NAME", "price_eta_status_sync.yml").strip()
+    github_run_id_raw = (os.environ.get("GITHUB_RUN_ID") or "").strip()
+    github_run_id: int | None = None
+    if github_run_id_raw.isdigit():
+        github_run_id = int(github_run_id_raw)
+
+    log_row_id: int | None = None
+    try:
+        log_row_id = _workflow_dispatch_log_row_id(sess, base, headers, workflow_file)
+        _workflow_dispatch_log_patch(
+            sess,
+            base,
+            headers,
+            log_row_id,
+            {
+                "run_state": "running",
+                "run_started_at": _iso_now(),
+                "github_run_id": github_run_id,
+            },
+        )
+    except requests.RequestException as e:
+        print(f"workflow_dispatch_log start-update overgeslagen: {e}", file=sys.stderr, flush=True)
 
     where: dict[str, str] = {}
     if args.batch_id.strip():
@@ -297,6 +407,10 @@ def main() -> int:
     price_success: list[tuple[str, str]] = []
     policy_success: list[tuple[str, str]] = []
     product_success: list[tuple[str, str]] = []
+    price_success_count = 0
+    eta_success_count = 0
+    policy_success_count = 0
+    product_success_count = 0
     price_stamp_by_row_id: dict[str, str] = {}
     eta_stamp_by_row_id: dict[str, str] = {}
     policy_stamp_by_row_id: dict[str, str] = {}
@@ -336,6 +450,7 @@ def main() -> int:
                     for op in batch:
                         vid = str(op[1][1])
                         eta_success.append((vid, None))
+                        eta_success_count += 1
                         sid = variant_to_staging_row_id.get(vid)
                         if sid:
                             eta_stamp_by_row_id[sid] = _iso_now()
@@ -364,6 +479,7 @@ def main() -> int:
                     for op in batch:
                         vid = str(op[1][1])
                         eta_success.append((vid, str(op[1][2])))
+                        eta_success_count += 1
                         sid = variant_to_staging_row_id.get(vid)
                         if sid:
                             eta_stamp_by_row_id[sid] = _iso_now()
@@ -384,6 +500,7 @@ def main() -> int:
                 errors += 1
             else:
                 price_success.append((vid, price))
+                price_success_count += 1
                 sid = variant_to_staging_row_id.get(vid)
                 if sid:
                     price_stamp_by_row_id[sid] = _iso_now()
@@ -409,6 +526,7 @@ def main() -> int:
                 errors += 1
             else:
                 policy_success.append((vid, pol))
+                policy_success_count += 1
                 sid = variant_to_staging_row_id.get(vid)
                 if sid:
                     policy_stamp_by_row_id[sid] = _iso_now()
@@ -417,12 +535,21 @@ def main() -> int:
                         sess, base, headers, "policy_updated_at", policy_stamp_by_row_id
                     )
                     policy_stamp_by_row_id.clear()
+                if len(policy_success) >= _STAMP_FLUSH_CHUNK:
+                    _flush_policy_success_to_mirror(
+                        sess, base, headers, policy_success, variant_to_product_id, _iso_now()
+                    )
+                    policy_success.clear()
             if idx == 1 or idx % progress_every == 0 or idx == len(policy_ops):
                 print(f"Variant policy {idx}/{len(policy_ops)}", flush=True)
         _flush_staging_timestamps(
             sess, base, headers, "policy_updated_at", policy_stamp_by_row_id
         )
         policy_stamp_by_row_id.clear()
+        _flush_policy_success_to_mirror(
+            sess, base, headers, policy_success, variant_to_product_id, _iso_now()
+        )
+        policy_success.clear()
     else:
         print("Skip variant policy (scope zonder policy).", flush=True)
 
@@ -441,10 +568,18 @@ def main() -> int:
                 errors += 1
             else:
                 product_success.append((pid, st_rest.upper()))
+                product_success_count += 1
+                if len(product_success) >= _STAMP_FLUSH_CHUNK:
+                    _flush_product_success_to_mirror(
+                        sess, base, headers, product_success, _iso_now()
+                    )
+                    product_success.clear()
             if idx == 1 or idx % progress_every == 0 or idx == len(deduped):
                 print(f"Product status {idx}/{len(deduped)}", flush=True)
             if product_status_sleep_sec > 0:
                 time.sleep(product_status_sleep_sec)
+        _flush_product_success_to_mirror(sess, base, headers, product_success, _iso_now())
+        product_success.clear()
     else:
         print("Skip product status (scope zonder policy).", flush=True)
 
@@ -497,6 +632,51 @@ def main() -> int:
 
     if benign:
         print(f"Opmerking: {benign} idempotente ETA-clear meldingen genegeerd.", flush=True)
+    total_eta_ops = len(eta_set) + len(eta_clear)
+    total_price_ops = len(price_ops)
+    total_policy_ops = len(policy_ops)
+    summary = (
+        f"scope={args.scope}; "
+        f"price {price_success_count}/{total_price_ops}; "
+        f"eta {eta_success_count}/{total_eta_ops}; "
+        f"policy {policy_success_count}/{total_policy_ops}; "
+        f"product_status {product_success_count}/{len(product_ops_by_pid)}; "
+        f"errors={errors}"
+    )
+    stats: dict[str, Any] = {
+        "scope": args.scope,
+        "price_total": total_price_ops,
+        "price_success": price_success_count,
+        "eta_total": total_eta_ops,
+        "eta_success": eta_success_count,
+        "policy_total": total_policy_ops,
+        "policy_success": policy_success_count,
+        "policy_scope_enabled": run_policy,
+        "product_status_total": len(product_ops_by_pid),
+        "product_status_success": product_success_count,
+        "product_status_scope_enabled": run_policy,
+        "errors": errors,
+        "benign_eta_clear_ignored": benign,
+    }
+    try:
+        _workflow_dispatch_log_patch(
+            sess,
+            base,
+            headers,
+            log_row_id,
+            {
+                "run_state": "success" if errors == 0 else "failed",
+                "run_finished_at": _iso_now(),
+                "run_summary": summary,
+                "run_stats": stats,
+            },
+        )
+    except requests.RequestException as e:
+        print(
+            f"workflow_dispatch_log eind-update overgeslagen: {e}",
+            file=sys.stderr,
+            flush=True,
+        )
     print(f"Klaar. fouten={errors}", flush=True)
     return 0 if errors == 0 else 2
 
