@@ -49,6 +49,7 @@ SHOP_SLUG = config.SHOPIFY_SHOP_SLUG
 _REQUEST_TIMEOUT = (12, 120)
 _DEFAULT_OUT = ROOT / "output" / "duplicate_variant_skus.csv"
 _DEFAULT_SHADOW = ROOT / "cache" / "shopify_duplicate_sku_shadow.json"
+_SHADOW_SCHEMA_VERSION = 2
 
 
 def load_dotenv(path: Path | None = None) -> None:
@@ -151,13 +152,13 @@ def fetch_product_id_to_handle_status_vendor(
     token: str,
     api_version: str,
 ) -> dict[str, dict[str, str]]:
-    """product_id -> { handle, status, vendor }."""
+    """product_id -> { handle, status, vendor, type }."""
     sess = _http_session()
     headers = {"X-Shopify-Access-Token": token}
     out: dict[str, dict[str, str]] = {}
     url = (
         f"https://{shop}/admin/api/{api_version}/products.json"
-        "?limit=250&fields=id,handle,status,vendor"
+        "?limit=250&fields=id,handle,status,vendor,product_type"
     )
     while url:
         r = sess.get(
@@ -184,7 +185,13 @@ def fetch_product_id_to_handle_status_vendor(
             handle = (p.get("handle") or "").strip()
             status = (p.get("status") or "").strip()
             vendor = (p.get("vendor") or "").strip()
-            out[pid_s] = {"handle": handle, "status": status, "vendor": vendor}
+            ptype = (p.get("product_type") or "").strip()
+            out[pid_s] = {
+                "handle": handle,
+                "status": status,
+                "vendor": vendor,
+                "type": ptype,
+            }
         print(f"  Producten… {len(out)}", flush=True)
         url = _next_page_url(r.headers.get("Link"))
         time.sleep(0.5)
@@ -207,6 +214,8 @@ def _shadow_cache_valid(
     max_age_hours: float | None,
 ) -> bool:
     if meta.get("shop_domain") != shop or meta.get("api_version") != api_version:
+        return False
+    if int(meta.get("schema_version") or 1) != _SHADOW_SCHEMA_VERSION:
         return False
     if max_age_hours is None:
         return True
@@ -264,6 +273,7 @@ def load_shadow_state(
             "handle": str(info.get("handle", "")),
             "status": str(info.get("status", "")),
             "vendor": str(info.get("vendor", "")),
+            "type": str(info.get("type", "")),
         }
     return out_sku, out_p, fetched_at
 
@@ -280,6 +290,7 @@ def save_shadow_state(
         "meta": {
             "shop_domain": shop,
             "api_version": api_version,
+            "schema_version": _SHADOW_SCHEMA_VERSION,
             "fetched_at": time.time(),
         },
         "sku_entries": dict(sku_entries),
@@ -425,6 +436,7 @@ def main() -> int:
                     "product_id",
                     "handle",
                     "status",
+                    "type",
                     "variant_skus",
                     "variant_ids",
                     "storefront_url",
@@ -444,6 +456,7 @@ def main() -> int:
         "product_id",
         "handle",
         "status",
+        "type",
         "variant_skus",
         "variant_ids",
         "storefront_url",
@@ -461,12 +474,14 @@ def main() -> int:
             info = prod_map.get(pid, {})
             handle = info.get("handle", "")
             status = info.get("status", "")
+            ptype = info.get("type", "")
             row_out = {
                 "shared_sku": row["shared_sku"],
                 "vendor": row["vendor"],
                 "product_id": pid,
                 "handle": handle,
                 "status": status,
+                "type": ptype,
                 "variant_skus": row["variant_skus"],
                 "variant_ids": row["variant_ids"],
                 "storefront_url": storefront_url(handle) if handle else "",
