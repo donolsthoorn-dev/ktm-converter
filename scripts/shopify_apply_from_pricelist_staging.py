@@ -9,7 +9,7 @@ Deze flow leest de reeds berekende delta uit Supabase staging en voert alleen di
   - productstatus (status_changed; in huidige flow vooral re-activatie naar ACTIVE)
 
 Vereist:
-  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+  Supabase: URL + service role (``load_project_env()`` — zie ``modules/env_loader.py``)
   SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
 Optioneel:
   SHOPIFY_ADMIN_API_VERSION (default 2024-10)
@@ -33,9 +33,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-from modules.env_loader import load_dotenv  # noqa: E402
+from modules.env_loader import load_project_env  # noqa: E402
 
-load_dotenv()
+load_project_env()
 
 _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
@@ -316,6 +316,82 @@ def _flush_product_success_to_mirror(
     _supabase_upsert(sess, base, headers, "shopify_products", product_rows, "shopify_product_id")
 
 
+def _shopify_variant_inventory_quantities(
+    sync: Any,
+    shop: str,
+    token: str,
+    api_ver: str,
+    variant_ids: list[str],
+) -> dict[str, int | None]:
+    """Lees inventoryQuantity voor varianten via GraphQL nodes()."""
+    out: dict[str, int | None] = {}
+    uniq_ids = sorted({str(v).strip() for v in variant_ids if str(v).strip()})
+    if not uniq_ids:
+        return out
+    q = """
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on ProductVariant {
+      id
+      inventoryQuantity
+    }
+  }
+}
+"""
+    batch_size = 150
+    for i in range(0, len(uniq_ids), batch_size):
+        chunk = uniq_ids[i : i + batch_size]
+        gids = [f"gid://shopify/ProductVariant/{vid}" for vid in chunk]
+        data = sync.graphql_post(shop, token, api_ver, q, {"ids": gids})
+        nodes = (data or {}).get("nodes") or []
+        for node in nodes:
+            if not node:
+                continue
+            gid = str(node.get("id") or "")
+            if not gid or "/" not in gid:
+                continue
+            vid = gid.rsplit("/", 1)[-1]
+            qty_raw = node.get("inventoryQuantity")
+            try:
+                out[vid] = int(qty_raw) if qty_raw is not None else None
+            except (TypeError, ValueError):
+                out[vid] = None
+    return out
+
+
+def _apply_eta_stock_rule(
+    sync: Any,
+    shop: str,
+    token: str,
+    api_ver: str,
+    eta_set: list[tuple[str, str, str]],
+    eta_clear: list[tuple[str, str]],
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]], int]:
+    """
+    Bedrijfsregel: als Shopify-voorraad > 0 is, ETA niet zetten maar wissen.
+    Returns: (filtered_eta_set, merged_eta_clear, forced_clear_count)
+    """
+    if not eta_set:
+        return eta_set, eta_clear, 0
+    qty_by_vid = _shopify_variant_inventory_quantities(
+        sync, shop, token, api_ver, [vid for _sku, vid, _eta in eta_set]
+    )
+    clear_vids = {str(vid) for _sku, vid in eta_clear}
+    new_eta_set: list[tuple[str, str, str]] = []
+    new_eta_clear = list(eta_clear)
+    forced = 0
+    for sku, vid, eta in eta_set:
+        qty = qty_by_vid.get(str(vid))
+        if qty is not None and qty > 0:
+            forced += 1
+            if str(vid) not in clear_vids:
+                new_eta_clear.append((sku, vid))
+                clear_vids.add(str(vid))
+            continue
+        new_eta_set.append((sku, vid, eta))
+    return new_eta_set, new_eta_clear, forced
+
+
 def main() -> int:
     sync = _load_sync_module()
     sync.load_dotenv()
@@ -489,6 +565,14 @@ def main() -> int:
     # ETA mutaties in batches.
     batch_size = 25
     if run_price_eta:
+        eta_set, eta_clear, forced_eta_clears = _apply_eta_stock_rule(
+            sync, shop, token, api_ver, eta_set, eta_clear
+        )
+        if forced_eta_clears:
+            print(
+                f"ETA-regel Shopify voorraad: {forced_eta_clears} ETA set->clear (inventoryQuantity > 0).",
+                flush=True,
+            )
         all_eta_ops = [("set", x) for x in eta_set] + [("clear", x) for x in eta_clear]
         i = 0
         b = 0

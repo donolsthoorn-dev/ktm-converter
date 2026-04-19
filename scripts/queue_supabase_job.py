@@ -7,7 +7,7 @@ Gebruik (vanaf projectroot):
   python3 scripts/queue_supabase_job.py shopify_catalog_mirror
   python3 scripts/queue_supabase_job.py shopify_catalog_mirror --trigger schedule
 
-Vereist: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+Vereist: Supabase-URL en service role (``load_project_env()`` laadt project-.env).
 """
 
 from __future__ import annotations
@@ -33,6 +33,10 @@ _TIMEOUT = (15, 60)
 
 
 def main() -> int:
+    from modules.env_loader import load_project_env
+
+    load_project_env()
+
     p = argparse.ArgumentParser(description="Queue Supabase job")
     p.add_argument("job_type", help="bv. shopify_catalog_mirror")
     p.add_argument(

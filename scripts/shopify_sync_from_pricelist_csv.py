@@ -13,6 +13,7 @@ zelf bestanden en volgorde.
 
 Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, ArticleStatus, …):
   - hqETADate      → variant-metafield global.inventory_policy_eta_date (type date)
+                     en wordt niet gezet als Shopify-voorraad > 0 (dan ETA wissen)
   - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
   - ArticleStatus  → variant-signaal; deze flow zet producten niet meer naar draft.
                      Product-draft gebeurt in een apart script.
@@ -629,6 +630,81 @@ query($id: ID!) {
     return pid_gid.rsplit("/", 1)[-1]
 
 
+def graphql_variant_inventory_quantities(
+    shop: str,
+    token: str,
+    api_version: str,
+    variant_ids: list[str],
+    sess: requests.Session | None = None,
+) -> dict[str, int | None]:
+    """Haal inventoryQuantity per variant op via GraphQL nodes()."""
+    out: dict[str, int | None] = {}
+    uniq_ids = sorted({str(v).strip() for v in variant_ids if str(v).strip()})
+    if not uniq_ids:
+        return out
+    q = """
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on ProductVariant {
+      id
+      inventoryQuantity
+    }
+  }
+}
+"""
+    batch_size = 150
+    for i in range(0, len(uniq_ids), batch_size):
+        chunk = uniq_ids[i : i + batch_size]
+        gids = [f"gid://shopify/ProductVariant/{vid}" for vid in chunk]
+        data = graphql_post(shop, token, api_version, q, {"ids": gids}, sess=sess)
+        nodes = (data or {}).get("nodes") or []
+        for node in nodes:
+            if not node:
+                continue
+            gid = str(node.get("id") or "")
+            if not gid or "/" not in gid:
+                continue
+            vid = gid.rsplit("/", 1)[-1]
+            qty_raw = node.get("inventoryQuantity")
+            try:
+                out[vid] = int(qty_raw) if qty_raw is not None else None
+            except (TypeError, ValueError):
+                out[vid] = None
+    return out
+
+
+def apply_eta_stock_rule(
+    shop: str,
+    token: str,
+    api_version: str,
+    eta_set: list[tuple[str, str, str]],
+    eta_clear: list[tuple[str, str]],
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]], int]:
+    """
+    Bedrijfsregel: als Shopify-voorraad > 0 is, ETA niet zetten maar wissen.
+    Returns: (filtered_eta_set, merged_eta_clear, forced_clear_count)
+    """
+    if not eta_set:
+        return eta_set, eta_clear, 0
+    qty_by_vid = graphql_variant_inventory_quantities(
+        shop, token, api_version, [vid for _sku, vid, _iso in eta_set]
+    )
+    clear_vids = {str(vid) for _sku, vid in eta_clear}
+    new_eta_set: list[tuple[str, str, str]] = []
+    new_eta_clear = list(eta_clear)
+    forced = 0
+    for sku, vid, iso in eta_set:
+        qty = qty_by_vid.get(str(vid))
+        if qty is not None and qty > 0:
+            forced += 1
+            if str(vid) not in clear_vids:
+                new_eta_clear.append((sku, vid))
+                clear_vids.add(str(vid))
+            continue
+        new_eta_set.append((sku, vid, iso))
+    return new_eta_set, new_eta_clear, forced
+
+
 def rest_put_json(
     shop: str,
     token: str,
@@ -1159,6 +1235,15 @@ def main() -> int:
     if args.dry_run:
         print("Dry-run: geen wijzigingen in Shopify.", flush=True)
         return 0
+
+    eta_set, eta_clear, forced_eta_clears = apply_eta_stock_rule(
+        shop, token, api_ver, eta_set, eta_clear
+    )
+    if forced_eta_clears:
+        print(
+            f"ETA-regel Shopify voorraad: {forced_eta_clears} ETA set->clear (inventoryQuantity > 0).",
+            flush=True,
+        )
 
     errors = 0
     progress_every = 250  # voortgangsregel voor prijs/product (grote runs)

@@ -6,7 +6,8 @@ shopify_products) en schrijf afwijkingen naar public.pricelist_sync_staging.
 Geen Shopify API-calls. Bedoeld ter **handmatige review**; daarna pas (later/apply-workflow)
 mutaties naar Shopify.
 
-Vereist: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+Vereist: Supabase-URL en service role (via ``load_project_env()``: zie
+``modules/env_loader.py``).
 Optioneel: dezelfde --csv / input/ defaults als shopify_sync_from_pricelist_csv.py
 
 Migratie: converter/supabase/migrations/002_pricelist_sync_staging.sql
@@ -38,9 +39,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-from modules.env_loader import load_dotenv  # noqa: E402
+from modules.env_loader import load_project_env  # noqa: E402
 
-load_dotenv()
+load_project_env()
 
 _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000

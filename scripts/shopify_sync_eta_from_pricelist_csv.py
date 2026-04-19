@@ -6,6 +6,7 @@ variant-metafield inventory_policy_eta_date in Shopify bij (type date, ISO YYYY-
 - Datum **vandaag of in de toekomst** → metafield zetten op die datum.
 - Datum **in het verleden** → metafield **verwijderen** (veld leeg in Admin).
 - **Lege** hqETADate → metafield **verwijderen** (zelfde als verleden).
+- Shopify-voorraadregel: bij `inventoryQuantity > 0` wordt ETA altijd gewist.
 
 **SKU → variant-id** komt uit een cachebestand (geen live variant-fetch in dit script).
 Bouw of ververs die cache met:
@@ -400,6 +401,87 @@ mutation metafieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
         return body.get("data") or {}
 
 
+def graphql_variant_inventory_quantities(
+    shop: str,
+    token: str,
+    api_version: str,
+    variant_ids: list[str],
+) -> dict[str, int | None]:
+    """Haal inventoryQuantity per variant op via GraphQL nodes()."""
+    out: dict[str, int | None] = {}
+    uniq_ids = sorted({str(v).strip() for v in variant_ids if str(v).strip()})
+    if not uniq_ids:
+        return out
+    sess = _http_session()
+    q = """
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on ProductVariant {
+      id
+      inventoryQuantity
+    }
+  }
+}
+"""
+    batch_size = 150
+    for i in range(0, len(uniq_ids), batch_size):
+        chunk = uniq_ids[i : i + batch_size]
+        gids = [f"gid://shopify/ProductVariant/{vid}" for vid in chunk]
+        url = f"https://{shop}/admin/api/{api_version}/graphql.json"
+        headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+        r = _graphql_post_with_retries(
+            sess,
+            url,
+            headers,
+            {"query": q, "variables": {"ids": gids}},
+        )
+        r.raise_for_status()
+        body = r.json()
+        if "errors" in body:
+            raise RuntimeError(json.dumps(body["errors"], indent=2))
+        nodes = ((body.get("data") or {}).get("nodes")) or []
+        for node in nodes:
+            if not node:
+                continue
+            gid = str(node.get("id") or "")
+            if not gid or "/" not in gid:
+                continue
+            vid = gid.rsplit("/", 1)[-1]
+            qty_raw = node.get("inventoryQuantity")
+            try:
+                out[vid] = int(qty_raw) if qty_raw is not None else None
+            except (TypeError, ValueError):
+                out[vid] = None
+    return out
+
+
+def apply_eta_stock_rule(
+    shop: str,
+    token: str,
+    api_version: str,
+    ops: list[tuple[str, str, str, str]],
+) -> tuple[list[tuple[str, str, str, str]], int]:
+    """
+    Bedrijfsregel: als Shopify-voorraad > 0 is, ETA niet zetten maar wissen.
+    Returns: (ops_met_regel_toegepast, forced_set_to_clear_count)
+    """
+    set_vids = [vid for kind, _sku, vid, _iso in ops if kind == "set"]
+    if not set_vids:
+        return ops, 0
+    qty_by_vid = graphql_variant_inventory_quantities(shop, token, api_version, set_vids)
+    forced = 0
+    out: list[tuple[str, str, str, str]] = []
+    for kind, sku, vid, iso in ops:
+        if kind == "set":
+            qty = qty_by_vid.get(str(vid))
+            if qty is not None and qty > 0:
+                out.append(("clear", sku, vid, ""))
+                forced += 1
+                continue
+        out.append((kind, sku, vid, iso))
+    return out, forced
+
+
 def build_eta_ops(
     sku_to_eta: dict[str, str | None],
     sku_to_vids: dict[str, list[str]],
@@ -602,6 +684,12 @@ def main() -> int:
                 f"{state_path.name}).",
                 flush=True,
             )
+    ops, n_forced_stock_clear = apply_eta_stock_rule(shop, token, api_ver, ops)
+    if n_forced_stock_clear:
+        print(
+            f"ETA-regel Shopify voorraad: {n_forced_stock_clear} ETA set->clear (inventoryQuantity > 0).",
+            flush=True,
+        )
     n_set_after_delta = sum(1 for o in ops if o[0] == "set")
     n_clear_after_delta = sum(1 for o in ops if o[0] == "clear")
 

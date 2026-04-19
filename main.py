@@ -144,16 +144,17 @@ def main() -> None:
     # -----------------------------------------------------
     # unieke image-paden uit XML (volledige ref, niet alleen basename)
     # -----------------------------------------------------
-
+    # Ook refs buiten de delta meenemen: shopify_export_all bevat alle producten, maar
+    # image_url_map werd alleen gevuld vanuit delta → ontbrekende Image Src voor veel SKUs.
     image_refs = set()
 
-    for p in delta_products:
+    for p in products:
         for img in p.get("images", []):
             s = (img or "").strip()
             if s:
                 image_refs.add(s)
 
-    log.info("%s unieke image-referenties in delta (uit XML)", len(image_refs))
+    log.info("%s unieke image-referenties in volledige catalogus (uit XML)", len(image_refs))
 
     def _norm_ref_key(s: str) -> str:
         return s.strip().replace("\\", "/").lower()
@@ -200,20 +201,60 @@ def main() -> None:
         url, did_upload = ensure_image(cache_name, local_path, cache, strict_delta=True)
         return ("resolved" if url else "failed", refs, url, did_upload)
 
-    # Eerst synchroon: cache + CDN-HEAD (geen threads, geen GraphQL). Alleen rest naar workers.
-    need_slow: list[str] = []
-    for ap in unique_local_paths:
+    # Eerst: cache + CDN-HEAD (geen GraphQL-upload). Parallel mogelijk: veel legacy `true`-keys
+    # doen elk een HEAD — sequentieel lijkt dan "vastgelopen" (8063× netwerk).
+    def _fast_resolve_one(ap: str) -> tuple[str, list[str], str | None]:
         local_path = abs_path_to_local[ap]
         refs = abs_path_to_refs[ap]
         cache_name = local_path.name
         url = try_resolve_image_cache_or_cdn(cache_name, cache)
-        if url is not None:
-            images_resolved += len(refs)
-            for ref in refs:
-                image_url_map[ref] = url
-                image_url_by_norm[_norm_ref_key(ref)] = url
-        else:
-            need_slow.append(ap)
+        return ap, refs, url
+
+    try:
+        _fast_workers = max(
+            1,
+            min(
+                32,
+                int(os.environ.get("KTM_IMAGE_FAST_RESOLVE_WORKERS", "12").strip() or "12"),
+            ),
+        )
+    except ValueError:
+        _fast_workers = 12
+
+    try:
+        _progress_every = max(
+            1, int(os.environ.get("KTM_IMAGE_FAST_PROGRESS_EVERY", "250").strip() or "250")
+        )
+    except ValueError:
+        _progress_every = 250
+
+    log.info("Afbeelding fast-path workers (parallel CDN/cache-check): %s", _fast_workers)
+
+    need_slow: list[str] = []
+    total_fast = len(unique_local_paths)
+    done_fast = 0
+
+    with ThreadPoolExecutor(max_workers=_fast_workers) as fast_ex:
+        future_to_ap = {fast_ex.submit(_fast_resolve_one, ap): ap for ap in unique_local_paths}
+        for fut in as_completed(future_to_ap):
+            done_fast += 1
+            if done_fast == 1 or done_fast == total_fast or done_fast % _progress_every == 0:
+                log.info("Afbeelding fast-path voortgang: %s/%s", done_fast, total_fast)
+            try:
+                _ap, refs, url = fut.result()
+            except Exception as e:
+                ap_fail = future_to_ap.get(fut)
+                log.warning("Afbeelding fast-path fout (%s): %s", ap_fail, e)
+                if ap_fail:
+                    need_slow.append(ap_fail)
+                continue
+            if url is not None:
+                images_resolved += len(refs)
+                for ref in refs:
+                    image_url_map[ref] = url
+                    image_url_by_norm[_norm_ref_key(ref)] = url
+            else:
+                need_slow.append(_ap)
 
     # Fast path kan cache vullen (CDN-HEAD → _store_cache_url); direct naar schijf.
     save_cache_safe(cache)
@@ -353,6 +394,25 @@ def main() -> None:
     delta_products = fixed_delta
 
     delta_final_skus = {normalize_sku_key(p["sku"]) for p in delta_products if p.get("sku")}
+
+    # -----------------------------------------------------
+    # Afbeelding-URL's ook op volledige catalogus (ALL-export)
+    # -----------------------------------------------------
+    # Delta-run zet CDN-URL's alleen op varianten die in delta_products zitten. De exporter
+    # kiest per handle een "primary" op basis van titellengte — die kan een variant zijn die
+    # níet in de delta zat maar wél dezelfde XML-image-ref deelt. Zonder deze stap blijft
+    # Image Src een basename/legacy-pad i.p.v. de geüploade Shopify-URL, of ontbreekt de URL.
+    for p in products:
+        new_images: list[str] = []
+        for img in p.get("images", []) or []:
+            raw = (img or "").strip()
+            if not raw:
+                continue
+            url = image_url_map.get(raw) if raw else None
+            if not url and raw:
+                url = image_url_by_norm.get(_norm_ref_key(raw))
+            new_images.append(url if url else raw)
+        p["images"] = new_images
 
     # -----------------------------------------------------
     # CSV export

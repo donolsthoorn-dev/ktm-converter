@@ -72,7 +72,7 @@ def compute_etl_pipeline_sets(
     by_basename_exact, by_basename_lower = build_basename_index(input_root)
 
     image_refs: set[str] = set()
-    for p in delta_products:
+    for p in products:
         for img in p.get("images", []):
             s = (img or "").strip()
             if s:

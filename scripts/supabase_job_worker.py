@@ -4,14 +4,15 @@ Pakt één `queued` job uit Supabase `jobs`, zet deze op running → success/fai
 
 Bedoeld voor GitHub Actions (schedule / workflow_dispatch). Vereist o.a.:
 
-  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+  Supabase-URL en service role (``load_project_env()``: ``.env``,
+  ``converter/.env``, ``converter/.env.local``; ``NEXT_PUBLIC_SUPABASE_URL`` → ``SUPABASE_URL``)
   Voor job_type shopify_catalog_mirror: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
-  (zie .env.example / workflow job-worker.yml)
+  (zie workflow job-worker.yml)
 
-Gebruik (vanaf projectroot):
+Gebruik (vanaf projectroot): secrets staan in ``.env`` / ``converter/.env.local``, of tijdelijk:
 
   SUPABASE_URL=https://xxx.supabase.co SUPABASE_SERVICE_ROLE_KEY=eyJ... \\
- python3 scripts/supabase_job_worker.py
+  python3 scripts/supabase_job_worker.py
 
 Exitcode: 0 als er geen job was of de run gelukt is; 1 bij configuratie-/HTTP-fout.
 """
@@ -32,9 +33,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-from modules.env_loader import load_dotenv  # noqa: E402
+from modules.env_loader import load_project_env  # noqa: E402
 
-load_dotenv()
+load_project_env()
 
 
 def _iso_now() -> str:

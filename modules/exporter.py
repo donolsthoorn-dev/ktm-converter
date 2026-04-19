@@ -1,12 +1,249 @@
 import csv
 import html
+import json
 import os
 import re
+from pathlib import Path
+
+import requests
 
 import config
 from modules.category_mapper import map_category, map_shopify_product_category
 
 IMAGE_BASE_URL = config.SHOPIFY_CDN_FILES_BASE_URL
+
+
+def _cdn_products_base_from_files_base(files_base: str) -> str:
+    """
+    Shopify CDN: content-bestanden staan onder .../<shop-path>/files/<name>.
+    Product-import (CSV) verwacht vaak .../<shop-path>/products/<name> (zelfde host/pad-prefix).
+    """
+    fb = (files_base or "").rstrip("/")
+    if fb.lower().endswith("/files"):
+        return fb[: -len("/files")].rstrip("/") + "/products/"
+    return files_base
+
+
+IMAGE_PRODUCTS_BASE_URL = _cdn_products_base_from_files_base(IMAGE_BASE_URL)
+_CSV_IMAGE_CACHE_FILE = Path("cache/csv_image_url_cache.json")
+_CSV_IMAGE_CDN_RE = re.compile(
+    r"^(https?://cdn\.shopify\.com/s/files/\d+(?:/\d+)+)/(files|products)/([^?#]+)([?#].*)?$",
+    re.IGNORECASE,
+)
+_csv_image_cache_loaded = False
+_csv_image_cache_dirty = False
+_csv_image_choice_cache: dict[str, str] = {}
+_csv_image_reachability_cache: dict[str, bool] = {}
+_session: requests.Session | None = None
+
+
+def _http_session() -> requests.Session:
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        _session.trust_env = False
+    return _session
+
+
+def _truthy(raw: str) -> bool:
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _legacy_use_products_override() -> str | None:
+    raw = os.environ.get("KTM_SHOPIFY_CSV_USE_PRODUCTS_IMAGE_PATH", "").strip()
+    if not raw:
+        return None
+    return "products" if _truthy(raw) else "files"
+
+
+def _image_url_mode() -> str:
+    legacy = _legacy_use_products_override()
+    if legacy:
+        return legacy
+    raw = os.environ.get("KTM_SHOPIFY_CSV_IMAGE_PATH_MODE", "auto").strip().lower()
+    if raw in ("files", "products", "auto"):
+        return raw
+    return "auto"
+
+
+def _load_csv_image_cache() -> None:
+    global _csv_image_cache_loaded, _csv_image_choice_cache, _csv_image_reachability_cache
+    if _csv_image_cache_loaded:
+        return
+    _csv_image_choice_cache = {}
+    _csv_image_reachability_cache = {}
+    if _CSV_IMAGE_CACHE_FILE.exists():
+        try:
+            payload = json.loads(_CSV_IMAGE_CACHE_FILE.read_text(encoding="utf-8"))
+            choices = payload.get("path_choice")
+            reachability = payload.get("url_reachable")
+            if isinstance(choices, dict):
+                _csv_image_choice_cache = {
+                    str(k): str(v)
+                    for k, v in choices.items()
+                    if isinstance(k, str) and str(v) in ("files", "products")
+                }
+            if isinstance(reachability, dict):
+                _csv_image_reachability_cache = {
+                    str(k): bool(v) for k, v in reachability.items() if isinstance(k, str)
+                }
+        except (OSError, json.JSONDecodeError):
+            pass
+    _csv_image_cache_loaded = True
+
+
+def _save_csv_image_cache() -> None:
+    global _csv_image_cache_dirty
+    if not _csv_image_cache_dirty:
+        return
+    payload = {
+        "path_choice": _csv_image_choice_cache,
+        "url_reachable": _csv_image_reachability_cache,
+    }
+    _CSV_IMAGE_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _CSV_IMAGE_CACHE_FILE.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=True),
+        encoding="utf-8",
+    )
+    _csv_image_cache_dirty = False
+
+
+def _strip_query(url: str) -> str:
+    return (url or "").strip().split("#", 1)[0].split("?", 1)[0]
+
+
+def _cdn_variant_url(url: str, segment: str) -> str | None:
+    m = _CSV_IMAGE_CDN_RE.match((url or "").strip())
+    if not m:
+        return None
+    return f"{m.group(1)}/{segment}/{m.group(3)}{m.group(4) or ''}"
+
+
+def _reachability_key(url: str) -> str:
+    return _strip_query(url).strip().lower()
+
+
+def _is_url_reachable(url: str) -> bool:
+    global _csv_image_cache_dirty
+    key = _reachability_key(url)
+    if not key:
+        return False
+    cached = _csv_image_reachability_cache.get(key)
+    if isinstance(cached, bool):
+        return cached
+
+    sess = _http_session()
+    ok = False
+    try:
+        r = sess.head(
+            url,
+            timeout=8,
+            allow_redirects=True,
+            proxies={"http": None, "https": None},
+            headers={"User-Agent": "KTM-ETL/1.0"},
+        )
+        ok = r.status_code in (200, 301, 302, 303, 307, 308)
+    except Exception:
+        ok = False
+    if not ok:
+        try:
+            r = sess.get(
+                url,
+                timeout=12,
+                stream=True,
+                proxies={"http": None, "https": None},
+                headers={"User-Agent": "KTM-ETL/1.0"},
+            )
+            ok = r.status_code == 200
+            r.close()
+        except Exception:
+            ok = False
+
+    _csv_image_reachability_cache[key] = ok
+    _csv_image_cache_dirty = True
+    return ok
+
+
+def _candidate_urls(path: str) -> tuple[str, str]:
+    s = (path or "").strip()
+    if not s:
+        return "", ""
+    if s.startswith("http://") or s.startswith("https://"):
+        files_url = _cdn_variant_url(s, "files")
+        products_url = _cdn_variant_url(s, "products")
+        if files_url and products_url:
+            return files_url, products_url
+        # Bijv. oude /cdn/shop/files/ URL: niet herschrijven, direct gebruiken.
+        return s, s
+    filename = os.path.basename(s)
+    if not filename:
+        return "", ""
+    return IMAGE_BASE_URL + filename, IMAGE_PRODUCTS_BASE_URL + filename
+
+
+def _cache_choice_key(files_url: str) -> str:
+    return os.path.basename(_strip_query(files_url)).strip().lower()
+
+
+def _pick_best_cdn_url(files_url: str, products_url: str, mode: str) -> str:
+    global _csv_image_cache_dirty
+    if not files_url:
+        return products_url
+    if not products_url or files_url == products_url:
+        return files_url
+
+    if mode == "files":
+        return files_url
+    if mode == "products":
+        return products_url
+
+    choice_key = _cache_choice_key(files_url)
+    if choice_key:
+        cached = _csv_image_choice_cache.get(choice_key)
+        if cached == "files":
+            return files_url
+        if cached == "products":
+            return products_url
+
+    # Auto-mode: eerst files, dan products.
+    if _is_url_reachable(files_url):
+        if choice_key:
+            _csv_image_choice_cache[choice_key] = "files"
+            _csv_image_cache_dirty = True
+        return files_url
+    if _is_url_reachable(products_url):
+        if choice_key:
+            _csv_image_choice_cache[choice_key] = "products"
+            _csv_image_cache_dirty = True
+        return products_url
+
+    # Geen van beide publiek bereikbaar: veilige fallback blijft /files.
+    if choice_key:
+        _csv_image_choice_cache[choice_key] = "files"
+        _csv_image_cache_dirty = True
+    return files_url
+
+
+def _shopify_cdn_content_files_to_products_path(url: str) -> str:
+    """
+    Herschrijf library-URL (.../s/files/<id-path>/files/<file>) naar product-pad (.../products/<file>).
+    Laat query/hash ongemoeid (Shopify voegt ?v= soms pas toe na koppeling aan productmedia).
+    """
+    s = (url or "").strip()
+    if not s.lower().startswith("http"):
+        return s
+    if re.search(r"/s/files/\d+(?:/\d+)*/products/", s, re.IGNORECASE):
+        return s
+    m = re.match(
+        r"^(https?://cdn\.shopify\.com/s/files/\d+(?:/\d+)+)/files/([^?#]+)([?#].*)?$",
+        s,
+        re.IGNORECASE,
+    )
+    if not m:
+        return s
+    base, fname, tail = m.group(1), m.group(2), m.group(3) or ""
+    return f"{base}/products/{fname}{tail}"
+
 
 HEADER = [
     "Handle",
@@ -69,17 +306,12 @@ def setcol(row, name, value):
 def normalize_image_url(path: str) -> str:
     if not path:
         return ""
-    # Al een volledige CDN-URL (bijv. na ensure_image / fileCreate): niet herschrijven.
-    if path.startswith("http://") or path.startswith("https://"):
-        p = path.split("?", 1)[0].strip()
-        if p.lower().startswith(IMAGE_BASE_URL.lower().rstrip("/")) or "/cdn/shop/files/" in p:
-            return path.strip()
-        filename = os.path.basename(path.split("?", 1)[0])
-    else:
-        filename = os.path.basename(path)
-    if not filename:
+    _load_csv_image_cache()
+    mode = _image_url_mode()
+    files_url, products_url = _candidate_urls(path)
+    if not files_url and not products_url:
         return ""
-    return IMAGE_BASE_URL + filename
+    return _pick_best_cdn_url(files_url, products_url, mode)
 
 
 def strip_html(text: str) -> str:
@@ -252,3 +484,5 @@ def export(products, filename):
                 setcol(image_row, "Image Position", img_pos)
                 setcol(image_row, "Image Alt Text", title)
                 writer.writerow(image_row)
+
+    _save_csv_image_cache()

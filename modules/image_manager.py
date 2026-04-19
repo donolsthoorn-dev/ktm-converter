@@ -27,6 +27,8 @@ GRAPHQL_URL = (
 
 CACHE_FILE = "cache/image_cache.json"
 _cache_save_lock = threading.Lock()
+# In-memory cache.json mutaties (parallel fast-path in main.py + uploads)
+_cache_mut_lock = threading.RLock()
 _REQUEST_TIMEOUT = (12, 180)
 _CDN_POLL_ATTEMPTS = 12
 _CDN_POLL_SLEEP_SEC = 0.75
@@ -65,6 +67,51 @@ def _cache_entry_url(cache: dict, filename: str) -> str | None:
     return None
 
 
+def _is_legacy_cdn_ok_marker(v) -> bool:
+    """
+    Oude image_cache.json schreef soms alleen JSON true (CDN bereikbaar) zonder URL.
+    Soms ook string "true" uit handmatige edits.
+    """
+    if v is True:
+        return True
+    if isinstance(v, str) and v.strip().lower() in ("true", "1", "yes", "on"):
+        return True
+    return False
+
+
+def _resolve_cache_key_to_url(
+    cache: dict,
+    cache_key: str,
+    local_basename: str,
+    *,
+    persist: bool,
+) -> str | None:
+    """
+    Lees één cache-key: dict met url, of legacy boolean/string marker → CDN test op build_url(cache_key).
+    Bij persist: migreer naar {"url": ...} of verwijder dode legacy-entry.
+    """
+    v = cache.get(cache_key)
+    if isinstance(v, dict):
+        u = v.get("url")
+        if isinstance(u, str) and u.startswith("http"):
+            return u
+        return None
+
+    if not _is_legacy_cdn_ok_marker(v):
+        return None
+
+    candidate = build_url(cache_key)
+    if url_is_reachable(candidate):
+        if persist:
+            _store_cache_url(cache, local_basename, candidate)
+        return candidate
+
+    if persist and cache_key in cache:
+        with _cache_mut_lock:
+            cache.pop(cache_key, None)
+    return None
+
+
 def _normalize_cache_entry(cache: dict, filename: str, url: str) -> None:
     cache[filename] = {"url": url}
 
@@ -81,10 +128,11 @@ def _store_cache_url(cache: dict, local_filename: str, url: str) -> None:
     Sla URL op onder de lokale basename; als de CDN-URL een andere bestandsnaam heeft
     (Shopify voegt soms __v1 toe), ook onder die naam — volgende run vindt de cache.
     """
-    _normalize_cache_entry(cache, local_filename, url)
-    cdn_name = _url_basename(url)
-    if cdn_name and cdn_name.lower() != local_filename.lower():
-        _normalize_cache_entry(cache, cdn_name, url)
+    with _cache_mut_lock:
+        _normalize_cache_entry(cache, local_filename, url)
+        cdn_name = _url_basename(url)
+        if cdn_name and cdn_name.lower() != local_filename.lower():
+            _normalize_cache_entry(cache, cdn_name, url)
 
 
 def _canonical_filename_match(path_last: str, target_filename: str) -> bool:
@@ -547,11 +595,10 @@ def try_resolve_image_cache_or_cdn(filename: str, cache: dict) -> str | None:
     for key in _filename_variant_keys(filename):
         if key not in cache:
             continue
-        cached = _cache_entry_url(cache, key)
-        if cached:
-            return cached
-    if filename in cache:
-        return guessed
+        if u := _cache_entry_url(cache, key):
+            return u
+        if u := _resolve_cache_key_to_url(cache, key, filename, persist=True):
+            return u
     if url_is_reachable(guessed):
         _store_cache_url(cache, filename, guessed)
         return guessed
@@ -571,7 +618,9 @@ def ensure_image(
     Retourneert (url_of_None, uploaded_naar_shopify).
 
     Geen dubbele uploads:
-    - Staat de bestandsnaam al in image_cache.json → direct die URL gebruiken (geen HEAD/upload).
+    - Staat de bestandsnaam in image_cache.json met `{"url": ...}` → direct die URL (geen HEAD/upload).
+    - Legacy-entry `true` (oude runs): CDN test op `build_url(...)`; bij succes migreren naar `{"url"}`,
+      bij falen entry verwijderen zodat lookup/upload opnieuw kan.
     - Anders: CDN-URL testen; zo niet bereikbaar, optioneel GraphQL `files`-zoektocht naar bestaand
       bestand in Shopify; pas daarna upload.
 
@@ -619,11 +668,10 @@ def resolve_image_url_without_upload(
     for key in _filename_variant_keys(filename):
         if key not in cache:
             continue
-        cached = _cache_entry_url(cache, key)
-        if cached:
-            return cached
-    if filename in cache:
-        return guessed
+        if u := _cache_entry_url(cache, key):
+            return u
+        if u := _resolve_cache_key_to_url(cache, key, filename, persist=False):
+            return u
     if not use_network:
         return None
     if url_is_reachable(guessed):
