@@ -21,7 +21,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
+
+try:
+    import requests
+except ImportError:
+    print("Installeer requests: pip install requests", file=sys.stderr)
+    raise SystemExit(1)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -33,6 +40,72 @@ from modules.xml_loader import load_products
 
 # Zelfde relation-waarden als Shopify GraphQL (uppercase enum)
 _POSITIVE = frozenset({"EQUALS", "CONTAINS", "STARTS_WITH", "ENDS_WITH"})
+_REQUEST_TIMEOUT = (15, 90)
+
+
+def _http_session() -> requests.Session:
+    s = requests.Session()
+    s.trust_env = False
+    return s
+
+
+def _extract_next_link(link_header: str) -> str | None:
+    if not link_header:
+        return None
+    for part in link_header.split(","):
+        p = part.strip()
+        if 'rel="next"' not in p:
+            continue
+        if "<" not in p or ">" not in p:
+            continue
+        start = p.find("<") + 1
+        end = p.find(">", start)
+        if end <= start:
+            continue
+        return p[start:end]
+    return None
+
+
+def _fetch_shopify_product_types(shop: str, token: str, api_version: str) -> set[str]:
+    """Haal unieke product_type-waarden op uit live Shopify-producten (REST)."""
+    types: set[str] = set()
+    url = (
+        f"https://{shop}/admin/api/{api_version}/products.json"
+        "?limit=250&fields=id,product_type"
+    )
+    headers = {"X-Shopify-Access-Token": token}
+    with _http_session() as sess:
+        while url:
+            resp = None
+            for attempt in range(25):
+                resp = sess.get(
+                    url,
+                    headers=headers,
+                    timeout=_REQUEST_TIMEOUT,
+                    proxies={"http": None, "https": None},
+                )
+                if resp.status_code == 429:
+                    time.sleep(min(2.0 + attempt * 0.3, 45.0))
+                    continue
+                if 500 <= resp.status_code <= 599:
+                    time.sleep(min(3.0 + attempt * 0.5, 60.0))
+                    continue
+                break
+            if resp is None:
+                raise RuntimeError("Onbekende fout bij Shopify API-call")
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"Shopify products API fout {resp.status_code}: {resp.text[:300]}"
+                )
+            data = resp.json() or {}
+            for p in data.get("products") or []:
+                t = (p.get("product_type") or "").strip()
+                if t:
+                    types.add(t)
+            url = _extract_next_link(resp.headers.get("Link", ""))
+            if url:
+                time.sleep(0.5)
+    return types
 
 
 def _type_matches_rule(product_type: str, relation: str, condition: str) -> bool:
@@ -70,6 +143,12 @@ def main() -> int:
         description="XML Type-waarden vs. Shopify TYPE-collectieregels"
     )
     p.add_argument(
+        "--source",
+        choices=("xml", "shopify"),
+        default="xml",
+        help="Bron voor Type-waarden: 'xml' (default) of live Shopify-producten.",
+    )
+    p.add_argument(
         "--include-excluded-types",
         action="store_true",
         help="Ook types die in config.DELTA_EXCLUDED_TYPES zitten (default: zelfde filter als export)",
@@ -86,17 +165,31 @@ def main() -> int:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt — zie .env", file=sys.stderr)
         return 1
 
-    print("XML laden…", flush=True)
-    products = load_products()
-    xml_types: set[str] = set()
-    excluded = config.DELTA_EXCLUDED_TYPES
-    for pdict in products:
-        tv = (pdict.get("type") or "").strip()
-        if not tv:
-            continue
-        if not args.include_excluded_types and tv in excluded:
-            continue
-        xml_types.add(tv)
+    type_values: set[str] = set()
+    source_label = "XML"
+    if args.source == "xml":
+        print("XML laden…", flush=True)
+        products = load_products()
+        excluded = config.DELTA_EXCLUDED_TYPES
+        for pdict in products:
+            tv = (pdict.get("type") or "").strip()
+            if not tv:
+                continue
+            if not args.include_excluded_types and tv in excluded:
+                continue
+            type_values.add(tv)
+    else:
+        source_label = "Shopify-producten"
+        print("Shopify-producttypes laden…", flush=True)
+        try:
+            type_values = _fetch_shopify_product_types(
+                config.SHOPIFY_SHOP_DOMAIN.strip(),
+                token,
+                config.SHOPIFY_ADMIN_API_VERSION.strip(),
+            )
+        except Exception as e:
+            print(e, file=sys.stderr)
+            return 1
 
     print("Shopify-collecties ophalen…", flush=True)
     try:
@@ -116,10 +209,10 @@ def main() -> int:
             if cond:
                 equals_values.add(cond)
 
-    not_in_any_equals = sorted(xml_types - equals_values)
+    not_in_any_equals = sorted(type_values - equals_values)
 
     without_positive_match: list[str] = []
-    for tv in sorted(xml_types):
+    for tv in sorted(type_values):
         matched = False
         for _c, r in _iter_type_rules(collections):
             rel = (r.get("relation") or "").upper()
@@ -132,11 +225,12 @@ def main() -> int:
             without_positive_match.append(tv)
 
     out = {
-        "xml_type_count": len(xml_types),
+        "type_source": args.source,
+        "source_type_count": len(type_values),
         "shopify_collections": len(collections),
         "type_equals_conditions_in_shopify": len(equals_values),
-        "xml_types_not_listed_as_type_equals": not_in_any_equals,
-        "xml_types_without_positive_type_rule": without_positive_match,
+        "types_not_listed_as_type_equals": not_in_any_equals,
+        "types_without_positive_type_rule": without_positive_match,
     }
 
     if args.json:
@@ -146,7 +240,7 @@ def main() -> int:
     shop = config.SHOPIFY_SHOP_DOMAIN.strip()
     ver = config.SHOPIFY_ADMIN_API_VERSION.strip()
     print(f"\nShop: {shop}  (API {ver})")
-    print(f"Unieke Type-waarden uit XML (na filter): {len(xml_types)}")
+    print(f"Unieke Type-waarden uit {source_label}: {len(type_values)}")
     print(
         "\n--- 1) Types die nergens als TYPE EQUALS \"…\" in een smart collection voorkomen ---\n"
         "    (exacte string zoals in Shopify Admin; geen CONTAINS/TAG/TITLE.)\n"

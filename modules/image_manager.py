@@ -58,6 +58,23 @@ def _env_truthy(name: str, default: bool = True) -> bool:
     return raw in ("1", "true", "yes")
 
 
+def _env_skip_cached_url_verify() -> bool:
+    """Als true: vertrouw oude ``{"url":...}`` in image_cache.json zonder CDN-HEAD (oude gedrag)."""
+    return os.environ.get("KTM_IMAGE_SKIP_CACHED_URL_VERIFY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _invalidate_cache_keys_for_local_filename(cache: dict, filename: str) -> None:
+    """Verwijder cache-eintrées voor deze lokale basename (incl. __v1…-variantkeys)."""
+    with _cache_mut_lock:
+        for vk in _filename_variant_keys(filename):
+            cache.pop(vk, None)
+
+
 def _cache_entry_url(cache: dict, filename: str) -> str | None:
     v = cache.get(filename)
     if isinstance(v, dict):
@@ -588,15 +605,26 @@ def try_resolve_image_cache_or_cdn(filename: str, cache: dict) -> str | None:
     """
     Alleen cache + CDN-HEAD (zelfde als stap 1–2 van ensure_image).
     Retourneert URL als de afbeelding zonder Shopify lookup/upload te vinden is; anders None.
+
+    Oude runs kunnen een ``{"url": ...}`` in de cache hebben die inmiddels 404 geeft (bestand
+    nooit geüpload of uit Files verwijderd). Zonder check bleef ``ensure_image`` die URL
+    hergebruiken en vond er nooit een echte upload plaats. Standaard wordt een dict-URL daarom
+    kort met HEAD gevalideerd; bij falen worden de sleutels gewist zodat lookup/upload opnieuw kan.
+
+    Zet ``KTM_IMAGE_SKIP_CACHED_URL_VERIFY=1`` om die HEAD te skippen (sneller, risico op dode URLs).
     """
     if not filename:
         return None
     guessed = build_url(filename)
+    skip_verify = _env_skip_cached_url_verify()
     for key in _filename_variant_keys(filename):
         if key not in cache:
             continue
         if u := _cache_entry_url(cache, key):
-            return u
+            if skip_verify or url_is_reachable(u):
+                return u
+            _invalidate_cache_keys_for_local_filename(cache, filename)
+            break
         if u := _resolve_cache_key_to_url(cache, key, filename, persist=True):
             return u
     if url_is_reachable(guessed):
