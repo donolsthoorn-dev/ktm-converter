@@ -19,6 +19,17 @@ from modules.ymm_export import (  # noqa: E402
 )
 
 
+def _lookup_sku_map(m: dict[str, set], sku: str) -> set:
+    """XML gebruikt meestal hoofdletters voor artikelnummers; CLI vaak lowercase."""
+    s = (sku or "").strip()
+    if not s:
+        return set()
+    for k in (s, s.upper(), s.lower()):
+        if k in m:
+            return m[k]
+    return set()
+
+
 def main():
     p = argparse.ArgumentParser(description="YMM-tuple count voor één variant-SKU (XML).")
     p.add_argument("sku", help="Bijv. 00010000318")
@@ -33,10 +44,11 @@ def main():
     print("Structuur-pass…", flush=True)
     structure_index, relations = stream_xml_for_export()
     st = collect_sku_to_ymm_from_structure(structure_index, relations)
-    print(f"  Alleen Bikes MODELL: {len(st.get(sku, set()))} tuples", flush=True)
+    st_set = _lookup_sku_map(st, sku)
+    print(f"  Alleen Bikes MODELL: {len(st_set)} tuples", flush=True)
     print("ZBH2BIKE-merge…", flush=True)
     merged = build_merged_sku_to_ymm(structure_index, relations, xml_path)
-    t = merged.get(sku, set())
+    t = _lookup_sku_map(merged, sku)
     print(f"  Totaal na merge: {len(t)} tuples", flush=True)
     for row in sorted(t)[:40]:
         print("   ", row)
