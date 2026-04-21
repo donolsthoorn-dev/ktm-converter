@@ -12,7 +12,7 @@ on:
         options:
           - both
           - any
-        default: both
+        default: any
       country:
         description: "Default COO voor missende COO"
         required: false
@@ -27,7 +27,7 @@ jobs:
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"
-      MISSING_MODE: ${{ github.event.inputs.missing_mode || 'both' }}
+      MISSING_MODE: ${{ github.event.inputs.missing_mode || 'any' }}
       COUNTRY_CODE: ${{ github.event.inputs.country || 'AT' }}
     steps:
       - uses: actions/checkout@v6
@@ -55,6 +55,46 @@ jobs:
             --batch-id "${BATCH_ID}" \
             --missing-mode "${MISSING_MODE}" \
             --country "${COUNTRY_CODE}"
+
+      - name: Waarschuwing bij types zonder HS-mapping
+        run: |
+          python - <<'PY'
+          import csv
+          from collections import Counter
+          from pathlib import Path
+
+          review_path = Path("output/customs_missing_review.csv")
+          if not review_path.is_file():
+              print("customs_missing_review.csv niet gevonden; skip unmapped-type check.")
+              raise SystemExit(0)
+
+          total = 0
+          by_type: Counter[str] = Counter()
+          with review_path.open(encoding="utf-8", newline="") as fh:
+              reader = csv.DictReader(fh, delimiter=";")
+              for row in reader:
+                  if (row.get("reason") or "").strip() != "missing_type_hs_mapping":
+                      continue
+                  total += 1
+                  t = (row.get("product_type") or "").strip() or "(leeg type)"
+                  by_type[t] += 1
+
+          if total == 0:
+              print("Geen types zonder HS-mapping in deze run.")
+              raise SystemExit(0)
+
+          top = by_type.most_common(15)
+          details = ", ".join(f"{t}: {n}" for t, n in top)
+          print(f"::warning title=Types zonder HS-mapping::{total} varianten zonder type-mapping. {details}")
+          import os
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "").strip()
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as summary:
+                  print("## Types zonder HS-mapping", file=summary)
+                  print(f"- Aantal varianten: {total}", file=summary)
+                  for t, n in top:
+                      print(f"- {t}: {n}", file=summary)
+          PY
 
       - name: Apply customs naar Shopify
         env:
