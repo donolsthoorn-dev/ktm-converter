@@ -10,6 +10,9 @@
 
 name: price_eta_status_sync
 run-name: price_eta_status_sync (mode=${{ github.event.inputs.mode || 'apply' }}, scope=${{ github.event.inputs.apply_scope || 'price_eta' }})
+concurrency:
+  group: price-eta-status-sync-${{ github.event.inputs.mode || 'apply' }}-${{ github.event.inputs.apply_scope || 'price_eta' }}
+  cancel-in-progress: true
 
 on:
   workflow_dispatch:
@@ -39,6 +42,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}
       APPLY_SCOPE: ${{ github.event.inputs.apply_scope || 'price_eta' }}

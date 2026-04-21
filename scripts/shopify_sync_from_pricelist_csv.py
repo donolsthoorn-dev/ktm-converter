@@ -751,6 +751,12 @@ def rest_put_json(
     """PUT met hergebruikte sessie (keep-alive); retry-limiet i.p.v. oneindige loop."""
     sess = sess or _http_session()
     headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+    preemptive_sleep_sec = float(
+        (os.environ.get("SHOPIFY_REST_PREEMPTIVE_SLEEP_SEC") or "").strip() or "0.30"
+    )
+    throttle_used_threshold = int(
+        (os.environ.get("SHOPIFY_REST_THROTTLE_USED_THRESHOLD") or "").strip() or "34"
+    )
     n429 = 0
     n500 = 0
     n_net = 0
@@ -784,8 +790,15 @@ def rest_put_json(
             n429 += 1
             if n429 > 30:
                 return False, "429 rate limit: te veel retries"
-            print(f"REST rate limit ({n429}/30), wachten…", flush=True)
-            time.sleep(min(2.0 + n429 * 0.3, 45.0))
+            retry_after = r.headers.get("Retry-After")
+            wait_sec = min(2.0 + n429 * 0.3, 45.0)
+            if retry_after:
+                try:
+                    wait_sec = max(wait_sec, float(retry_after))
+                except ValueError:
+                    pass
+            print(f"REST rate limit ({n429}/30), {wait_sec:.1f}s wachten…", flush=True)
+            time.sleep(wait_sec)
             continue
         if r.status_code >= 500:
             n500 += 1
@@ -797,6 +810,20 @@ def rest_put_json(
         n500 = 0
         if r.status_code >= 400:
             return False, r.text[:500]
+        # Bij bijna volle Shopify call-bucket kort pauzeren om herhaalde 429-loops te voorkomen.
+        if preemptive_sleep_sec > 0:
+            call_limit = (r.headers.get("X-Shopify-Shop-Api-Call-Limit") or "").strip()
+            if "/" in call_limit:
+                used_raw, limit_raw = call_limit.split("/", 1)
+                try:
+                    used = int(used_raw)
+                    limit = int(limit_raw)
+                    if limit > 0:
+                        threshold = min(max(1, throttle_used_threshold), limit - 1)
+                        if used >= threshold:
+                            time.sleep(preemptive_sleep_sec)
+                except ValueError:
+                    pass
         return True, ""
 
 
