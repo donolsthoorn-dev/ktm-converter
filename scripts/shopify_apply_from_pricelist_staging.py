@@ -359,6 +359,43 @@ query($ids: [ID!]!) {
     return out
 
 
+def _existing_shopify_variant_ids(
+    sync: Any,
+    shop: str,
+    token: str,
+    api_ver: str,
+    variant_ids: list[str],
+) -> set[str]:
+    """Bepaal welke variant-ids nog in Shopify bestaan."""
+    out: set[str] = set()
+    uniq_ids = sorted({str(v).strip() for v in variant_ids if str(v).strip()})
+    if not uniq_ids:
+        return out
+    q = """
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on ProductVariant {
+      id
+    }
+  }
+}
+"""
+    batch_size = 150
+    for i in range(0, len(uniq_ids), batch_size):
+        chunk = uniq_ids[i : i + batch_size]
+        gids = [f"gid://shopify/ProductVariant/{vid}" for vid in chunk]
+        data = sync.graphql_post(shop, token, api_ver, q, {"ids": gids})
+        nodes = (data or {}).get("nodes") or []
+        for node in nodes:
+            if not node:
+                continue
+            gid = str(node.get("id") or "")
+            if not gid or "/" not in gid:
+                continue
+            out.add(gid.rsplit("/", 1)[-1])
+    return out
+
+
 def _apply_eta_stock_rule(
     sync: Any,
     shop: str,
@@ -546,6 +583,42 @@ def main() -> int:
     run_price_eta = args.scope in ("all", "price_eta")
     run_policy = args.scope in ("all", "policy")
     print(f"Apply scope: {args.scope}", flush=True)
+
+    variant_ids_to_check: set[str] = set()
+    if run_price_eta:
+        variant_ids_to_check.update(vid for _sku, vid, _price in price_ops)
+        variant_ids_to_check.update(vid for _sku, vid, _eta in eta_set)
+        variant_ids_to_check.update(vid for _sku, vid in eta_clear)
+    if run_policy:
+        variant_ids_to_check.update(vid for _sku, vid, _pol in policy_ops)
+    existing_variant_ids = _existing_shopify_variant_ids(
+        sync, shop, token, api_ver, list(variant_ids_to_check)
+    )
+    if variant_ids_to_check:
+        missing_variant_ids = variant_ids_to_check - existing_variant_ids
+        if missing_variant_ids:
+            old_price = len(price_ops)
+            old_eta_set = len(eta_set)
+            old_eta_clear = len(eta_clear)
+            old_policy = len(policy_ops)
+            price_ops = [op for op in price_ops if op[1] in existing_variant_ids]
+            eta_set = [op for op in eta_set if op[1] in existing_variant_ids]
+            eta_clear = [op for op in eta_clear if op[1] in existing_variant_ids]
+            policy_ops = [op for op in policy_ops if op[1] in existing_variant_ids]
+            print(
+                "Varianten niet meer aanwezig in Shopify; mutaties overgeslagen: "
+                f"prijs {old_price - len(price_ops)}, "
+                f"eta_set {old_eta_set - len(eta_set)}, "
+                f"eta_clear {old_eta_clear - len(eta_clear)}, "
+                f"policy {old_policy - len(policy_ops)} "
+                f"(uniek missing variants: {len(missing_variant_ids)}).",
+                flush=True,
+            )
+    print(
+        f"Effectieve apply-set: prijs {len(price_ops)}, eta_set {len(eta_set)}, eta_clear {len(eta_clear)}, "
+        f"variant_policy {len(policy_ops)}, product_status {len(product_ops_by_pid)}",
+        flush=True,
+    )
 
     errors = 0
     benign = 0
