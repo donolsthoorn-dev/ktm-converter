@@ -43,11 +43,16 @@ jobs:
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    concurrency:
+      group: shopify-write-lock
+      cancel-in-progress: false
     env:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}
       APPLY_SCOPE: ${{ github.event.inputs.apply_scope || 'price_eta' }}
       WORKFLOW_FILE_NAME: price_eta_status_sync.yml
       SKIP_STAGING_REBUILD: "0"
+      SKIP_REASON: ""
+      SKIP_REASON_DETAIL: ""
     steps:
       - uses: actions/checkout@v6
 
@@ -107,6 +112,58 @@ jobs:
               print("Geen actieve policy-run gevonden; price_eta mag door.")
           PY
 
+      - name: Skip apply wanneer customs-run actief is
+        if: env.RUN_MODE == 'apply'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          token = (os.environ.get("GITHUB_TOKEN") or "").strip()
+          repo = (os.environ.get("REPO") or "").strip()
+          current_run_id = int((os.environ.get("CURRENT_RUN_ID") or "0").strip() or "0")
+          if not token or not repo or not current_run_id:
+              print("Customs-guard mist context; ga door zonder skip.")
+              raise SystemExit(0)
+
+          url = f"https://api.github.com/repos/{repo}/actions/workflows/customs_missing_fill.yml/runs?status=in_progress&event=workflow_dispatch&per_page=100"
+          req = urllib.request.Request(
+              url,
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              body = json.loads(resp.read().decode("utf-8", "replace"))
+
+          blocking = []
+          for run in body.get("workflow_runs") or []:
+              rid = int(run.get("id") or 0)
+              if rid == current_run_id:
+                  continue
+              title = str(run.get("display_title") or "").strip()
+              blocking.append((rid, title))
+
+          if blocking:
+              print("Customs-run actief; deze apply-run wordt overgeslagen.")
+              print("Blokkerende customs-run(s):")
+              for rid, title in blocking[:10]:
+                  print(f"- {rid}: {title}")
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+                  f.write("RUN_MODE=skip\n")
+                  f.write("SKIP_REASON=customs_run_in_progress\n")
+                  f.write(f"SKIP_REASON_DETAIL=customs_missing_fill active runs: {len(blocking)}\n")
+          else:
+              print("Geen actieve customs-run gevonden; apply mag door.")
+          PY
+
       - uses: actions/setup-python@v6
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         with:
@@ -120,6 +177,8 @@ jobs:
           WORKFLOW_FILE: price_eta_status_sync.yml
           GITHUB_RUN_ID: ${{ github.run_id }}
           APPLY_SCOPE: ${{ env.APPLY_SCOPE }}
+          SKIP_REASON: ${{ env.SKIP_REASON }}
+          SKIP_REASON_DETAIL: ${{ env.SKIP_REASON_DETAIL }}
         run: |
           python - <<'PY'
           import json
@@ -133,6 +192,8 @@ jobs:
           wf = (os.environ.get("WORKFLOW_FILE") or "").strip()
           run_id_raw = (os.environ.get("GITHUB_RUN_ID") or "").strip()
           scope = (os.environ.get("APPLY_SCOPE") or "").strip()
+          skip_reason = (os.environ.get("SKIP_REASON") or "").strip() or "skip_guard"
+          skip_detail = (os.environ.get("SKIP_REASON_DETAIL") or "").strip()
           if not base or not key or not wf or not run_id_raw.isdigit():
               print("Skip-log: context ontbreekt, sla Supabase-log update over.")
               raise SystemExit(0)
@@ -171,11 +232,12 @@ jobs:
               "run_started_at": now,
               "run_finished_at": now,
               "github_run_id": run_id,
-              "run_summary": f"scope={scope}; skipped (policy run already in progress)",
+              "run_summary": f"scope={scope}; skipped ({skip_reason})",
               "run_stats": {
                   "scope": scope,
                   "skipped": True,
-                  "reason": "policy_run_in_progress",
+                  "reason": skip_reason,
+                  "detail": skip_detail,
               },
           }
           patch_url = f"{base}/rest/v1/workflow_dispatch_log?id=eq.{row_id}"
