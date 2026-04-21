@@ -64,6 +64,15 @@ def _is_benign_eta_clear_error(err: dict[str, Any]) -> bool:
     )
 
 
+def _is_benign_owner_missing_error(err: dict[str, Any]) -> bool:
+    """
+    Staging kan varianten bevatten die intussen uit Shopify verwijderd zijn.
+    ETA set/clear voor zo'n owner moet de run niet laten falen.
+    """
+    msg = str(err.get("message") or "").lower()
+    return "owner does not exist" in msg or "owner not found" in msg
+
+
 def _load_sync_module():
     path = ROOT / "scripts" / "shopify_sync_from_pricelist_csv.py"
     spec = importlib.util.spec_from_file_location("shopify_sync_from_pricelist_csv", path)
@@ -622,6 +631,7 @@ def main() -> int:
 
     errors = 0
     benign = 0
+    benign_owner_missing = 0
     progress_every = 250
     eta_success: list[tuple[str, str | None]] = []
     price_success: list[tuple[str, str]] = []
@@ -700,6 +710,9 @@ def main() -> int:
                 data = sync.graphql_metafields_set(shop, token, api_ver, mfs)
                 uerr = ((data or {}).get("metafieldsSet") or {}).get("userErrors") or []
                 for err in uerr:
+                    if _is_benign_owner_missing_error(err):
+                        benign_owner_missing += 1
+                        continue
                     errors += 1
                     if errors <= 20:
                         print(f"ETA set userError: {err}", flush=True)
@@ -868,6 +881,11 @@ def main() -> int:
 
     if benign:
         print(f"Opmerking: {benign} idempotente ETA-clear meldingen genegeerd.", flush=True)
+    if benign_owner_missing:
+        print(
+            f"Opmerking: {benign_owner_missing} ETA-owner-missing melding(en) genegeerd (stale varianten).",
+            flush=True,
+        )
     total_eta_ops = len(eta_set) + len(eta_clear)
     total_price_ops = len(price_ops)
     total_policy_ops = len(policy_ops)
