@@ -229,6 +229,7 @@ def _build_notes(
     mirror_status: str | None,
     proposed_status: str,
     article_status_code: str,
+    stock_available_code: int | None,
     mirror_inventory_policy: str | None,
     proposed_inventory_policy: str | None,
     price_changed: bool,
@@ -251,10 +252,16 @@ def _build_notes(
             f"{_canonical_inventory_policy(proposed_inventory_policy) or 'UNKNOWN'}"
         )
     code = article_status_code or "UNKNOWN"
-    if code == "80":
-        reasons.append("ArticleStatus=80 => variant sell_when_out_of_stock=false (inventory_policy=deny)")
+    stock_txt = str(stock_available_code) if stock_available_code is not None else "UNKNOWN"
+    if proposed_inventory_policy:
+        reasons.append(
+            f"Policy rule (hybrid): ArticleStatus={code}, StockAvailable={stock_txt} => "
+            f"inventory_policy={_canonical_inventory_policy(proposed_inventory_policy)}"
+        )
     else:
-        reasons.append(f"ArticleStatus={code} => variant sell_when_out_of_stock=true (inventory_policy=continue)")
+        reasons.append(
+            f"Policy rule: geen afleiding (ArticleStatus={code}, StockAvailable={stock_txt})"
+        )
     return "; ".join(reasons)
 
 
@@ -388,6 +395,7 @@ def main() -> int:
                     "proposed_price": d.get("price_incl"),
                     "proposed_product_status": d.get("product_status"),
                     "proposed_article_status_code": d.get("article_status_code"),
+                    "proposed_stock_available_code": d.get("stock_available_code"),
                     "reason": "sku_not_found_in_shopify_variants_mirror",
                 }
             )
@@ -396,6 +404,10 @@ def main() -> int:
         prop_price = _to_decimal_price(d.get("price_incl"))
         prop_eta = d.get("eta_iso")
         prop_article_status = str(d.get("article_status_code") or "").strip()
+        prop_stock_available_code_raw = d.get("stock_available_code")
+        prop_stock_available_code: int | None = None
+        if isinstance(prop_stock_available_code_raw, int):
+            prop_stock_available_code = prop_stock_available_code_raw
         prop_inventory_policy = str(d.get("inventory_policy") or "").strip().upper() or None
         prop_sell_when_out_of_stock = None
         if prop_inventory_policy:
@@ -449,6 +461,7 @@ def main() -> int:
                     mirror_stat,
                     prop_stat,
                     prop_article_status,
+                    prop_stock_available_code,
                     mirror_policy,
                     prop_inventory_policy,
                     pc,
@@ -474,6 +487,7 @@ def main() -> int:
             "proposed_price",
             "proposed_product_status",
             "proposed_article_status_code",
+            "proposed_stock_available_code",
             "reason",
         ]
         with open(out_path, "w", encoding="utf-8", newline="") as fh:

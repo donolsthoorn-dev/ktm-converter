@@ -11,13 +11,15 @@ bestand wint** bij dezelfde SKU: `1100_35_Z1_EUR_EN_csv.csv`, `0910_35_Z1_EUR_EN
 `0150_35_Z1_EUR_EN_csv.csv`, `0140_35_Z1_EUR_EN_csv.csv`. Met `--csv PAD` (meerdere keren) kies je
 zelf bestanden en volgorde.
 
-Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, ArticleStatus, …):
+Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, ArticleStatus,
+StockAvailable, …):
   - hqETADate      → variant-metafield global.inventory_policy_eta_date (type date)
                      en wordt niet gezet als Shopify-voorraad > 0 (dan ETA wissen)
   - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
   - ArticleStatus  → variant-signaal; deze flow zet producten niet meer naar draft.
                      Product-draft gebeurt in een apart script.
-  - Variant policy  → bij status 80: `inventory_policy=deny`, anders `inventory_policy=continue`
+  - Variant policy  → hybride regel: `DENY` bij `ArticleStatus=80` of `StockAvailable=0`;
+                     anders `CONTINUE` bij `StockAvailable=1/2` of niet-80 status
 
 Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; geen live variant-fetch per run):
   python3 scripts/shopify_refresh_variant_cache.py
@@ -214,10 +216,41 @@ def _parse_sales_price_incl_vat(raw: str) -> str | None:
         return None
 
 
+def _parse_stock_available_code(raw: str) -> int | None:
+    """CSV StockAvailable codes: 0 (niet beschikbaar), 1 (beschikbaar), 2 (binnenkort beschikbaar)."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        code = int(float(s.replace(",", ".")))
+    except ValueError:
+        return None
+    if code in (0, 1, 2):
+        return code
+    return None
+
+
+def _derive_inventory_policy(article_status: str, stock_code: int | None) -> str | None:
+    """
+    Hybride beleidsregel:
+      - DENY wanneer een bron 'niet beschikbaar' zegt (ArticleStatus=80 of StockAvailable=0)
+      - CONTINUE bij StockAvailable=1/2 of expliciete niet-80 ArticleStatus
+      - None wanneer geen bruikbare bronwaarde aanwezig is
+    """
+    st = (article_status or "").strip()
+    if st == "80" or stock_code == 0:
+        return "DENY"
+    if stock_code in (1, 2):
+        return "CONTINUE"
+    if st:
+        return "CONTINUE"
+    return None
+
+
 def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
     """
     Per SKU (uppercase): eta_iso (None = metafield wissen), price_incl (None = geen prijsupdate),
-    product_status ACTIVE|DRAFT, plus originele ERP ArticleStatus en afgeleide published-flag.
+    product_status ACTIVE|DRAFT, plus originele ERP ArticleStatus / StockAvailable en afgeleide flags.
     """
     encodings = ("utf-8", "utf-8-sig", "cp1252", "latin1")
     out: dict[str, dict] = {}
@@ -236,10 +269,11 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                     sku_col = header.index("ArticleNumber")
                     price_col = header.index("SalesPrice")
                     status_col = header.index("ArticleStatus")
+                    stock_col = header.index("StockAvailable")
                 except ValueError:
-                    eta_col, sku_col, price_col, status_col = 22, 1, 4, 10
+                    eta_col, sku_col, price_col, status_col, stock_col = 22, 1, 4, 10, 21
                 for row in reader:
-                    need = max(eta_col, sku_col, price_col, status_col) + 1
+                    need = max(eta_col, sku_col, price_col, status_col, stock_col) + 1
                     if len(row) < need:
                         continue
                     sku = row[sku_col].strip().upper()
@@ -257,24 +291,25 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                             eta_iso = None
                     price_incl = _parse_sales_price_incl_vat(row[price_col] or "")
                     st = (row[status_col] or "").strip()
+                    stock_code = _parse_stock_available_code(row[stock_col] or "")
+                    inventory_policy = _derive_inventory_policy(st, stock_code)
                     if st == "80":
                         product_status: str | None = "DRAFT"
-                        inventory_policy: str | None = "DENY"
                         published: bool | None = False
                     elif st:
                         product_status = "ACTIVE"
-                        inventory_policy = "CONTINUE"
                         published = True
                     else:
-                        # Lege ArticleStatus betekent: geen status/policy-mutatie afleiden.
+                        # Lege ArticleStatus betekent: geen productstatus-mutatie afleiden.
+                        # Inventory policy kan nog steeds uit StockAvailable komen.
                         product_status = None
-                        inventory_policy = None
                         published = None
                     out[sku] = {
                         "eta_iso": eta_iso,
                         "price_incl": price_incl,
                         "product_status": product_status,
                         "article_status_code": st,
+                        "stock_available_code": stock_code,
                         "published": published,
                         "inventory_policy": inventory_policy,
                     }

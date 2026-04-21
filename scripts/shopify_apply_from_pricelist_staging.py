@@ -4,7 +4,7 @@ Pas Shopify mutaties toe op basis van public.pricelist_sync_staging.
 
 Deze flow leest de reeds berekende delta uit Supabase staging en voert alleen die mutaties uit:
   - variantprijs (price_changed)
-  - ETA metafield set/clear (eta_changed)
+  - ETA metafield set/clear (eta_changed; bij Shopify inventoryQuantity > 0 wordt set -> clear)
   - variant inventory_policy (inventory_policy_changed)
   - productstatus (status_changed; in huidige flow vooral re-activatie naar ACTIVE)
 

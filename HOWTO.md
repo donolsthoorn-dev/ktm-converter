@@ -73,6 +73,10 @@ Output o.a.: `output/metafields/product_metafields_metafields_manager_delta.csv`
 
 Prijzen, ETA-datum en publicatiestatus gaan via **`shopify_sync_from_pricelist_csv.py`** (niet via `main.py`-CSV).
 
+Belangrijk voor policy/ETA:
+- `inventory_policy` volgt hybride bronregel: **DENY** bij `ArticleStatus=80` of `StockAvailable=0`; anders **CONTINUE** bij `StockAvailable=1/2` of niet-80 status.
+- ETA wordt alleen zichtbaar gehouden wanneer Shopify-voorraad niet positief is; bij `inventoryQuantity > 0` wordt ETA gewist.
+
 **Eén keer (of na nieuwe producten in Shopify, zodat SKU’s → variant-id’s kloppen):**
 
 ```bash
