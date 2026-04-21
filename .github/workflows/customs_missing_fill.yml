@@ -1,0 +1,66 @@
+# Nachtelijke aanvul-run voor missende customs-data.
+# Trigger via Supabase scheduler (workflow_dispatch).
+
+name: customs_missing_fill
+
+on:
+  workflow_dispatch:
+    inputs:
+      missing_mode:
+        description: "both = alleen varianten zonder HS én COO; any = minimaal één veld mist"
+        type: choice
+        options:
+          - both
+          - any
+        default: both
+      country:
+        description: "Default COO voor missende COO"
+        required: false
+        default: AT
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: "1"
+      MISSING_MODE: ${{ github.event.inputs.missing_mode || 'both' }}
+      COUNTRY_CODE: ${{ github.event.inputs.country || 'AT' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Genereer batch-id
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import uuid
+          print(f"BATCH_ID={uuid.uuid4()}")
+          PY
+
+      - name: Build staging (missende customs)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/build_customs_supabase_staging_missing.py \
+            --batch-id "${BATCH_ID}" \
+            --missing-mode "${MISSING_MODE}" \
+            --country "${COUNTRY_CODE}"
+
+      - name: Apply customs naar Shopify
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+        run: |
+          python scripts/shopify_apply_from_pricelist_staging.py \
+            --scope customs \
+            --batch-id "${BATCH_ID}"

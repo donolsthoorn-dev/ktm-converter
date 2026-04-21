@@ -11,6 +11,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
 |---------------------------|------------------|-------------|
 | `ktm_job_worker_nightly` | `job-worker.yml` | Dagelijks **03:00** |
 | `ktm_shopify_auto_deactivate_after_policy` | `shopify_auto_deactivate_invalid_products.yml` (apply) | Dagelijks **04:00** |
+| `ktm_customs_missing_fill_nightly` | `customs_missing_fill.yml` (missende HS/COO aanvullen) | Dagelijks **05:00** |
 | `ktm_price_eta_apply_hourly_0700_2300` | `price_eta_status_sync.yml` apply, standaard `apply_scope=price_eta` | **07:00** t/m **23:00**, elk heel uur (**:00**) |
 | `ktm_price_eta_policy_nightly` | `price_eta_status_sync.yml` apply, `apply_scope=policy` | **00:15**, **07:15**, **12:15**, **18:15** |
 
@@ -37,6 +38,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/011_policy_nightly_and_deactivate_after.sql`
    - `converter/supabase/migrations/013_policy_apply_cron_15_0_6_12_18_utc.sql` (historisch; policy-UTC wordt door 014 vervangen)
    - `converter/supabase/migrations/014_github_workflows_cron_europe_amsterdam.sql`
+   - `converter/supabase/migrations/018_customs_missing_nightly_0500.sql`
 2. Create vault secret for GitHub API token (required):
 
 ```sql
