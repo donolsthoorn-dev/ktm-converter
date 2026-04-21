@@ -208,6 +208,7 @@ def main() -> int:
     rows_out: list[dict[str, Any]] = []
     review_rows: list[dict[str, str]] = []
     seen_missing = 0
+    seen_variant_ids: set[int] = set()
 
     for row in variants:
         vid_raw = row.get("shopify_variant_id")
@@ -219,6 +220,17 @@ def main() -> int:
         pid = int(pid_raw)
         inv_item = int(inv_item_raw) if inv_item_raw is not None else None
         sku = str(row.get("sku") or "").strip().upper()
+
+        if not sku:
+            review_rows.append(
+                {
+                    "shopify_variant_id": str(vid),
+                    "sku": "",
+                    "product_type": str(type_by_pid.get(pid, "")),
+                    "reason": "missing_sku",
+                }
+            )
+            continue
 
         mirror_hs = normalize_hs_code(row.get("harmonized_system_code"), allowed_hs_lengths)
         mirror_country = normalize_country_code(row.get("country_code_of_origin"))
@@ -269,6 +281,18 @@ def main() -> int:
         if not _customs_changed(mirror_hs, mirror_country, proposed_hs, proposed_country):
             continue
 
+        if vid in seen_variant_ids:
+            review_rows.append(
+                {
+                    "shopify_variant_id": str(vid),
+                    "sku": sku,
+                    "product_type": product_type,
+                    "reason": "duplicate_variant_id_in_mirror",
+                }
+            )
+            continue
+        seen_variant_ids.add(vid)
+
         source_parts: list[str] = []
         if proposed_hs:
             source_parts.append(f"type_map:{mapped_source or 'customs_type_hs_mapping'}")
@@ -285,7 +309,7 @@ def main() -> int:
         rows_out.append(
             {
                 "batch_id": str(batch_id),
-                "sku": sku or None,
+                "sku": sku,
                 "shopify_variant_id": vid,
                 "shopify_product_id": pid,
                 "mirror_inventory_item_id": inv_item,
@@ -345,7 +369,17 @@ def main() -> int:
             data=json.dumps(chunk),
             timeout=_REQUEST_TIMEOUT,
         )
-        r.raise_for_status()
+        if not r.ok:
+            print(
+                "Insert naar pricelist_sync_staging faalde: "
+                f"chunk_start={i}, chunk_end={min(i + chunk_size, len(rows_out))}, "
+                f"http={r.status_code}",
+                flush=True,
+            )
+            body = (r.text or "").strip()
+            if body:
+                print(body[:4000], flush=True)
+            r.raise_for_status()
         print(f"Insert {min(i + chunk_size, len(rows_out))}/{len(rows_out)}", flush=True)
 
     print(
