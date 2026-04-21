@@ -10,7 +10,10 @@ Vereist: Supabase-URL en service role (via ``load_project_env()``: zie
 ``modules/env_loader.py``).
 Optioneel: dezelfde --csv / input/ defaults als shopify_sync_from_pricelist_csv.py
 
-Migratie: converter/supabase/migrations/002_pricelist_sync_staging.sql
+Migraties:
+  - converter/supabase/migrations/002_pricelist_sync_staging.sql
+  - converter/supabase/migrations/015_shopify_variants_customs_fields.sql
+  - converter/supabase/migrations/016_pricelist_sync_staging_customs.sql
 
 Tip: draai eerst de catalogus-mirror (job worker) zodat shopify_* actueel is.
 """
@@ -39,6 +42,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
+import config  # noqa: E402
+from modules.customs_mapping import (  # noqa: E402
+    load_external_customs_map,
+    load_xml_customs_map,
+    merge_customs_sources,
+    normalize_country_code,
+    normalize_hs_code,
+    parse_allowed_hs_lengths,
+)
 from modules.env_loader import load_project_env  # noqa: E402
 
 load_project_env()
@@ -215,6 +227,22 @@ def _inventory_policy_changed(mirror: str | None, proposed: str | None) -> bool:
     return _canonical_inventory_policy(mirror) != _canonical_inventory_policy(proposed)
 
 
+def _customs_changed(
+    mirror_hs: str | None,
+    mirror_country: str | None,
+    proposed_hs: str | None,
+    proposed_country: str | None,
+) -> bool:
+    # Geen bronwaarde = geen mutatie forceren.
+    if not proposed_hs and not proposed_country:
+        return False
+    if proposed_hs and (mirror_hs or "") != proposed_hs:
+        return True
+    if proposed_country and (mirror_country or "") != proposed_country:
+        return True
+    return False
+
+
 def _fmt_decimal(v: Decimal | None) -> str:
     if v is None:
         return "NULL"
@@ -232,10 +260,16 @@ def _build_notes(
     stock_available_code: int | None,
     mirror_inventory_policy: str | None,
     proposed_inventory_policy: str | None,
+    mirror_hs: str | None,
+    proposed_hs: str | None,
+    mirror_country: str | None,
+    proposed_country: str | None,
+    customs_source: str | None,
     price_changed: bool,
     eta_changed: bool,
     status_changed: bool,
     inventory_policy_changed: bool,
+    customs_changed: bool,
 ) -> str:
     reasons: list[str] = []
     if price_changed:
@@ -251,6 +285,18 @@ def _build_notes(
             f"inventory_policy {_canonical_inventory_policy(mirror_inventory_policy) or 'UNKNOWN'} -> "
             f"{_canonical_inventory_policy(proposed_inventory_policy) or 'UNKNOWN'}"
         )
+    if customs_changed:
+        if proposed_hs and proposed_country:
+            reasons.append(
+                f"customs hs/country {(mirror_hs or 'NULL')}/{(mirror_country or 'NULL')} -> "
+                f"{proposed_hs}/{proposed_country}"
+            )
+        elif proposed_hs:
+            reasons.append(f"customs hs {(mirror_hs or 'NULL')} -> {proposed_hs}")
+        elif proposed_country:
+            reasons.append(f"customs country {(mirror_country or 'NULL')} -> {proposed_country}")
+        if customs_source:
+            reasons.append(f"customs_source={customs_source}")
     code = article_status_code or "UNKNOWN"
     stock_txt = str(stock_available_code) if stock_available_code is not None else "UNKNOWN"
     if proposed_inventory_policy:
@@ -293,6 +339,29 @@ def main() -> int:
         default=str(ROOT / "output" / "pricelist_missing_in_shopify.csv"),
         help="Pad voor rapport met CSV-SKU's zonder match in shopify_variants (leeg = niet schrijven)",
     )
+    p.add_argument(
+        "--customs-map-csv",
+        default="",
+        help=(
+            "Optionele externe mapping CSV (SKU -> HS/country). "
+            "Kolommen: sku + hs_code/customs_no + country_of_origin/origin."
+        ),
+    )
+    p.add_argument(
+        "--customs-report-csv",
+        default=str(ROOT / "output" / "pricelist_customs_mapping_report.csv"),
+        help="Pad voor customs mapping-rapport (leeg = niet schrijven)",
+    )
+    p.add_argument(
+        "--allowed-hs-lengths",
+        default=os.environ.get("SHOPIFY_CUSTOMS_ALLOWED_HS_LENGTHS", "6,8,10"),
+        help="Toegestane HS-code lengtes na normalisatie (comma-separated, default: 6,8,10)",
+    )
+    p.add_argument(
+        "--xml-path",
+        default="",
+        help="Optioneel XML-pad voor customs-attributen (default: config.XML_FILE)",
+    )
     args = p.parse_args()
 
     batch_id = args.batch_id or uuid.uuid4()
@@ -310,9 +379,50 @@ def main() -> int:
         return 1
     desired_by_sku = sync.read_pricelist_csv_desired_many(csv_paths, today)
     desired_product_status_by_pid: dict[str, str] = {}
+    allowed_hs_lengths = parse_allowed_hs_lengths(args.allowed_hs_lengths)
 
     print(f"Batch: {batch_id}", flush=True)
     print(f"CSV-bronnen: {len(csv_paths)} bestand(en), {len(desired_by_sku)} unieke SKU's na merge", flush=True)
+
+    xml_path_raw = (args.xml_path or "").strip()
+    xml_path = Path(xml_path_raw) if xml_path_raw else Path(config.XML_FILE)
+    xml_map: dict[str, dict[str, str]] = {}
+    xml_rejected: list[dict[str, str]] = []
+    xml_rows = 0
+    if xml_path.is_file():
+        xml_map, xml_rejected, xml_rows = load_xml_customs_map(xml_path, allowed_hs_lengths)
+    else:
+        print(f"Waarschuwing: XML bestand niet gevonden voor customs: {xml_path}", flush=True)
+
+    external_map: dict[str, dict[str, str]] = {}
+    external_rejected: list[dict[str, str]] = []
+    external_rows = 0
+    customs_map_csv = (args.customs_map_csv or "").strip()
+    if customs_map_csv:
+        ext_path = Path(customs_map_csv)
+        if not ext_path.is_file():
+            print(f"Waarschuwing: customs-map CSV ontbreekt: {ext_path}", flush=True)
+        else:
+            external_map, external_rejected, external_rows = load_external_customs_map(
+                ext_path, allowed_hs_lengths
+            )
+
+    merged_customs, customs_report_rows = merge_customs_sources(
+        set(desired_by_sku.keys()), xml_map, external_map
+    )
+    for sku, custom in merged_customs.items():
+        desired_by_sku[sku]["hs_code"] = custom.get("hs_code") or None
+        desired_by_sku[sku]["country_of_origin"] = custom.get("country_of_origin") or None
+        desired_by_sku[sku]["customs_source"] = custom.get("source") or None
+        desired_by_sku[sku]["customs_confidence"] = custom.get("tier") or None
+
+    print(
+        "Customs brondekking: "
+        f"XML sku_rows={xml_rows}, xml_valid={len(xml_map)}, xml_invalid={len(xml_rejected)}; "
+        f"external_rows={external_rows}, external_valid={len(external_map)}, external_invalid={len(external_rejected)}; "
+        f"resolved_for_desired={len(merged_customs)}/{len(desired_by_sku)}",
+        flush=True,
+    )
 
     base = _rest_base()
     headers = _headers()
@@ -327,7 +437,10 @@ def main() -> int:
         base,
         headers,
         "shopify_variants",
-        "shopify_variant_id,shopify_product_id,sku,price,inventory_policy",
+        (
+            "shopify_variant_id,shopify_product_id,sku,price,inventory_policy,"
+            "inventory_item_id,harmonized_system_code,country_code_of_origin"
+        ),
         order="shopify_variant_id.asc",
     )
     print(f"  → {len(variants)} variant-rijen", flush=True)
@@ -394,6 +507,9 @@ def main() -> int:
                     "proposed_eta_date": d.get("eta_iso"),
                     "proposed_price": d.get("price_incl"),
                     "proposed_product_status": d.get("product_status"),
+                    "proposed_hs_code": d.get("hs_code"),
+                    "proposed_country_of_origin": d.get("country_of_origin"),
+                    "customs_source": d.get("customs_source"),
                     "proposed_article_status_code": d.get("article_status_code"),
                     "proposed_stock_available_code": d.get("stock_available_code"),
                     "reason": "sku_not_found_in_shopify_variants_mirror",
@@ -412,6 +528,10 @@ def main() -> int:
         prop_sell_when_out_of_stock = None
         if prop_inventory_policy:
             prop_sell_when_out_of_stock = prop_inventory_policy == "CONTINUE"
+        prop_hs = normalize_hs_code(d.get("hs_code"), allowed_hs_lengths)
+        prop_country = normalize_country_code(d.get("country_of_origin"))
+        customs_source = str(d.get("customs_source") or "").strip() or None
+        customs_confidence = str(d.get("customs_confidence") or "").strip() or None
 
         for v in vrows:
             vid = int(v["shopify_variant_id"])
@@ -420,6 +540,11 @@ def main() -> int:
             mirror_eta = eta_by_vid.get(vid)
             mirror_stat = status_by_pid.get(pid) if pid is not None else None
             mirror_policy = v.get("inventory_policy")
+            mirror_item_id = (
+                int(v["inventory_item_id"]) if v.get("inventory_item_id") is not None else None
+            )
+            mirror_hs = normalize_hs_code(v.get("harmonized_system_code"), allowed_hs_lengths)
+            mirror_country = normalize_country_code(v.get("country_code_of_origin"))
             if pid is not None and str(pid) in desired_product_status_by_pid:
                 prop_stat = desired_product_status_by_pid[str(pid)]
             else:
@@ -430,8 +555,14 @@ def main() -> int:
             ec = _eta_changed(mirror_eta, prop_eta)
             sc = _status_changed(mirror_stat, prop_stat)
             ic = _inventory_policy_changed(mirror_policy, prop_inventory_policy)
+            cc = _customs_changed(
+                mirror_hs,
+                mirror_country,
+                prop_hs,
+                prop_country,
+            )
 
-            if not (pc or ec or sc or ic):
+            if not (pc or ec or sc or ic or cc):
                 continue
 
             row: dict[str, Any] = {
@@ -439,12 +570,19 @@ def main() -> int:
                 "sku": sku,
                 "shopify_variant_id": vid,
                 "shopify_product_id": pid,
+                "mirror_inventory_item_id": mirror_item_id,
                 "mirror_price": float(mirror_p) if mirror_p is not None else None,
                 "mirror_eta_date": _eta_key(mirror_eta),
                 "mirror_product_status": _canonical_shop_status(mirror_stat),
+                "mirror_hs_code": mirror_hs,
+                "mirror_country_of_origin": mirror_country,
                 "proposed_price": float(prop_price) if prop_price is not None else None,
                 "proposed_eta_date": _eta_key(prop_eta),
                 "proposed_product_status": prop_stat,
+                "proposed_hs_code": prop_hs,
+                "proposed_country_of_origin": prop_country,
+                "customs_source": customs_source,
+                "customs_confidence": customs_confidence,
                 "mirror_inventory_policy": _canonical_inventory_policy(str(mirror_policy) if mirror_policy is not None else None) or None,
                 "proposed_inventory_policy": prop_inventory_policy,
                 "proposed_sell_when_out_of_stock": prop_sell_when_out_of_stock,
@@ -453,6 +591,7 @@ def main() -> int:
                 "eta_changed": ec,
                 "status_changed": sc,
                 "inventory_policy_changed": ic,
+                "customs_changed": cc,
                 "notes": _build_notes(
                     mirror_p,
                     prop_price,
@@ -464,10 +603,16 @@ def main() -> int:
                     prop_stock_available_code,
                     mirror_policy,
                     prop_inventory_policy,
+                    mirror_hs,
+                    prop_hs,
+                    mirror_country,
+                    prop_country,
+                    customs_source,
                     pc,
                     ec,
                     sc,
                     ic,
+                    cc,
                 ),
             }
             rows_out.append(row)
@@ -486,6 +631,9 @@ def main() -> int:
             "proposed_eta_date",
             "proposed_price",
             "proposed_product_status",
+            "proposed_hs_code",
+            "proposed_country_of_origin",
+            "customs_source",
             "proposed_article_status_code",
             "proposed_stock_available_code",
             "reason",
@@ -496,6 +644,53 @@ def main() -> int:
             for row in missing_rows:
                 writer.writerow(row)
         print(f"Rapport missing SKUs geschreven: {out_path} ({len(missing_rows)} rijen)", flush=True)
+
+    out_customs_csv = (args.customs_report_csv or "").strip()
+    if out_customs_csv:
+        customs_path = Path(out_customs_csv)
+        customs_path.parent.mkdir(parents=True, exist_ok=True)
+        report_fields = [
+            "sku",
+            "resolved",
+            "hs_code",
+            "country_of_origin",
+            "tier",
+            "source",
+            "reason",
+        ]
+        with open(customs_path, "w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=report_fields)
+            writer.writeheader()
+            for row in customs_report_rows:
+                writer.writerow(row)
+            for row in xml_rejected:
+                writer.writerow(
+                    {
+                        "sku": row.get("sku", ""),
+                        "resolved": "0",
+                        "hs_code": "",
+                        "country_of_origin": "",
+                        "tier": "xml_invalid",
+                        "source": "xml",
+                        "reason": row.get("reason", "xml_invalid"),
+                    }
+                )
+            for row in external_rejected:
+                writer.writerow(
+                    {
+                        "sku": row.get("sku", ""),
+                        "resolved": "0",
+                        "hs_code": "",
+                        "country_of_origin": "",
+                        "tier": "external_invalid",
+                        "source": "external",
+                        "reason": row.get("reason", "external_invalid"),
+                    }
+                )
+        print(
+            f"Customs mapping-rapport geschreven: {customs_path} ({len(customs_report_rows)} basisrijen)",
+            flush=True,
+        )
 
     if args.dry_run:
         for i, row in enumerate(rows_out[:25]):

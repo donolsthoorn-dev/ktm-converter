@@ -94,6 +94,12 @@ query MirrorProducts($cursor: String) {{
               price
               compareAtPrice
               inventoryPolicy
+              inventoryItem {{
+                id
+                legacyResourceId
+                harmonizedSystemCode
+                countryCodeOfOrigin
+              }}
               updatedAt{eta_block}
             }}
           }}
@@ -118,6 +124,12 @@ query MirrorVariants($id: ID!, $cursor: String) {{
           price
           compareAtPrice
           inventoryPolicy
+          inventoryItem {{
+            id
+            legacyResourceId
+            harmonizedSystemCode
+            countryCodeOfOrigin
+          }}
           updatedAt{eta_block}
         }}
       }}
@@ -348,6 +360,14 @@ def run_mirror(
                     if not vid:
                         continue
                     vid_int = int(vid)
+                    inv = v.get("inventoryItem") or {}
+                    inv_id = inv.get("legacyResourceId")
+                    inv_id_int: int | None = None
+                    if inv_id is not None and str(inv_id).strip():
+                        try:
+                            inv_id_int = int(inv_id)
+                        except (TypeError, ValueError):
+                            inv_id_int = None
                     raw_v = {"gid": v.get("id")}
                     var_rows.append(
                         {
@@ -358,6 +378,9 @@ def run_mirror(
                             "price": _dec_price(v.get("price")),
                             "compare_at_price": _dec_price(v.get("compareAtPrice")),
                             "inventory_policy": (v.get("inventoryPolicy") or "").upper() or None,
+                            "inventory_item_id": inv_id_int,
+                            "harmonized_system_code": str(inv.get("harmonizedSystemCode") or "").strip() or None,
+                            "country_code_of_origin": str(inv.get("countryCodeOfOrigin") or "").strip().upper() or None,
                             "updated_at_shopify": v.get("updatedAt"),
                             "raw": raw_v,
                             "synced_at": synced,

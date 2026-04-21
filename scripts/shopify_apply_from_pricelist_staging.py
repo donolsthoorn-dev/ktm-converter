@@ -6,6 +6,7 @@ Deze flow leest de reeds berekende delta uit Supabase staging en voert alleen di
   - variantprijs (price_changed)
   - ETA metafield set/clear (eta_changed; bij Shopify inventoryQuantity > 0 wordt set -> clear)
   - variant inventory_policy (inventory_policy_changed)
+  - inventory item customs (customs_changed; HS code + land van herkomst)
   - productstatus (status_changed; in huidige flow vooral re-activatie naar ACTIVE)
 
 Vereist:
@@ -41,6 +42,7 @@ _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
 _STAMP_FLUSH_CHUNK = 250
 _POLICY_FLUSH_CHUNK = 25
+_CUSTOMS_FLUSH_CHUNK = 50
 _SUPABASE_RETRY_ATTEMPTS = 5
 _SUPABASE_RETRY_BASE_SLEEP_SEC = 1.5
 
@@ -405,6 +407,43 @@ query($ids: [ID!]!) {
     return out
 
 
+def _graphql_inventory_item_update_customs(
+    sync: Any,
+    shop: str,
+    token: str,
+    api_ver: str,
+    inventory_item_id: str,
+    hs_code: str | None,
+    country_code: str | None,
+) -> tuple[bool, str]:
+    q = """
+mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+  inventoryItemUpdate(id: $id, input: $input) {
+    inventoryItem {
+      id
+      harmonizedSystemCode
+      countryCodeOfOrigin
+    }
+    userErrors { field message }
+  }
+}
+"""
+    gid = f"gid://shopify/InventoryItem/{inventory_item_id}"
+    input_obj: dict[str, Any] = {}
+    if hs_code:
+        input_obj["harmonizedSystemCode"] = hs_code
+    if country_code:
+        input_obj["countryCodeOfOrigin"] = country_code
+    if not input_obj:
+        return True, ""
+    data = sync.graphql_post(shop, token, api_ver, q, {"id": gid, "input": input_obj})
+    payload = (data or {}).get("inventoryItemUpdate") or {}
+    uerr = payload.get("userErrors") or []
+    if uerr:
+        return False, str(uerr)
+    return True, ""
+
+
 def _apply_eta_stock_rule(
     sync: Any,
     shop: str,
@@ -447,9 +486,9 @@ def main() -> int:
     p.add_argument("--batch-id", default="", help="Optioneel: alleen 1 batch_id toepassen")
     p.add_argument(
         "--scope",
-        choices=("all", "price_eta", "policy"),
+        choices=("all", "price_eta", "policy", "customs"),
         default="all",
-        help="Welke mutaties toepassen: all (default), price_eta, of policy",
+        help="Welke mutaties toepassen: all (default), price_eta, policy of customs",
     )
     args = p.parse_args()
 
@@ -521,8 +560,9 @@ def main() -> int:
         (
             "id,sku,shopify_variant_id,shopify_product_id,"
             "proposed_price,proposed_eta_date,proposed_product_status,proposed_inventory_policy,"
-            "policy_updated_at,"
-            "price_changed,eta_changed,status_changed,inventory_policy_changed"
+            "mirror_inventory_item_id,proposed_hs_code,proposed_country_of_origin,"
+            "policy_updated_at,customs_updated_at,"
+            "price_changed,eta_changed,status_changed,inventory_policy_changed,customs_changed"
         ),
         where=where,
     )
@@ -534,10 +574,12 @@ def main() -> int:
     eta_set: list[tuple[str, str, str]] = []
     eta_clear: list[tuple[str, str]] = []
     policy_ops: list[tuple[str, str, str]] = []
+    customs_ops_by_item: dict[str, tuple[str, str, str | None, str | None, str]] = {}
     product_ops_by_pid: dict[str, tuple[str, str]] = {}
     variant_to_product_id: dict[str, str] = {}
     variant_to_staging_row_id: dict[str, str] = {}
     policy_already_done_skipped = 0
+    customs_already_done_skipped = 0
 
     for r in rows:
         sku = str(r.get("sku") or "").strip().upper()
@@ -574,14 +616,34 @@ def main() -> int:
             ps = str(r.get("proposed_product_status") or "").strip().upper() or "ACTIVE"
             product_ops_by_pid[pid] = (sku, ps)
 
+        if r.get("customs_changed") and vid:
+            customs_done = r.get("customs_updated_at") is not None
+            if args.scope == "customs" and customs_done:
+                customs_already_done_skipped += 1
+                continue
+            inv_item_id = str(r.get("mirror_inventory_item_id") or "").strip()
+            if not inv_item_id:
+                continue
+            hs = str(r.get("proposed_hs_code") or "").strip() or None
+            country = str(r.get("proposed_country_of_origin") or "").strip().upper() or None
+            if not hs and not country:
+                continue
+            customs_ops_by_item[inv_item_id] = (sku, vid, hs, country, sid)
+
     print(
         f"Staging delta: prijs {len(price_ops)}, eta_set {len(eta_set)}, eta_clear {len(eta_clear)}, "
-        f"variant_policy {len(policy_ops)}, product_status {len(product_ops_by_pid)}",
+        f"variant_policy {len(policy_ops)}, customs {len(customs_ops_by_item)}, "
+        f"product_status {len(product_ops_by_pid)}",
         flush=True,
     )
     if args.scope == "policy" and policy_already_done_skipped:
         print(
             f"Policy resume: {policy_already_done_skipped} al-verwerkte policy-rij(en) overgeslagen.",
+            flush=True,
+        )
+    if args.scope == "customs" and customs_already_done_skipped:
+        print(
+            f"Customs resume: {customs_already_done_skipped} al-verwerkte customs-rij(en) overgeslagen.",
             flush=True,
         )
 
@@ -591,6 +653,7 @@ def main() -> int:
 
     run_price_eta = args.scope in ("all", "price_eta")
     run_policy = args.scope in ("all", "policy")
+    run_customs = args.scope in ("all", "customs")
     print(f"Apply scope: {args.scope}", flush=True)
 
     variant_ids_to_check: set[str] = set()
@@ -600,6 +663,8 @@ def main() -> int:
         variant_ids_to_check.update(vid for _sku, vid in eta_clear)
     if run_policy:
         variant_ids_to_check.update(vid for _sku, vid, _pol in policy_ops)
+    if run_customs:
+        variant_ids_to_check.update(v[1] for v in customs_ops_by_item.values())
     existing_variant_ids = _existing_shopify_variant_ids(
         sync, shop, token, api_ver, list(variant_ids_to_check)
     )
@@ -610,22 +675,30 @@ def main() -> int:
             old_eta_set = len(eta_set)
             old_eta_clear = len(eta_clear)
             old_policy = len(policy_ops)
+            old_customs = len(customs_ops_by_item)
             price_ops = [op for op in price_ops if op[1] in existing_variant_ids]
             eta_set = [op for op in eta_set if op[1] in existing_variant_ids]
             eta_clear = [op for op in eta_clear if op[1] in existing_variant_ids]
             policy_ops = [op for op in policy_ops if op[1] in existing_variant_ids]
+            customs_ops_by_item = {
+                item_id: op
+                for item_id, op in customs_ops_by_item.items()
+                if op[1] in existing_variant_ids
+            }
             print(
                 "Varianten niet meer aanwezig in Shopify; mutaties overgeslagen: "
                 f"prijs {old_price - len(price_ops)}, "
                 f"eta_set {old_eta_set - len(eta_set)}, "
                 f"eta_clear {old_eta_clear - len(eta_clear)}, "
-                f"policy {old_policy - len(policy_ops)} "
+                f"policy {old_policy - len(policy_ops)}, "
+                f"customs {old_customs - len(customs_ops_by_item)} "
                 f"(uniek missing variants: {len(missing_variant_ids)}).",
                 flush=True,
             )
     print(
         f"Effectieve apply-set: prijs {len(price_ops)}, eta_set {len(eta_set)}, eta_clear {len(eta_clear)}, "
-        f"variant_policy {len(policy_ops)}, product_status {len(product_ops_by_pid)}",
+        f"variant_policy {len(policy_ops)}, customs {len(customs_ops_by_item)}, "
+        f"product_status {len(product_ops_by_pid)}",
         flush=True,
     )
 
@@ -636,14 +709,17 @@ def main() -> int:
     eta_success: list[tuple[str, str | None]] = []
     price_success: list[tuple[str, str]] = []
     policy_success: list[tuple[str, str]] = []
+    customs_success: list[tuple[str, str, str | None, str | None]] = []
     product_success: list[tuple[str, str]] = []
     price_success_count = 0
     eta_success_count = 0
     policy_success_count = 0
+    customs_success_count = 0
     product_success_count = 0
     price_stamp_by_row_id: dict[str, str] = {}
     eta_stamp_by_row_id: dict[str, str] = {}
     policy_stamp_by_row_id: dict[str, str] = {}
+    customs_stamp_by_row_id: dict[str, str] = {}
 
     # ETA mutaties in batches.
     batch_size = 25
@@ -802,6 +878,39 @@ def main() -> int:
     else:
         print("Skip variant policy (scope zonder policy).", flush=True)
 
+    # Inventory item customs (HS + country of origin)
+    if run_customs:
+        customs_items = list(customs_ops_by_item.items())
+        for idx, (item_id, (_sku, vid, hs, country, sid)) in enumerate(customs_items, start=1):
+            ok, err = _graphql_inventory_item_update_customs(
+                sync, shop, token, api_ver, item_id, hs, country
+            )
+            if not ok:
+                errors += 1
+                if errors <= 20:
+                    print(
+                        f"Customs update fout inventory_item={item_id}, variant={vid}: {err[:350]}",
+                        flush=True,
+                    )
+            else:
+                customs_success.append((vid, item_id, hs, country))
+                customs_success_count += 1
+                if sid:
+                    customs_stamp_by_row_id[sid] = _iso_now()
+                if len(customs_stamp_by_row_id) >= _CUSTOMS_FLUSH_CHUNK:
+                    _flush_staging_timestamps(
+                        sess, base, headers, "customs_updated_at", customs_stamp_by_row_id
+                    )
+                    customs_stamp_by_row_id.clear()
+            if idx == 1 or idx % progress_every == 0 or idx == len(customs_items):
+                print(f"Customs {idx}/{len(customs_items)}", flush=True)
+        _flush_staging_timestamps(
+            sess, base, headers, "customs_updated_at", customs_stamp_by_row_id
+        )
+        customs_stamp_by_row_id.clear()
+    else:
+        print("Skip customs (scope zonder customs).", flush=True)
+
     # Product status (dedupe per product)
     if run_policy:
         product_sess = sync._http_session()
@@ -847,7 +956,7 @@ def main() -> int:
             ]
             _supabase_upsert(sess, base, headers, "shopify_eta", eta_rows, "shopify_variant_id")
 
-        if price_success or policy_success:
+        if price_success or policy_success or customs_success:
             by_vid: dict[str, dict[str, Any]] = {}
             for vid, price in price_success:
                 row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
@@ -855,6 +964,11 @@ def main() -> int:
             for vid, pol in policy_success:
                 row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
                 row["inventory_policy"] = pol
+            for vid, item_id, hs, country in customs_success:
+                row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
+                row["inventory_item_id"] = int(item_id)
+                row["harmonized_system_code"] = hs
+                row["country_code_of_origin"] = country
             variant_rows: list[dict[str, Any]] = []
             for vid, row in by_vid.items():
                 pid = variant_to_product_id.get(vid)
@@ -889,11 +1003,13 @@ def main() -> int:
     total_eta_ops = len(eta_set) + len(eta_clear)
     total_price_ops = len(price_ops)
     total_policy_ops = len(policy_ops)
+    total_customs_ops = len(customs_ops_by_item)
     summary = (
         f"scope={args.scope}; "
         f"price {price_success_count}/{total_price_ops}; "
         f"eta {eta_success_count}/{total_eta_ops}; "
         f"policy {policy_success_count}/{total_policy_ops}; "
+        f"customs {customs_success_count}/{total_customs_ops}; "
         f"product_status {product_success_count}/{len(product_ops_by_pid)}; "
         f"errors={errors}"
     )
@@ -906,6 +1022,9 @@ def main() -> int:
         "policy_total": total_policy_ops,
         "policy_success": policy_success_count,
         "policy_scope_enabled": run_policy,
+        "customs_total": total_customs_ops,
+        "customs_success": customs_success_count,
+        "customs_scope_enabled": run_customs,
         "product_status_total": len(product_ops_by_pid),
         "product_status_success": product_success_count,
         "product_status_scope_enabled": run_policy,
