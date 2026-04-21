@@ -61,3 +61,13 @@ def test_try_resolve_skip_verify_keeps_dead_dict_url():
             u = image_manager.try_resolve_image_cache_or_cdn("foo.jpg", cache)
     assert u == dead
     assert cache["foo.jpg"]["url"] == dead
+
+
+def test_try_resolve_disallow_guessed_cdn_skips_reachable_build_url():
+    cache: dict = {}
+    with patch.object(image_manager, "url_is_reachable", return_value=True):
+        u = image_manager.try_resolve_image_cache_or_cdn(
+            "foo.jpg", cache, allow_guessed_cdn=False
+        )
+    assert u is None
+    assert "foo.jpg" not in cache

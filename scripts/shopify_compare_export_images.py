@@ -25,11 +25,9 @@ import config  # noqa: E402
 
 from modules.shopify_export_images_lib import (  # noqa: E402
     build_tasks_payload,
+    compare_csv_missing_images_against_live,
     default_tasks_path,
-    fetch_handle_maps_for_handles,
     latest_all_csv,
-    norm_src,
-    parse_csv_images,
     save_tasks_json,
 )
 
@@ -113,40 +111,17 @@ def main() -> None:
         raise SystemExit(1)
 
     print(f"CSV: {csv_path}", flush=True)
-    expected_by_handle = parse_csv_images(csv_path)
-    if not expected_by_handle:
-        print("Geen enkele rij met Image Src in deze CSV.", flush=True)
-        return
-
-    handles_sorted = sorted(expected_by_handle.keys())
-    if args.limit and args.limit > 0:
-        handles_sorted = handles_sorted[: args.limit]
-        expected_by_handle = {h: expected_by_handle[h] for h in handles_sorted}
-
-    print(
-        f"Handles in CSV (met ten minste één image): {len(expected_by_handle)}",
-        flush=True,
-    )
-    print("Live producten ophalen (alleen deze handles)...", flush=True)
-    live_norms, live_id_by_handle = fetch_handle_maps_for_handles(
-        handles_sorted,
-        args.workers,
+    missing_report, not_in_shop, expected_by_handle = compare_csv_missing_images_against_live(
+        csv_path,
+        limit=args.limit or 0,
+        rest_workers=args.workers,
         graphql_batch=args.graphql_batch,
         fetch_workers=args.fetch_workers,
         rest_only=args.rest_only,
     )
-
-    missing_report: list[tuple[str, str, list[str]]] = []
-    not_in_shop: list[str] = []
-    for handle in handles_sorted:
-        urls = expected_by_handle[handle]
-        if handle not in live_id_by_handle:
-            not_in_shop.append(handle)
-            continue
-        have = live_norms.get(handle, set())
-        missing = [u for u in urls if norm_src(u) not in have]
-        if missing:
-            missing_report.append((handle, live_id_by_handle[handle], missing))
+    if not expected_by_handle:
+        print("Geen enkele rij met Image Src in deze CSV.", flush=True)
+        return
 
     if not_in_shop:
         print(

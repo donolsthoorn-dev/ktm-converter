@@ -407,6 +407,59 @@ def fetch_handle_maps_for_handles(
     return norms_by_handle, id_by_handle
 
 
+def compare_csv_missing_images_against_live(
+    csv_path: str,
+    *,
+    limit: int = 0,
+    rest_workers: int = 8,
+    graphql_batch: int = 25,
+    fetch_workers: int = 12,
+    rest_only: bool = False,
+) -> tuple[list[tuple[str, str, list[str]]], list[str], dict[str, list[str]]]:
+    """
+    Lees ``csv_path`` (Handle + Image Src), haal live media per handle op, bouw hetzelfde
+    ``missing_report`` / ``not_in_shop`` als ``shopify_compare_export_images.py``.
+
+    Retourneert ``(missing_report, not_in_shop, expected_by_handle)``.
+    ``expected_by_handle`` is na eventuele ``limit`` ingekort (gesorteerde handles).
+    """
+    expected_by_handle = parse_csv_images(csv_path)
+    if not expected_by_handle:
+        return [], [], {}
+    handles_sorted = sorted(expected_by_handle.keys())
+    if limit and limit > 0:
+        handles_sorted = handles_sorted[:limit]
+        expected_by_handle = {h: expected_by_handle[h] for h in handles_sorted}
+
+    print(
+        f"Handles in CSV (met ten minste één image): {len(expected_by_handle)}",
+        flush=True,
+    )
+    print("Live producten ophalen (alleen deze handles)...", flush=True)
+
+    live_norms, live_id_by_handle = fetch_handle_maps_for_handles(
+        handles_sorted,
+        rest_workers,
+        graphql_batch=graphql_batch,
+        fetch_workers=fetch_workers,
+        rest_only=rest_only,
+    )
+
+    missing_report: list[tuple[str, str, list[str]]] = []
+    not_in_shop: list[str] = []
+    for handle in handles_sorted:
+        urls = expected_by_handle[handle]
+        if handle not in live_id_by_handle:
+            not_in_shop.append(handle)
+            continue
+        have = live_norms.get(handle, set())
+        missing = [u for u in urls if norm_src(u) not in have]
+        if missing:
+            missing_report.append((handle, live_id_by_handle[handle], missing))
+
+    return missing_report, not_in_shop, expected_by_handle
+
+
 def post_product_image(
     sess: requests.Session,
     product_id: str,
@@ -537,6 +590,22 @@ def apply_missing_images_parallel(
                         )
                     if resolved:
                         attach_src = resolved
+                    else:
+                        with lock:
+                            print(
+                                f"  SKIP-POST {handle} id={pid}: lokaal {local_path.name!r} maar "
+                                "ensure_image (Shopify lookup/upload) leverde geen URL — "
+                                "geen POST met (meestal dode) CSV-CDN-URL.",
+                                flush=True,
+                            )
+                            done += 1
+                            fail_c += 1
+                            if done % 200 == 0 or done == total:
+                                print(
+                                    f"  Toegepast: {done}/{total} (OK {ok_c}, mislukt {fail_c})...",
+                                    flush=True,
+                                )
+                        return False, "ensure_image geen URL"
 
         with _product_post_lock(pid):
             success, err = post_product_image_retries(sess, pid, attach_src)

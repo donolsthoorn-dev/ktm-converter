@@ -207,7 +207,9 @@ def main() -> None:
         local_path = abs_path_to_local[ap]
         refs = abs_path_to_refs[ap]
         cache_name = local_path.name
-        url = try_resolve_image_cache_or_cdn(cache_name, cache)
+        url = try_resolve_image_cache_or_cdn(
+            cache_name, cache, allow_guessed_cdn=False
+        )
         return ap, refs, url
 
     try:
@@ -326,8 +328,14 @@ def main() -> None:
                 if not url and raw:
                     url = image_url_by_norm.get(_norm_ref_key(raw))
 
+                # Zelfde regel als de ALL-export hieronder: behoud ruwe XML-ref als er nog
+                # geen CDN-URL is. Alleen `if url` zou hier alle ontbrekende refs weggooien op
+                # dicts die *dezelfde objecten* zijn als in `products` — dan verdwijnen extra
+                # gallery-rijen uit shopify_export_all (één Image Src, compare ziet niets te doen).
                 if url:
                     new_images.append(url)
+                elif raw:
+                    new_images.append(raw)
 
             p["images"] = new_images
 

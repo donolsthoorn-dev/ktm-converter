@@ -601,7 +601,12 @@ def upload_image(local_path: Path) -> tuple[bool, str | None]:
 # -----------------------------
 
 
-def try_resolve_image_cache_or_cdn(filename: str, cache: dict) -> str | None:
+def try_resolve_image_cache_or_cdn(
+    filename: str,
+    cache: dict,
+    *,
+    allow_guessed_cdn: bool = True,
+) -> str | None:
     """
     Alleen cache + CDN-HEAD (zelfde als stap 1–2 van ensure_image).
     Retourneert URL als de afbeelding zonder Shopify lookup/upload te vinden is; anders None.
@@ -612,6 +617,11 @@ def try_resolve_image_cache_or_cdn(filename: str, cache: dict) -> str | None:
     kort met HEAD gevalideerd; bij falen worden de sleutels gewist zodat lookup/upload opnieuw kan.
 
     Zet ``KTM_IMAGE_SKIP_CACHED_URL_VERIFY=1`` om die HEAD te skippen (sneller, risico op dode URLs).
+
+    allow_guessed_cdn: als False, geen ``build_url(filename)`` meer teruggeven alleen omdat
+    HEAD/GET 200 geeft. Sommige CDN-paden reageren voor onze client als bereikbaar terwijl
+    Shopify het bestand bij product-image import niet kan ophalen; bij een bekend lokaal
+    bestand moet dan lookup/upload volgen.
     """
     if not filename:
         return None
@@ -627,7 +637,7 @@ def try_resolve_image_cache_or_cdn(filename: str, cache: dict) -> str | None:
             break
         if u := _resolve_cache_key_to_url(cache, key, filename, persist=True):
             return u
-    if url_is_reachable(guessed):
+    if allow_guessed_cdn and url_is_reachable(guessed):
         _store_cache_url(cache, filename, guessed)
         return guessed
     return None
@@ -653,12 +663,17 @@ def ensure_image(
       bestand in Shopify; pas daarna upload.
 
     strict_delta: alleen voor API-compatibiliteit; gedrag is gelijk (cache voorkomt her-upload).
+
+    Wanneer ``local_path`` een bestaand bestand is: geen cache/CDN-snelslag (``try_resolve``).
+    Oude cache-entries en HEAD-checks kunnen URL's teruggeven die voor product-image POST
+    alsnog ``file not found`` geven; lookup/upload via Shopify is dan de betrouwbare route.
     """
     _ = strict_delta
-    if u := try_resolve_image_cache_or_cdn(filename, cache):
-        return u, False
-
+    have_disk = local_path is not None and Path(local_path).is_file()
     guessed = build_url(filename)
+    if not have_disk:
+        if u := try_resolve_image_cache_or_cdn(filename, cache, allow_guessed_cdn=True):
+            return u, False
 
     # 3) Bestand staat al in Shopify (zelfde bestandsnaam), maar andere/preview-URL
     if _env_truthy("KTM_IMAGE_SHOPIFY_FILE_LOOKUP", default=True):
