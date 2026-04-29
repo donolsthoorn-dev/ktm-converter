@@ -12,7 +12,7 @@ name: price_eta_status_sync
 run-name: price_eta_status_sync (mode=${{ github.event.inputs.mode || 'apply' }}, scope=${{ github.event.inputs.apply_scope || 'price_eta' }})
 concurrency:
   group: price-eta-status-sync-${{ github.event.inputs.mode || 'apply' }}-${{ github.event.inputs.apply_scope || 'price_eta' }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   workflow_dispatch:
@@ -53,6 +53,7 @@ jobs:
       SKIP_STAGING_REBUILD: "0"
       SKIP_REASON: ""
       SKIP_REASON_DETAIL: ""
+      SHOPIFY_REST_PREEMPTIVE_SLEEP_SEC: "0.05"
     steps:
       - uses: actions/checkout@v6
 
