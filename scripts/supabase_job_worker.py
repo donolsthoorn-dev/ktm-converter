@@ -6,7 +6,7 @@ Bedoeld voor GitHub Actions (schedule / workflow_dispatch). Vereist o.a.:
 
   Supabase-URL en service role (``load_project_env()``: ``.env``,
   ``converter/.env``, ``converter/.env.local``; ``NEXT_PUBLIC_SUPABASE_URL`` → ``SUPABASE_URL``)
-  Voor job_type shopify_catalog_mirror: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
+  Voor job_type shopify_catalog_mirror / shopify_ymm_backfill_*: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
   (zie workflow job-worker.yml)
 
 Gebruik (vanaf projectroot): secrets staan in ``.env`` / ``converter/.env.local``, of tijdelijk:
@@ -140,6 +140,75 @@ def _run_shopify_mirror(
     return (summary, err)
 
 
+def _run_shopify_ymm_backfill(
+    job: dict[str, Any],
+) -> tuple[str, str | None]:
+    from modules.shopify_ymm_backfill import run_ymm_backfill_missing_fields
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+        print(msg, flush=True)
+
+    payload = job.get("payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    stats, err = run_ymm_backfill_missing_fields(payload_dict, log=_log)
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
+
+
+def _run_shopify_ymm_projection_refresh(
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    from modules.shopify_ymm_supabase_pipeline import run_refresh_shopify_ymm_projection
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+        print(msg, flush=True)
+
+    stats, err = run_refresh_shopify_ymm_projection(session, base, headers, log=_log)
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
+
+
+def _run_shopify_ymm_backfill_from_supabase(
+    job: dict[str, Any],
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    from modules.shopify_ymm_supabase_pipeline import run_shopify_ymm_backfill_from_supabase
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+        print(msg, flush=True)
+
+    payload = job.get("payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    stats, err = run_shopify_ymm_backfill_from_supabase(
+        payload_dict,
+        session,
+        base,
+        headers,
+        log=_log,
+    )
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
+
+
 def _dispatch_job(
     job: dict[str, Any],
     session: requests.Session,
@@ -149,6 +218,12 @@ def _dispatch_job(
     jt = job.get("job_type") or ""
     if jt == "shopify_catalog_mirror":
         return _run_shopify_mirror(job, session, base, headers)
+    if jt == "shopify_ymm_projection_refresh":
+        return _run_shopify_ymm_projection_refresh(session, base, headers)
+    if jt == "shopify_ymm_backfill_missing_fields":
+        return _run_shopify_ymm_backfill(job)
+    if jt == "shopify_ymm_backfill_from_supabase":
+        return _run_shopify_ymm_backfill_from_supabase(job, session, base, headers)
     return _run_stub(job)
 
 

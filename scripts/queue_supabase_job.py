@@ -45,6 +45,11 @@ def main() -> int:
         default="schedule",
         help="trigger_source in DB (default: schedule)",
     )
+    p.add_argument(
+        "--payload-json",
+        default="{}",
+        help='JSON payload voor de job, bv. \'{"dry_run":false,"limit":100}\'',
+    )
     args = p.parse_args()
 
     base = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
@@ -60,11 +65,20 @@ def main() -> int:
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
+    try:
+        payload = json.loads(args.payload_json)
+    except json.JSONDecodeError as e:
+        print(f"Ongeldige --payload-json: {e}", file=sys.stderr)
+        return 1
+    if not isinstance(payload, dict):
+        print("--payload-json moet een JSON object zijn", file=sys.stderr)
+        return 1
+
     body = {
         "job_type": args.job_type.strip(),
         "status": "queued",
         "trigger_source": args.trigger,
-        "payload": {},
+        "payload": payload,
     }
     r = requests.post(
         url,
