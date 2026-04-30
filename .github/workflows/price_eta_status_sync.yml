@@ -53,7 +53,8 @@ jobs:
       SKIP_STAGING_REBUILD: "0"
       SKIP_REASON: ""
       SKIP_REASON_DETAIL: ""
-      SHOPIFY_REST_PREEMPTIVE_SLEEP_SEC: "0.05"
+      SHOPIFY_REST_PREEMPTIVE_SLEEP_SEC: "0.15"
+      SHOPIFY_REST_THROTTLE_USED_THRESHOLD: "24"
     steps:
       - uses: actions/checkout@v6
 
