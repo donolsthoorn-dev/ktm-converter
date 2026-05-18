@@ -310,6 +310,31 @@ def _flush_policy_success_to_mirror(
     _supabase_upsert(sess, base, headers, "shopify_variants", variant_rows, "shopify_variant_id")
 
 
+def _flush_price_success_to_mirror(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    price_success: list[tuple[str, str]],
+    variant_to_product_id: dict[str, str],
+    ts: str,
+) -> None:
+    """Schrijf succesvolle prijs-updates direct door naar shopify_variants mirror."""
+    if not price_success:
+        return
+    variant_rows: list[dict[str, Any]] = []
+    for vid, price in price_success:
+        row: dict[str, Any] = {
+            "shopify_variant_id": int(vid),
+            "price": price,
+            "synced_at": ts,
+        }
+        pid = variant_to_product_id.get(vid)
+        if pid:
+            row["shopify_product_id"] = int(pid)
+        variant_rows.append(row)
+    _supabase_upsert(sess, base, headers, "shopify_variants", variant_rows, "shopify_variant_id")
+
+
 def _flush_product_success_to_mirror(
     sess: requests.Session,
     base: str,
@@ -826,10 +851,23 @@ def main() -> int:
                         sess, base, headers, "price_updated_at", price_stamp_by_row_id
                     )
                     price_stamp_by_row_id.clear()
+                if len(price_success) >= _STAMP_FLUSH_CHUNK:
+                    _flush_price_success_to_mirror(
+                        sess, base, headers, price_success, variant_to_product_id, _iso_now()
+                    )
+                    print(
+                        f"Prijs progress flushed naar mirror (+{len(price_success)}).",
+                        flush=True,
+                    )
+                    price_success.clear()
             if idx == 1 or idx % progress_every == 0 or idx == len(price_ops):
                 print(f"Prijs {idx}/{len(price_ops)}", flush=True)
         _flush_staging_timestamps(sess, base, headers, "price_updated_at", price_stamp_by_row_id)
         price_stamp_by_row_id.clear()
+        _flush_price_success_to_mirror(
+            sess, base, headers, price_success, variant_to_product_id, _iso_now()
+        )
+        price_success.clear()
     else:
         print("Skip prijs (scope zonder price_eta).", flush=True)
 

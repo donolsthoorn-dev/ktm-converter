@@ -33,8 +33,10 @@ _PAGE_VARIANTS = 250
 
 
 def _fits_on_ns_key() -> tuple[str, str]:
-    ns = os.environ.get("SHOPIFY_PRODUCT_FITS_ON_NAMESPACE", "").strip()
-    key = os.environ.get("SHOPIFY_PRODUCT_FITS_ON_KEY", "").strip()
+    # Lege env (bijv. ontbrekende GitHub secret) moet niet stil YMM-sync uitschakelen.
+    # Legacy motofilter gebruikt doorgaans global.fits_on.
+    ns = os.environ.get("SHOPIFY_PRODUCT_FITS_ON_NAMESPACE", "").strip() or "global"
+    key = os.environ.get("SHOPIFY_PRODUCT_FITS_ON_KEY", "").strip() or "fits_on"
     return (ns, key)
 
 
