@@ -2,6 +2,7 @@
 
 Alle commando’s vanaf de **projectroot** (`ktm_project/`). Python: `python3` (zie `pyproject.toml`).
 
+**Checklist per merk (KTM / HSQ / WP):** [`docs/workflow_per_merk.md`](docs/workflow_per_merk.md) — bronbestanden, `main.py`, Shopify-import, YMM + metafields.  
 Uitgebreide uitleg: [`docs/workflow.md`](docs/workflow.md). Flow alleen nieuwe producten: [`docs/workflow_nieuwe_producten.txt`](docs/workflow_nieuwe_producten.txt).
 
 ---

@@ -1,5 +1,7 @@
 # Operationeel: van FTP naar Shopify en apps
 
+**Stappenplan per merk (KTM / HSQ / WP):** **`docs/workflow_per_merk.md`** — copy-paste checklists met inputbestanden, paden en commando’s.
+
 Architectuur en technische context: **`PROJECT_CONTEXT_KTM.md`**.  
 Metafields/YMM-details: **`docs/metafields_manager_export.md`**, **`docs/zbh2bike_ymm.md`**.  
 Shopify-env: **`docs/shopify_env.md`**. Caches: **`docs/shopify_cache_en_scheduling.md`**.
