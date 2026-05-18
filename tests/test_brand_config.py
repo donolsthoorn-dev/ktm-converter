@@ -7,6 +7,11 @@ from modules.brand_config import get_brand_config, route_dir_for_filename
 from modules.xml_loader import build_handle
 
 
+def test_ktm_type_tag_unchanged(monkeypatch) -> None:
+    config.apply_brand("ktm")
+    assert config.apply_type_tag_label("Heat protection") == "Heat protection"
+
+
 def test_ktm_default_paths_unchanged(monkeypatch) -> None:
     monkeypatch.delenv("BRAND", raising=False)
     config.apply_brand("ktm")
@@ -21,6 +26,10 @@ def test_hsq_paths_and_prefix(monkeypatch) -> None:
     config.apply_brand("hsq")
     assert config.INPUT_DIR == "input/hsq"
     assert config.HANDLE_PREFIX == "hsq-"
+    assert config.get_active_brand().shopify_vendor == "HUSQVARNA"
+    assert config.get_active_brand().shopify_type_tag_prefix == "HSQ - "
+    assert config.apply_type_tag_label("Heat protection") == "HSQ - Heat protection"
+    assert config.apply_type_tag_label("Trim parts/decals") == "HSQ - Trim parts/decals"
     assert config.apply_handle_prefix("abc123") == "hsq-abc123"
     assert config.apply_handle_prefix("hsq-abc123") == "hsq-abc123"
 

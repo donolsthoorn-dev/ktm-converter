@@ -52,6 +52,24 @@ def apply_handle_prefix(handle: str) -> str:
     return f"{prefix}{h}"
 
 
+def apply_type_tag_label(value: str) -> str:
+    """Type/Tags in product-CSV: bv. HSQ → ``HSQ - Heat protection`` (KTM ongewijzigd)."""
+    raw = (value or "").strip()
+    prefix = get_active_brand().shopify_type_tag_prefix
+    if not prefix or not raw:
+        return raw
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if not parts:
+        return raw
+    out: list[str] = []
+    for part in parts:
+        if part.startswith(prefix):
+            out.append(part)
+        else:
+            out.append(f"{prefix}{part}")
+    return ", ".join(out)
+
+
 def get_image_search_roots() -> list[str]:
     """
     Mappen voor lokale afbeeldingen (PHO/DOK).

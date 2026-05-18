@@ -141,18 +141,40 @@ def textart_lines(elem, name):
     return lines
 
 
+def _format_description_text(text: str, textart_name: str, brand) -> str:
+    """Eén TEXTART-waarde omzetten naar Body (HTML)."""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    if textart_name in brand.description_paragraph_textart_names:
+        if raw.startswith("<"):
+            return raw
+        return f"<p>{html.escape(raw)}</p>"
+    return raw
+
+
 def build_description(elem):
-    # Prefer the richest HTML fields first (any culture if EN-GB missing).
-    for name in ("BESCHRTEXT_ALG", "BESCHRTEXT_GEN_D", "BESCHRTEXT_GEN"):
+    brand = config.get_active_brand()
+
+    for name in brand.description_textart_names:
         text = get_html_textart_any_culture(elem, name)
         if text:
-            return text
+            formatted = _format_description_text(text, name, brand)
+            if formatted:
+                return formatted
 
-    # Fallback: plain feature lines -> HTML list.
-    lines = textart_lines(elem, "BESCHRTEXT_EIGENSCH")
-    if lines:
-        items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
-        return f"<ul>{items}</ul>"
+    for name in brand.description_features_textart_names:
+        lines = textart_lines(elem, name)
+        if lines:
+            items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+            return f"<ul>{items}</ul>"
+
+    for name in brand.description_paragraph_textart_names + brand.description_fallback_textart_names:
+        text = get_html_textart_any_culture(elem, name)
+        if text:
+            formatted = _format_description_text(text, name, brand)
+            if formatted:
+                return formatted
 
     return ""
 
