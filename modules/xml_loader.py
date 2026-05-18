@@ -9,7 +9,8 @@ from functools import lru_cache
 
 from lxml import etree
 
-from config import CULTURE, INPUT_DIR, XML_FILE
+import config
+from config import CULTURE
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 SIZE_RE = re.compile(r"^(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|XXXXL)$", re.IGNORECASE)
@@ -53,7 +54,11 @@ def strip_language_suffix(sku: str) -> str:
 
 @lru_cache(maxsize=1)
 def load_handle_overrides():
-    path = os.path.join(INPUT_DIR, "handle-overrides.json")
+    path = os.path.join(config.INPUT_DIR, "handle-overrides.json")
+    if not os.path.isfile(path) and config.INPUT_DIR != "input":
+        shared = os.path.join("input", "handle-overrides.json")
+        if os.path.isfile(shared):
+            path = shared
 
     if not os.path.exists(path):
         return {"keys": {}, "skus": {}}
@@ -286,7 +291,8 @@ def _build_handle_uncased(key: str, skus: list[str]) -> str:
 
 
 def build_handle(key: str, skus: list[str]) -> str:
-    return normalize_shopify_product_handle(_build_handle_uncased(key, skus))
+    base = normalize_shopify_product_handle(_build_handle_uncased(key, skus))
+    return config.apply_handle_prefix(base)
 
 
 def get_attr_value(
@@ -465,7 +471,7 @@ def load_products():
     image_map = defaultdict(list)
 
     context = etree.iterparse(
-        XML_FILE,
+        config.XML_FILE,
         events=("end",),
         tag=("STRUKTUR_ELEMENT", "PRODUKT_ZU_STRUKTUR_ELEMENT", "PRODUKT"),
     )

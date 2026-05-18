@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import config
 from modules import pricing_loader
 
 
@@ -26,7 +27,7 @@ def _legacy_header_24() -> str:
 
 
 def test_load_price_index_reads_0150_csv(tmp_path, monkeypatch, capsys) -> None:
-    monkeypatch.setattr(pricing_loader, "INPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "INPUT_DIR", str(tmp_path))
     csv_path = tmp_path / pricing_loader.DEFAULT_0150_CSV_NAME
     header = _legacy_header_24()
     row = ";".join(_row_24("SKU-TEST-1", "10,00", "40", "8712345678901"))
@@ -45,7 +46,7 @@ def test_load_price_index_resolves_columns_by_name_not_position(
     tmp_path, monkeypatch, capsys
 ) -> None:
     """Kolommen via header (zelfde velden als 0150_35-export, andere volgorde)."""
-    monkeypatch.setattr(pricing_loader, "INPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "INPUT_DIR", str(tmp_path))
     monkeypatch.setenv("KTM_0150_CSV", "0150_reordered.csv")
     csv_path = tmp_path / "0150_reordered.csv"
     header = ";".join(
@@ -69,7 +70,7 @@ def test_load_price_index_resolves_columns_by_name_not_position(
 
 def test_load_price_index_pads_truncated_rows(tmp_path, monkeypatch, capsys) -> None:
     """Regels zonder trailing lege kolommen: aanvullen t.o.v. header."""
-    monkeypatch.setattr(pricing_loader, "INPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "INPUT_DIR", str(tmp_path))
     csv_path = tmp_path / pricing_loader.DEFAULT_0150_CSV_NAME
     header = _legacy_header_24()
     r = [""] * 24
@@ -85,7 +86,7 @@ def test_load_price_index_pads_truncated_rows(tmp_path, monkeypatch, capsys) -> 
 
 
 def test_load_price_index_uppercases_sku_keys(tmp_path, monkeypatch, capsys) -> None:
-    monkeypatch.setattr(pricing_loader, "INPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "INPUT_DIR", str(tmp_path))
     csv_path = tmp_path / pricing_loader.DEFAULT_0150_CSV_NAME
     header = _legacy_header_24()
     row = ";".join(_row_24("mixed-Case-Sku", "10,00", "40", ""))
@@ -97,6 +98,6 @@ def test_load_price_index_uppercases_sku_keys(tmp_path, monkeypatch, capsys) -> 
 
 
 def test_load_price_index_missing_0150_raises(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(pricing_loader, "INPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "INPUT_DIR", str(tmp_path))
     with pytest.raises(FileNotFoundError, match="0150"):
         pricing_loader.load_price_index()

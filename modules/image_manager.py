@@ -1,3 +1,4 @@
+import copy
 import json
 import mimetypes
 import os
@@ -130,6 +131,7 @@ def _resolve_cache_key_to_url(
 
 
 def _normalize_cache_entry(cache: dict, filename: str, url: str) -> None:
+    """Alleen aanroepen terwijl ``_cache_mut_lock`` gehouden wordt."""
     cache[filename] = {"url": url}
 
 
@@ -225,17 +227,61 @@ def _notify_graphql_errors(errs: list) -> None:
 # -----------------------------
 
 
+def _quarantine_corrupt_cache(path: Path, exc: json.JSONDecodeError) -> None:
+    """Bewaar kapotte cache; ETL start met lege cache i.p.v. crashen."""
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    backup = path.with_name(f"{path.name}.corrupt-{ts}")
+    try:
+        path.replace(backup)
+        where = f"regel {exc.lineno}, kolom {exc.colno}"
+    except OSError:
+        where = str(exc)
+    print(
+        f"WAARSCHUWING: {path} is geen geldige JSON ({where}). "
+        f"Backup: {backup.name}. Cache wordt opnieuw opgebouwd.",
+        flush=True,
+    )
+
+
 def load_cache():
-    if Path(CACHE_FILE).exists():
-        with open(CACHE_FILE) as f:
-            return json.load(f)
-    return {}
+    path = Path(CACHE_FILE)
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        _quarantine_corrupt_cache(path, e)
+        return {}
+    if not isinstance(data, dict):
+        print(
+            f"WAARSCHUWING: {path} heeft onverwacht type {type(data).__name__}; lege cache.",
+            flush=True,
+        )
+        return {}
+    return data
+
+
+def _cache_snapshot(cache: dict) -> dict:
+    """Diepe kopie onder mutatie-lock (parallelle workers mogen cache blijven wijzigen)."""
+    with _cache_mut_lock:
+        return copy.deepcopy(cache)
+
+
+def _write_cache_file(snapshot: dict) -> None:
+    """Atomisch schrijven (.tmp + replace) — geen half JSON-bestand bij crash."""
+    path = Path(CACHE_FILE)
+    os.makedirs(path.parent or ".", exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
 
 
 def save_cache(cache):
     """Schrijf image_cache.json (gebruik save_cache_safe vanuit meerdere threads)."""
-    with open(CACHE_FILE, "w") as f:
-        json.dump(cache, f, indent=2)
+    _write_cache_file(_cache_snapshot(cache))
 
 
 def save_cache_safe(cache):
@@ -244,9 +290,7 @@ def save_cache_safe(cache):
     vult cache in geheugen); zo raak je bij Ctrl+C/crash niet alle tussentijdse mappen kwijt.
     """
     with _cache_save_lock:
-        os.makedirs(os.path.dirname(CACHE_FILE) or ".", exist_ok=True)
-        with open(CACHE_FILE, "w") as f:
-            json.dump(cache, f, indent=2)
+        _write_cache_file(_cache_snapshot(cache))
 
 
 # -----------------------------

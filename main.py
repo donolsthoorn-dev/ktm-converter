@@ -1,11 +1,33 @@
+import argparse
 import logging
 import os
+import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
-import config  # noqa: F401 — laadt .env vóór Shopify-modules
+
+def _bootstrap_brand_from_argv() -> str:
+    """Zet BRAND vóór config-import (default ktm = ongewijzigd gedrag)."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--brand",
+        "-b",
+        default=os.environ.get("BRAND", "ktm"),
+        choices=("ktm", "hsq", "wp"),
+        help="Merk: ktm (default), hsq (Husqvarna), wp.",
+    )
+    args, _unknown = parser.parse_known_args()
+    brand = (args.brand or "ktm").strip().lower()
+    os.environ["BRAND"] = brand
+    return brand
+
+
+_bootstrap_brand_from_argv()
+
+import config  # noqa: E402 — laadt .env en past merk-paden toe
+config.apply_brand(os.environ.get("BRAND", "ktm"))
 from modules.excluded_report import write_excluded_report
 from modules.exporter import export
 from modules.image_manager import (
@@ -35,7 +57,8 @@ def _configure_logging() -> None:
     log_path = os.environ.get("KTM_LOG_FILE", "").strip()
     if not log_path:
         os.makedirs(config.LOG_OUTPUT_DIR, exist_ok=True)
-        log_path = os.path.join(config.LOG_OUTPUT_DIR, f"ktm_etl_{run_ts}.log")
+        log_stem = f"{config.get_active_brand().log_prefix}_etl_{run_ts}.log"
+        log_path = os.path.join(config.LOG_OUTPUT_DIR, log_stem)
     else:
         parent = os.path.dirname(log_path)
         if parent:
@@ -47,9 +70,23 @@ def _configure_logging() -> None:
     _log.info("Logbestand: %s", log_path)
 
 
+def _merged_basename_index(roots: list[Path]) -> tuple[dict[str, list[Path]], dict[str, list[Path]]]:
+    by_exact: dict[str, list[Path]] = defaultdict(list)
+    by_lower: dict[str, list[Path]] = defaultdict(list)
+    for root in roots:
+        exact, lower = build_basename_index(root)
+        for key, paths in exact.items():
+            by_exact[key].extend(paths)
+        for key, paths in lower.items():
+            by_lower[key].extend(paths)
+    return dict(by_exact), dict(by_lower)
+
+
 def main() -> None:
     _configure_logging()
     log = logging.getLogger(__name__)
+    brand = config.get_active_brand()
+    log.info("Merk: %s | input: %s | XML: %s", brand.id, config.INPUT_DIR, config.XML_FILE)
 
     # -----------------------------------------------------
     # XML laden
@@ -132,12 +169,13 @@ def main() -> None:
 
     log.info("Lokale images indexeren...")
 
-    input_root = Path("input")
-    by_basename_exact, by_basename_lower = build_basename_index(input_root)
+    image_roots = [Path(p) for p in config.get_image_search_roots()]
+    by_basename_exact, by_basename_lower = _merged_basename_index(image_roots)
     files_on_disk = sum(len(v) for v in by_basename_exact.values())
     log.info(
-        "%s bestanden onder input/, %s unieke bestandsnamen",
+        "%s bestanden onder %s, %s unieke bestandsnamen",
         files_on_disk,
+        ", ".join(str(r) for r in image_roots),
         len(by_basename_exact),
     )
 
@@ -172,7 +210,13 @@ def main() -> None:
     refs_no_file: list[str] = []
 
     for ref in image_refs:
-        local_path = resolve_local_image(ref, input_root, by_basename_exact, by_basename_lower)
+        local_path = None
+        for root in image_roots:
+            local_path = resolve_local_image(
+                ref, root, by_basename_exact, by_basename_lower
+            )
+            if local_path is not None:
+                break
         if not local_path:
             refs_no_file.append(ref)
             continue
@@ -457,4 +501,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        raise SystemExit(2) from e
