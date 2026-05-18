@@ -9,8 +9,8 @@ Output:
 2) Delete rows CSV (1 kolom): Id
 
 Gebruik:
-  python3 scripts/build_ymm_add_delete_delta.py
-  python3 scripts/build_ymm_add_delete_delta.py \
+  python3 scripts/build_ymm_add_delete_delta.py --brand ktm
+  python3 scripts/build_ymm_add_delete_delta.py --brand hsq \
     --existing input/YMM-ktm-shop-nl.myshopify.com_1776690428-update_csv.csv
 """
 
@@ -21,13 +21,23 @@ import csv
 import glob
 import os
 import re
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 os.chdir(PROJECT_ROOT)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-YMM_DIR = PROJECT_ROOT / "output" / "ymm"
-INPUT_DIR = PROJECT_ROOT / "input"
+from modules.brand_cli import (  # noqa: E402
+    add_brand_argument,
+    apply_parsed_brand,
+    bootstrap_brand_from_argv,
+)
+
+bootstrap_brand_from_argv()
+
+import config  # noqa: E402
 
 
 def _norm_text(v: str) -> str:
@@ -46,16 +56,16 @@ def _key(product_ids: str, make: str, model: str, year: str) -> tuple[str, str, 
     return (_norm_pid(product_ids), _norm_text(make), _norm_text(model), _norm_year(year))
 
 
-def _latest_existing_update_csv() -> str:
-    files = sorted(glob.glob(str(INPUT_DIR / "YMM-*-update_csv.csv")), key=os.path.getmtime)
-    return files[-1] if files else ""
+def _latest_existing_update_csv(input_dir: Path) -> str:
+    files = sorted(input_dir.glob("YMM-*-update_csv.csv"), key=os.path.getmtime)
+    return str(files[-1]) if files else ""
 
 
-def _desired_sources() -> list[str]:
-    parts = sorted(glob.glob(str(YMM_DIR / "ymm_APP_import_ALL_part_*.csv")))
+def _desired_sources(ymm_dir: Path) -> list[str]:
+    parts = sorted(glob.glob(str(ymm_dir / "ymm_APP_import_ALL_part_*.csv")))
     if parts:
         return parts
-    single = str(YMM_DIR / "ymm_APP_import_ALL.csv")
+    single = str(ymm_dir / "ymm_APP_import_ALL.csv")
     return [single] if os.path.exists(single) else []
 
 
@@ -77,7 +87,6 @@ def _read_existing_keys_with_ids(path: str) -> tuple[dict[tuple[str, str, str, s
                 row.get("Year") or "",
             )
             rid = (row.get("Id") or "").strip()
-            # Behoud eerste id voor deze key.
             if k not in out and rid:
                 out[k] = rid
     return out, total
@@ -112,34 +121,45 @@ def _read_desired_keys_with_rows(paths: list[str]) -> tuple[dict[tuple[str, str,
 
 
 def main() -> int:
+    ymm_dir = Path(config.YMM_OUTPUT_DIR)
+    input_dir = Path(config.INPUT_DIR)
+
     ap = argparse.ArgumentParser(
         description="Bouw YMM delta-add + delta-delete tussen huidige app-export en gewenste ALL-set."
     )
+    add_brand_argument(ap)
     ap.add_argument(
         "--existing",
-        default=_latest_existing_update_csv(),
-        help="Pad naar huidige YMM update_csv export (met Id).",
+        default=None,
+        help=f"Pad naar huidige YMM update_csv export (met Id). Default: nieuwste in {input_dir}/YMM-*-update_csv.csv",
     )
     ap.add_argument(
         "--out-add",
-        default=str(YMM_DIR / "ymm_delta_add_rows.csv"),
+        default=str(ymm_dir / "ymm_delta_add_rows.csv"),
         help="Output CSV voor Add Rows (4 kolommen).",
     )
     ap.add_argument(
         "--out-delete",
-        default=str(YMM_DIR / "ymm_delta_delete_ids.csv"),
+        default=str(ymm_dir / "ymm_delta_delete_ids.csv"),
         help="Output CSV voor Delete Rows (Id kolom).",
     )
     args = ap.parse_args()
+    apply_parsed_brand(args.brand)
 
-    existing = (args.existing or "").strip()
+    ymm_dir = Path(config.YMM_OUTPUT_DIR)
+    input_dir = Path(config.INPUT_DIR)
+
+    existing = (args.existing or "").strip() or _latest_existing_update_csv(input_dir)
     if not existing or not os.path.exists(existing):
-        print("Geen bestaande YMM update_csv gevonden/meegegeven.")
+        print(f"Geen bestaande YMM update_csv gevonden in {input_dir}.")
         return 1
 
-    desired_paths = _desired_sources()
+    desired_paths = _desired_sources(ymm_dir)
     if not desired_paths:
-        print("Geen gewenste YMM ALL-bron gevonden (ymm_APP_import_ALL_part_*.csv / _ALL.csv).")
+        print(
+            f"Geen gewenste YMM ALL-bron in {ymm_dir} "
+            "(ymm_APP_import_ALL_part_*.csv / _ALL.csv)."
+        )
         return 1
 
     existing_map, existing_rows = _read_existing_keys_with_ids(existing)
@@ -170,6 +190,7 @@ def main() -> int:
             if rid:
                 w.writerow([rid])
 
+    print(f"Merk: {config.BRAND_ID}")
     print(f"Existing bron: {existing}")
     print(f"Desired bron(nen): {len(desired_paths)} bestand(en)")
     for p in desired_paths:

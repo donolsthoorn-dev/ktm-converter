@@ -33,20 +33,37 @@ Zie [`scripts/sku_export_status.py`](scripts/sku_export_status.py).
 
 ## YMM (app-import)
 
-**Delta** (na import van die producten in Shopify; vervang het delta-pad door jouw bestand):
+Zelfde merkvlag als `main.py`: `--brand ktm` (default), `hsq`, `wp`. Output onder `output/`, `output/hsq/` of `output/wp/` (`ids/`, `ymm/`, `metafields/`).
+
+**Delta** (na import van die producten in Shopify; vervang pad + timestamp):
 
 ```bash
+# KTM
 python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
   --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+
+# Husqvarna
+python3 -u scripts/export_product_ids_and_ymm.py --brand hsq --refresh-shopify-cache \
+  --delta-handles-csv output/hsq/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+
+# WP
+python3 -u scripts/export_product_ids_and_ymm.py --brand wp --refresh-shopify-cache \
+  --delta-handles-csv output/wp/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
 ```
 
 **Hele catalogus** (groot; alleen als je dat bewust wilt):
 
 ```bash
-python3 -u scripts/export_product_ids_and_ymm.py
+python3 -u scripts/export_product_ids_and_ymm.py --brand hsq
 ```
 
-Output o.a.: `output/ymm/ymm_APP_import_*.csv`
+**Compacte delta voor apps** (filter op laatste product-delta):
+
+```bash
+python3 scripts/export_delta_app_imports.py --brand hsq
+```
+
+Output o.a.: `output/<merk>/ymm/ymm_APP_import_*.csv`
 
 ---
 
@@ -55,17 +72,17 @@ Output o.a.: `output/ymm/ymm_APP_import_*.csv`
 **Delta** (zelfde `--delta-handles-csv` als bij YMM):
 
 ```bash
-python3 -u scripts/export_product_metafields.py \
-  --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+python3 -u scripts/export_product_metafields.py --brand hsq \
+  --delta-handles-csv output/hsq/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
 ```
 
 **Hele catalogus:**
 
 ```bash
-python3 -u scripts/export_product_metafields.py
+python3 -u scripts/export_product_metafields.py --brand wp
 ```
 
-Output o.a.: `output/metafields/product_metafields_metafields_manager_delta.csv` (delta) of `product_metafields_metafields_manager.csv` (volledig).
+Output o.a.: `output/<merk>/metafields/product_metafields_metafields_manager_delta.csv` (delta) of `product_metafields_metafields_manager.csv` (volledig).
 
 ---
 

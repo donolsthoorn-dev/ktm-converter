@@ -480,6 +480,39 @@ def _post_staged_binary(
     return True
 
 
+def _mime_ext_from_magic(head: bytes) -> tuple[str, str] | None:
+    """Bepaal (mime, extensie) uit bestandsheader; None als onbekend."""
+    if head[:3] == b"\xff\xd8\xff":
+        return "image/jpeg", ".jpg"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png", ".png"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif", ".gif"
+    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    return None
+
+
+def detect_image_upload_metadata(local_path: Path) -> tuple[str, str]:
+    """
+    Bestandsnaam + MIME voor Shopify-upload, afgestemd op echte inhoud.
+
+    Lost o.a. JPEG-bestanden met .png-extensie op (Shopify: "Media processing failed").
+    """
+    path = Path(local_path)
+    try:
+        with open(path, "rb") as f:
+            head = f.read(32)
+    except OSError:
+        head = b""
+    detected = _mime_ext_from_magic(head)
+    if detected:
+        mime, ext = detected
+        return f"{path.stem}{ext}", mime
+    mime, _ = mimetypes.guess_type(path.name)
+    return path.name, mime or "application/octet-stream"
+
+
 def _extract_created_file_url(file_obj: dict) -> str | None:
     if not isinstance(file_obj, dict):
         return None
@@ -497,11 +530,16 @@ def _extract_created_file_url(file_obj: dict) -> str | None:
     return None
 
 
-def _resolve_public_url_after_create(path: Path, file_obj: dict) -> str | None:
+def _resolve_public_url_after_create(
+    path: Path,
+    file_obj: dict,
+    *,
+    upload_filename: str | None = None,
+) -> str | None:
     u = _extract_created_file_url(file_obj)
     if u:
         return u
-    guessed = build_url(path.name)
+    guessed = build_url(upload_filename or path.name)
     for _ in range(_CDN_POLL_ATTEMPTS):
         if url_is_reachable(guessed):
             return guessed
@@ -515,9 +553,11 @@ def upload_image(local_path: Path) -> tuple[bool, str | None]:
     Retourneert (succes, publieke CDN-URL of None).
     """
     path = Path(local_path)
-    mime, _ = mimetypes.guess_type(path.name)
-    if not mime:
-        mime = "application/octet-stream"
+    upload_name, mime = detect_image_upload_metadata(path)
+    if upload_name != path.name:
+        _debug(
+            f"upload: extensie gecorrigeerd {path.name!r} → {upload_name!r} ({mime})"
+        )
 
     resource = "IMAGE" if mime.startswith("image/") else "FILE"
     content_type_graphql = "IMAGE" if resource == "IMAGE" else "FILE"
@@ -540,7 +580,7 @@ def upload_image(local_path: Path) -> tuple[bool, str | None]:
             {
                 "input": [
                     {
-                        "filename": path.name,
+                        "filename": upload_name,
                         "mimeType": mime,
                         "httpMethod": "POST",
                         "resource": resource,
@@ -606,7 +646,7 @@ def upload_image(local_path: Path) -> tuple[bool, str | None]:
                         "alt": alt,
                         "contentType": content_type_graphql,
                         "originalSource": resource_url,
-                        "filename": path.name,
+                        "filename": upload_name,
                         "duplicateResolutionMode": "REPLACE",
                     }
                 ]
@@ -632,7 +672,9 @@ def upload_image(local_path: Path) -> tuple[bool, str | None]:
         _debug("fileCreate: geen files in response")
         return False, None
 
-    public_url = _resolve_public_url_after_create(path, files_out[0])
+    public_url = _resolve_public_url_after_create(
+        path, files_out[0], upload_filename=upload_name
+    )
     if not public_url:
         _debug("Geen publieke URL na fileCreate (poll timeout)")
         return False, None

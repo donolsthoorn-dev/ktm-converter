@@ -22,7 +22,7 @@ from glob import glob
 
 from lxml import etree
 
-from config import CULTURE, IDS_OUTPUT_DIR, XML_FILE, YMM_OUTPUT_DIR
+from config import CULTURE, IDS_OUTPUT_DIR, XML_FILE, YMM_OUTPUT_DIR, get_active_brand
 from modules.shopify_client import get_shopify_products_index, get_shopify_sku_to_product_id
 from modules.xml_loader import (
     build_handle,
@@ -61,11 +61,18 @@ def _model_display(title: str, year: str) -> str:
 
 
 def _detect_make(chain_titles: list[str], chain_keys: list[str]) -> str:
+    brand_id = get_active_brand().id
+    if brand_id == "hsq":
+        return "Husqvarna"
+    if brand_id == "wp":
+        return "WP"
     blob = " ".join(chain_titles).lower() + " " + " ".join(chain_keys).lower()
     if "husqvarna" in blob or "hsq" in blob:
         return "Husqvarna"
     if "gasgas" in blob or "gas gas" in blob:
         return "GASGAS"
+    if " white power" in blob or blob.startswith("wp ") or " wp " in blob:
+        return "WP"
     return "KTM"
 
 

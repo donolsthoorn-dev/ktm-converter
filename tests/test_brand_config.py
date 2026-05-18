@@ -25,6 +25,9 @@ def test_ktm_default_paths_unchanged(monkeypatch) -> None:
 def test_hsq_paths_and_prefix(monkeypatch) -> None:
     config.apply_brand("hsq")
     assert config.INPUT_DIR == "input/hsq"
+    assert config.IDS_OUTPUT_DIR == "output/hsq/ids"
+    assert config.YMM_OUTPUT_DIR == "output/hsq/ymm"
+    assert config.METAFIELDS_OUTPUT_DIR == "output/hsq/metafields"
     assert config.HANDLE_PREFIX == "hsq-"
     assert config.get_active_brand().shopify_vendor == "HUSQVARNA"
     assert config.get_active_brand().shopify_type_tag_prefix == "HSQ - "
@@ -36,6 +39,7 @@ def test_hsq_paths_and_prefix(monkeypatch) -> None:
 
 def test_wp_prefix(monkeypatch) -> None:
     config.apply_brand("wp")
+    assert config.YMM_OUTPUT_DIR == "output/wp/ymm"
     assert config.apply_handle_prefix("sku1") == "wp-sku1"
 
 
