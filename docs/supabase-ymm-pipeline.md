@@ -68,3 +68,23 @@ Alleen als leeg:
 - `global.ymm_summary`
 
 De worker is idempotent en overschrijft bestaande waarden niet.
+
+## GitHub Actions (nachtelijk)
+
+Workflow **`.github/workflows/job-worker.yml`** draait automatisch:
+
+1. `shopify_catalog_mirror` — Shopify → Supabase
+2. `shopify_ymm_projection_refresh` — projectie-tabel vullen
+
+**Niet** in de nacht: `shopify_ymm_backfill_from_supabase` met `limit: 0` (hele catalogus; duurt te lang).
+
+Backfill handmatig vanaf je Mac (zie §3 hierboven), bijvoorbeeld:
+
+```bash
+python3 scripts/queue_supabase_job.py shopify_ymm_backfill_from_supabase \
+  --trigger manual \
+  --payload-json '{"dry_run": true, "limit": 50}'
+python3 scripts/supabase_job_worker.py
+```
+
+Vereist migratie **019** in Supabase. Bij een gefaalde job geeft `supabase_job_worker.py` exitcode **1** (rode GitHub-run).

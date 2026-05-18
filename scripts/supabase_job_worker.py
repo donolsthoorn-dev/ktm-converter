@@ -14,7 +14,7 @@ Gebruik (vanaf projectroot): secrets staan in ``.env`` / ``converter/.env.local`
   SUPABASE_URL=https://xxx.supabase.co SUPABASE_SERVICE_ROLE_KEY=eyJ... \\
   python3 scripts/supabase_job_worker.py
 
-Exitcode: 0 als er geen job was of de run gelukt is; 1 bij configuratie-/HTTP-fout.
+Exitcode: 0 als er geen job was of de run gelukt is; 1 bij configuratie-/HTTP-fout of job status failed.
 """
 
 from __future__ import annotations
@@ -275,6 +275,11 @@ def main() -> int:
         return 1
 
     print(f"Job {jid} → {finished['status']}")
+    if err:
+        if finished.get("log_summary"):
+            print(finished["log_summary"], file=sys.stderr)
+        print(err, file=sys.stderr)
+        return 1
     return 0
 
 
