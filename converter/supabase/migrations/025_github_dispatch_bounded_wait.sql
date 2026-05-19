@@ -1,5 +1,55 @@
--- Zie 025_github_dispatch_bounded_wait.sql (024 gebruikte kort infinite _http_collect_response).
--- Voer 025 uit i.p.v. alleen deze await-sectie.
+-- Vervang oneindige pg_net-wacht (024) door begrensde poll (~15s) zodat SQL Editor niet blijft hangen.
+
+create or replace function public.await_net_http_response(
+  p_request_id bigint,
+  p_max_wait_ms integer default 15000,
+  p_poll_ms integer default 250
+)
+returns table(status_code integer, body_text text, timed_out boolean)
+language plpgsql
+security definer
+set search_path = public, net
+as $$
+declare
+  v_elapsed integer := 0;
+  v_code integer;
+  v_body text;
+  v_timed_out boolean;
+  v_found boolean;
+  v_step integer;
+begin
+  if p_request_id is null then
+    return query select null::integer, 'missing request_id'::text, true;
+    return;
+  end if;
+
+  v_step := greatest(coalesce(p_poll_ms, 250), 100);
+
+  loop
+    v_found := false;
+    select
+      r.status_code,
+      coalesce(r.content, r.error_msg, ''),
+      coalesce(r.timed_out, false)
+    into v_code, v_body, v_timed_out
+    from net._http_response r
+    where r.id = p_request_id;
+
+    if found then
+      v_found := true;
+      return query select v_code, left(v_body, 4000), v_timed_out;
+      return;
+    end if;
+
+    exit when v_elapsed >= greatest(coalesce(p_max_wait_ms, 15000), 1000);
+    perform pg_sleep(v_step / 1000.0);
+    v_elapsed := v_elapsed + v_step;
+  end loop;
+
+  return query
+  select null::integer, 'timeout waiting for pg_net _http_response'::text, true;
+end;
+$$;
 
 grant execute on function public.await_net_http_response(bigint, integer, integer) to postgres, service_role;
 
@@ -29,7 +79,25 @@ declare
   v_err text;
 begin
   perform public.mark_stale_workflow_dispatch_logs();
-  perform net.check_worker_is_up();
+
+  begin
+    perform net.check_worker_is_up();
+  exception
+    when others then
+      insert into public.workflow_dispatch_log(
+        workflow_file, mode, status, run_state, run_summary, error_message, run_finished_at
+      )
+      values (
+        p_workflow_file,
+        nullif(trim(coalesce(p_inputs ->> 'mode', p_inputs ->> 'apply', '')), ''),
+        'failed',
+        'failed',
+        'pg_net_worker_down',
+        left(sqlerrm, 2000),
+        now()
+      );
+      raise;
+  end;
 
   v_mode := nullif(trim(coalesce(p_inputs ->> 'mode', '')), '');
   if v_mode is null then
@@ -99,16 +167,21 @@ begin
       'X-GitHub-Api-Version', '2022-11-28',
       'Content-Type', 'application/json'
     ),
-    timeout_milliseconds := 30000
+    timeout_milliseconds := 20000
   );
+
+  perform net.wake();
 
   select h.status_code, h.body_text, h.timed_out
   into v_http_status, v_http_body, v_http_timeout
-  from public.await_net_http_response(v_request_id, 120000, 200) h;
+  from public.await_net_http_response(v_request_id, 15000, 250) h;
 
   if coalesce(v_http_timeout, false) then
     v_err := left(
-      coalesce(nullif(trim(v_http_body), ''), 'github_dispatch: geen geldig HTTP-antwoord'),
+      coalesce(
+        nullif(trim(v_http_body), ''),
+        'github_dispatch: geen pg_net HTTP-antwoord binnen 15s (controleer pg_net worker / queue)'
+      ),
       2000
     );
     update public.workflow_dispatch_log
@@ -158,9 +231,6 @@ exception
         run_finished_at = coalesce(run_finished_at, now())
       where id = v_log_id
         and status not in ('failed', 'skipped');
-    else
-      insert into public.workflow_dispatch_log(workflow_file, mode, status, error_message)
-      values (p_workflow_file, v_mode, 'failed', left(sqlerrm, 2000));
     end if;
     raise;
 end;
@@ -168,3 +238,37 @@ $$;
 
 grant execute on function public.dispatch_github_workflow_with_inputs(text, jsonb, boolean)
   to postgres, service_role;
+
+-- Snelle diagnose (max ~6s): pg_net + GitHub API bereikbaar?
+create or replace function public.debug_pg_net_github_ping()
+returns text
+language plpgsql
+security definer
+set search_path = public, net
+as $$
+declare
+  v_id bigint;
+  v_code integer;
+  v_body text;
+  v_to boolean;
+begin
+  perform net.check_worker_is_up();
+  v_id := net.http_post(
+    url := 'https://api.github.com/zen',
+    body := '{}'::jsonb,
+    params := '{}'::jsonb,
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    timeout_milliseconds := 5000
+  );
+  perform net.wake();
+  select h.status_code, h.body_text, h.timed_out
+  into v_code, v_body, v_to
+  from public.await_net_http_response(v_id, 6000, 200) h;
+  if coalesce(v_to, false) then
+    return 'FAIL: pg_net geen antwoord binnen 6s (worker/queue?)';
+  end if;
+  return format('OK: HTTP %s body=%s', coalesce(v_code::text, '?'), left(coalesce(v_body, ''), 200));
+end;
+$$;
+
+grant execute on function public.debug_pg_net_github_ping() to postgres, service_role;

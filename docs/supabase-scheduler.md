@@ -46,6 +46,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/022_workflow_dispatch_log_status_skipped.sql`
    - `converter/supabase/migrations/023_github_dispatch_verify_http_response.sql`
    - `converter/supabase/migrations/024_github_dispatch_pg_net_collect_response.sql`
+   - `converter/supabase/migrations/025_github_dispatch_bounded_wait.sql` (verplicht na 024; voorkomt SQL-hang)
 2. Create vault secret for GitHub API token (required):
 
 ```sql
