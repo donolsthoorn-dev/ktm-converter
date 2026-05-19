@@ -1,6 +1,5 @@
-# Nachtelijk: Shopify-catalogus -> Supabase + YMM-projectie verversen.
-# Geen volledige YMM-backfill in deze run (te zwaar; zie docs/supabase-ymm-pipeline.md).
-# Handmatig backfill: queue_supabase_job.py shopify_ymm_backfill_from_supabase met limit > 0.
+# Nightly: Shopify catalog -> Supabase (+ optional YMM projection after migration 020).
+# See docs/supabase-ymm-pipeline.md
 
 name: Job worker
 
@@ -8,6 +7,11 @@ on:
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
+    inputs:
+      refresh_projection:
+        description: Also queue shopify_ymm_projection_refresh (needs migration 020 on Supabase)
+        type: boolean
+        default: false
 
 jobs:
   run:
@@ -32,6 +36,7 @@ jobs:
         run: python scripts/queue_supabase_job.py shopify_catalog_mirror --trigger schedule
 
       - name: Queue shopify_ymm_projection_refresh
+        if: github.event_name == 'workflow_dispatch' && inputs.refresh_projection == true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -49,11 +54,19 @@ jobs:
           SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
           SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
         run: |
-          set -e
-          for i in 1 2 3 4; do
-            out="$(python scripts/supabase_job_worker.py)"
+          failed=0
+          for i in 1 2 3 4 5 6; do
+            set +e
+            out="$(python scripts/supabase_job_worker.py 2>&1)"
+            ec=$?
+            set -e
             echo "$out"
+            if [ "$ec" -ne 0 ]; then
+              echo "Worker exit $ec (job failed or HTTP error)" >&2
+              failed=1
+            fi
             case "$out" in
               *"Geen queued jobs."*) break ;;
             esac
           done
+          exit "$failed"

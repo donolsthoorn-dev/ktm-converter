@@ -7,7 +7,8 @@ Deze pipeline maakt `shopify_ymm` bruikbaar voor:
 
 ## 1) SQL migratie
 
-Voer migratie `converter/supabase/migrations/019_shopify_ymm_projection.sql` uit.
+Voer migratie `converter/supabase/migrations/019_shopify_ymm_projection.sql` uit.  
+Daarna **`020_refresh_shopify_ymm_projection_timeout.sql`** (voorkomt timeout na ~8 seconden bij refresh).
 
 Die voegt toe:
 
@@ -71,12 +72,15 @@ De worker is idempotent en overschrijft bestaande waarden niet.
 
 ## GitHub Actions (nachtelijk)
 
-Workflow **`.github/workflows/job-worker.yml`** draait automatisch:
+Workflow **`.github/workflows/job-worker.yml`** draait automatisch alleen:
 
 1. `shopify_catalog_mirror` — Shopify → Supabase
-2. `shopify_ymm_projection_refresh` — projectie-tabel vullen
+
+**Optioneel** (handmatig Run workflow, vink *refresh_projection* aan): `shopify_ymm_projection_refresh` — alleen na migratie **020**.
 
 **Niet** in de nacht: `shopify_ymm_backfill_from_supabase` met `limit: 0` (hele catalogus; duurt te lang).
+
+Als een job faalt met `canceling statement due to statement timeout` → migratie **020** nog niet gedraaid in Supabase SQL Editor.
 
 Backfill handmatig vanaf je Mac (zie §3 hierboven), bijvoorbeeld:
 
