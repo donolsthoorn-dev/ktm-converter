@@ -42,7 +42,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     concurrency:
       group: shopify-write-lock
       cancel-in-progress: false
@@ -55,6 +55,7 @@ jobs:
       SKIP_REASON_DETAIL: ""
       SHOPIFY_REST_PREEMPTIVE_SLEEP_SEC: "0.15"
       SHOPIFY_REST_THROTTLE_USED_THRESHOLD: "24"
+      SHOPIFY_PRICE_CONCURRENCY: "8"
     steps:
       - uses: actions/checkout@v6
 

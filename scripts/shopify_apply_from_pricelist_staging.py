@@ -23,7 +23,10 @@ import argparse
 import importlib.util
 import os
 import sys
+import threading
 import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -515,6 +518,13 @@ def main() -> int:
         default="all",
         help="Welke mutaties toepassen: all (default), price_eta, policy of customs",
     )
+    p.add_argument(
+        "--price-workers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Parallelle producten voor GraphQL bulk-prijzen (0 = env SHOPIFY_PRICE_CONCURRENCY, default 6)",
+    )
     args = p.parse_args()
 
     token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "").strip()
@@ -586,7 +596,7 @@ def main() -> int:
             "id,sku,shopify_variant_id,shopify_product_id,"
             "proposed_price,proposed_eta_date,proposed_product_status,proposed_inventory_policy,"
             "mirror_inventory_item_id,proposed_hs_code,proposed_country_of_origin,"
-            "policy_updated_at,customs_updated_at,"
+            "price_updated_at,eta_updated_at,policy_updated_at,customs_updated_at,"
             "price_changed,eta_changed,status_changed,inventory_policy_changed,customs_changed"
         ),
         where=where,
@@ -605,6 +615,8 @@ def main() -> int:
     variant_to_staging_row_id: dict[str, str] = {}
     policy_already_done_skipped = 0
     customs_already_done_skipped = 0
+    price_already_done_skipped = 0
+    eta_already_done_skipped = 0
 
     for r in rows:
         sku = str(r.get("sku") or "").strip().upper()
@@ -617,16 +629,22 @@ def main() -> int:
             variant_to_staging_row_id[vid] = sid
 
         if r.get("price_changed") and vid:
-            pp = r.get("proposed_price")
-            if pp is not None:
-                price_ops.append((sku, vid, f"{float(pp):.2f}"))
+            if r.get("price_updated_at") is not None:
+                price_already_done_skipped += 1
+            else:
+                pp = r.get("proposed_price")
+                if pp is not None:
+                    price_ops.append((sku, vid, f"{float(pp):.2f}"))
 
         if r.get("eta_changed") and vid:
-            pe = r.get("proposed_eta_date")
-            if pe:
-                eta_set.append((sku, vid, str(pe)[:10]))
+            if r.get("eta_updated_at") is not None:
+                eta_already_done_skipped += 1
             else:
-                eta_clear.append((sku, vid))
+                pe = r.get("proposed_eta_date")
+                if pe:
+                    eta_set.append((sku, vid, str(pe)[:10]))
+                else:
+                    eta_clear.append((sku, vid))
 
         if r.get("inventory_policy_changed") and vid:
             policy_done = r.get("policy_updated_at") is not None
@@ -669,6 +687,16 @@ def main() -> int:
     if args.scope == "customs" and customs_already_done_skipped:
         print(
             f"Customs resume: {customs_already_done_skipped} al-verwerkte customs-rij(en) overgeslagen.",
+            flush=True,
+        )
+    if price_already_done_skipped:
+        print(
+            f"Prijs resume: {price_already_done_skipped} rij(en) met price_updated_at overgeslagen.",
+            flush=True,
+        )
+    if eta_already_done_skipped:
+        print(
+            f"ETA resume: {eta_already_done_skipped} rij(en) met eta_updated_at overgeslagen.",
             flush=True,
         )
 
@@ -834,40 +862,118 @@ def main() -> int:
     else:
         print("Skip ETA (scope zonder price_eta).", flush=True)
 
-    # Prijs mutaties
+    # Prijs mutaties (GraphQL bulk per product, parallel)
     if run_price_eta:
-        price_sess = sync._http_session()
-        for idx, (sku, vid, price) in enumerate(price_ops, start=1):
-            if not sync.rest_variant_price(shop, token, api_ver, vid, price, sess=price_sess):
-                errors += 1
-            else:
-                price_success.append((vid, price))
-                price_success_count += 1
-                sid = variant_to_staging_row_id.get(vid)
-                if sid:
-                    price_stamp_by_row_id[sid] = _iso_now()
-                if len(price_stamp_by_row_id) >= _STAMP_FLUSH_CHUNK:
-                    _flush_staging_timestamps(
-                        sess, base, headers, "price_updated_at", price_stamp_by_row_id
-                    )
-                    price_stamp_by_row_id.clear()
-                if len(price_success) >= _STAMP_FLUSH_CHUNK:
-                    _flush_price_success_to_mirror(
-                        sess, base, headers, price_success, variant_to_product_id, _iso_now()
-                    )
-                    print(
-                        f"Prijs progress flushed naar mirror (+{len(price_success)}).",
-                        flush=True,
-                    )
-                    price_success.clear()
-            if idx == 1 or idx % progress_every == 0 or idx == len(price_ops):
-                print(f"Prijs {idx}/{len(price_ops)}", flush=True)
-        _flush_staging_timestamps(sess, base, headers, "price_updated_at", price_stamp_by_row_id)
-        price_stamp_by_row_id.clear()
-        _flush_price_success_to_mirror(
-            sess, base, headers, price_success, variant_to_product_id, _iso_now()
-        )
-        price_success.clear()
+        n_price = len(price_ops)
+        price_workers = args.price_workers
+        if price_workers <= 0:
+            price_workers = int(os.environ.get("SHOPIFY_PRICE_CONCURRENCY", "6"))
+        price_workers = max(1, min(price_workers, 16))
+        if n_price:
+            by_pid: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+            no_pid_ops: list[tuple[str, str, str]] = []
+            for sku, vid, price in price_ops:
+                pid = variant_to_product_id.get(vid)
+                if pid:
+                    by_pid[pid].append((sku, vid, price))
+                else:
+                    no_pid_ops.append((sku, vid, price))
+            print(
+                f"Start prijs-updates: {n_price} varianten in {len(by_pid)} producten "
+                f"({price_workers} workers, GraphQL bulk; REST fallback {len(no_pid_ops)} zonder product_id)…",
+                flush=True,
+            )
+            price_lock = threading.Lock()
+            n_done = 0
+            completed_products = 0
+            max_variants_per_mutation = 100
+
+            def _record_price_batch(updates: list[tuple[str, str, str]]) -> None:
+                nonlocal price_success_count
+                for sku, vid, price in updates:
+                    price_success.append((vid, price))
+                    price_success_count += 1
+                    sid = variant_to_staging_row_id.get(vid)
+                    if sid:
+                        price_stamp_by_row_id[sid] = _iso_now()
+
+            if by_pid:
+                with ThreadPoolExecutor(max_workers=price_workers) as ex:
+                    futs = {
+                        ex.submit(
+                            sync._run_price_bulk_for_product,
+                            shop,
+                            token,
+                            api_ver,
+                            pid,
+                            items,
+                            max_variants_per_mutation,
+                        ): pid
+                        for pid, items in by_pid.items()
+                    }
+                    for fut in as_completed(futs):
+                        dn, ne, updates = fut.result()
+                        errors += ne
+                        with price_lock:
+                            _record_price_batch(updates)
+                            n_done += dn
+                            completed_products += 1
+                            if len(price_stamp_by_row_id) >= _STAMP_FLUSH_CHUNK:
+                                _flush_staging_timestamps(
+                                    sess, base, headers, "price_updated_at", price_stamp_by_row_id
+                                )
+                                price_stamp_by_row_id.clear()
+                            if len(price_success) >= _STAMP_FLUSH_CHUNK:
+                                flushed = len(price_success)
+                                _flush_price_success_to_mirror(
+                                    sess,
+                                    base,
+                                    headers,
+                                    price_success,
+                                    variant_to_product_id,
+                                    _iso_now(),
+                                )
+                                print(
+                                    f"Prijs progress flushed naar mirror (+{flushed}).",
+                                    flush=True,
+                                )
+                                price_success.clear()
+                        if (
+                            completed_products == 1
+                            or completed_products == len(by_pid)
+                            or completed_products % 50 == 0
+                            or n_done >= n_price
+                        ):
+                            print(
+                                f"  Prijs bulk: {completed_products}/{len(by_pid)} producten "
+                                f"({n_done}/{n_price} varianten)…",
+                                flush=True,
+                            )
+
+            if no_pid_ops:
+                price_sess = sync._http_session()
+                for idx, (sku, vid, price) in enumerate(no_pid_ops, start=1):
+                    if not sync.rest_variant_price(
+                        shop, token, api_ver, vid, price, sess=price_sess
+                    ):
+                        errors += 1
+                    else:
+                        with price_lock:
+                            _record_price_batch([(sku, vid, price)])
+                    if idx == 1 or idx % progress_every == 0 or idx == len(no_pid_ops):
+                        print(f"Prijs REST {idx}/{len(no_pid_ops)}", flush=True)
+
+            _flush_staging_timestamps(
+                sess, base, headers, "price_updated_at", price_stamp_by_row_id
+            )
+            price_stamp_by_row_id.clear()
+            _flush_price_success_to_mirror(
+                sess, base, headers, price_success, variant_to_product_id, _iso_now()
+            )
+            price_success.clear()
+            print(f"Prijs afgerond: {price_success_count}/{n_price} geslaagd.", flush=True)
+        else:
+            print("Geen open prijs-mutaties (alles al price_updated_at of geen delta).", flush=True)
     else:
         print("Skip prijs (scope zonder price_eta).", flush=True)
 
