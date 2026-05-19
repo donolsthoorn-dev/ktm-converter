@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import config
-from modules.brand_config import get_brand_config, route_dir_for_filename
+from modules.brand_config import (
+    get_brand_config,
+    missing_pricelist_csv_paths,
+    resolve_pricelist_csv_path,
+    resolve_pricelist_csv_paths,
+    route_dir_for_filename,
+)
 from modules.xml_loader import build_handle
 
 
@@ -63,6 +69,27 @@ def test_hsq_price_csv_order() -> None:
     cfg = get_brand_config("hsq")
     assert cfg.price_csv_names[0].startswith("1100")
     assert cfg.price_csv_names[1].startswith("0140")
+
+
+def test_resolve_pricelist_csv_paths_merk_mappen(tmp_path) -> None:
+    (tmp_path / "input").mkdir()
+    (tmp_path / "input" / "hsq").mkdir(parents=True)
+    (tmp_path / "input" / "wp").mkdir(parents=True)
+    (tmp_path / "input" / "0150_35_Z1_EUR_EN_csv.csv").write_text("a\n", encoding="utf-8")
+    (tmp_path / "input" / "hsq" / "1100_35_Z1_EUR_EN_csv.csv").write_text("b\n", encoding="utf-8")
+    (tmp_path / "input" / "hsq" / "0140_35_Z1_EUR_EN_csv.csv").write_text("c\n", encoding="utf-8")
+    (tmp_path / "input" / "wp" / "0910_35_Z1_EUR_EN_csv.csv").write_text("d\n", encoding="utf-8")
+
+    paths = resolve_pricelist_csv_paths(tmp_path)
+    names = [p.name for p in paths]
+    assert names == [
+        "1100_35_Z1_EUR_EN_csv.csv",
+        "0910_35_Z1_EUR_EN_csv.csv",
+        "0150_35_Z1_EUR_EN_csv.csv",
+        "0140_35_Z1_EUR_EN_csv.csv",
+    ]
+    assert missing_pricelist_csv_paths(tmp_path) == []
+    assert resolve_pricelist_csv_path(tmp_path, "0910_35_Z1_EUR_EN_csv.csv").parent.name == "wp"
 
 
 def teardown_module() -> None:

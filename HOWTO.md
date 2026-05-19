@@ -66,6 +66,22 @@ python3 scripts/export_delta_app_imports.py --brand hsq
 
 Output o.a.: `output/<merk>/ymm/ymm_APP_import_*.csv`
 
+### YMM-app: alleen **Update rows** (geen append)
+
+`ymm_APP_import_*.csv` heeft geen kolom **Id** → niet voor Update rows. Wel na vergelijking met een app-export:
+
+1. YMM-app → **Import/Export** → export → `input/YMM-*-update_csv.csv` (of onder `input/hsq/`, `input/wp/`).
+2. Lokaal (na `export_product_ids_and_ymm.py --brand …` voor ALL):
+
+```bash
+python3 scripts/build_ymm_update_rows.py --brand hsq
+python3 scripts/build_ymm_update_rows.py --brand wp
+```
+
+3. YMM-app → **Update rows** → `output/<merk>/ymm/ymm_update_rows.csv`
+
+Standaard alleen **gewijzigde** overlappende regels. Nieuwe fitment (nog niet in app) zit hier niet in — anders `build_ymm_add_delete_delta.py` (add/delete) of Append.
+
 ---
 
 ## Metafields Manager-export

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 DEFAULT_BRAND_ID = "ktm"
@@ -146,6 +147,14 @@ FTP_FILE_ROUTES: dict[str, str] = {
     "0910_35_Z1_EUR_EN_csv.csv": "input/wp",
 }
 
+# Volgorde voor multi-brand prijs/ETA-sync: later bestand wint bij dubbele SKU.
+PRICELIST_CSV_MERGE_ORDER: tuple[str, ...] = (
+    "1100_35_Z1_EUR_EN_csv.csv",
+    "0910_35_Z1_EUR_EN_csv.csv",
+    "0150_35_Z1_EUR_EN_csv.csv",
+    "0140_35_Z1_EUR_EN_csv.csv",
+)
+
 
 def normalize_brand_id(raw: str | None) -> str:
     bid = (raw or DEFAULT_BRAND_ID).strip().lower()
@@ -164,3 +173,84 @@ def get_brand_config(brand_id: str | None = None) -> BrandConfig:
 def route_dir_for_filename(filename: str) -> str | None:
     """Doelmap voor prepare_input_from_ftp (None = default --input-dir)."""
     return FTP_FILE_ROUTES.get(filename.strip())
+
+
+def pricelist_csv_relative_path(filename: str) -> str:
+    """Verwacht pad t.o.v. projectroot (zoals na prepare_input_from_ftp)."""
+    route = FTP_FILE_ROUTES.get(filename.strip(), "input")
+    return f"{route}/{filename.strip()}"
+
+
+def resolve_pricelist_csv_path(project_root: Path, filename: str) -> Path | None:
+    """Zoek één prijs-CSV (merkmap + legacy flat copy in input/)."""
+    name = filename.strip()
+    route = FTP_FILE_ROUTES.get(name, "input")
+    candidates = [
+        project_root / route / name,
+        project_root / "input" / name,
+    ]
+    seen: set[Path] = set()
+    for p in candidates:
+        key = p.resolve()
+        if key in seen:
+            continue
+        seen.add(key)
+        if p.is_file() and p.stat().st_size > 0:
+            return key
+    return None
+
+
+def resolve_pricelist_csv_paths(
+    project_root: Path,
+    explicit: list[str] | None = None,
+) -> list[Path]:
+    """
+    Paden voor merge van alle merk-prijs-CSV's.
+    Zonder explicit: standaardset in PRICELIST_CSV_MERGE_ORDER (ontbrekende = waarschuwing).
+    Met explicit: elk pad moet bestaan (ook in input/hsq of input/wp).
+    """
+    if explicit:
+        out: list[Path] = []
+        for s in explicit:
+            p = Path(s)
+            if p.is_file():
+                out.append(p.resolve())
+                continue
+            name = p.name
+            found = resolve_pricelist_csv_path(project_root, name)
+            if found is not None:
+                out.append(found)
+                continue
+            legacy = project_root / "input" / s
+            if legacy.is_file():
+                out.append(legacy.resolve())
+                continue
+            raise FileNotFoundError(f"CSV niet gevonden: {s}")
+        return out
+
+    found: list[Path] = []
+    missing: list[str] = []
+    for name in PRICELIST_CSV_MERGE_ORDER:
+        p = resolve_pricelist_csv_path(project_root, name)
+        if p is not None:
+            found.append(p)
+        else:
+            missing.append(pricelist_csv_relative_path(name))
+    if found:
+        if missing:
+            print(
+                "Waarschuwing: deze prijs-CSV's ontbreken en worden overgeslagen: "
+                + ", ".join(missing),
+                flush=True,
+            )
+        return found
+    return []
+
+
+def missing_pricelist_csv_paths(project_root: Path) -> list[str]:
+    """Relatieve paden die ontbreken of leeg zijn (voor CI-validatie)."""
+    missing: list[str] = []
+    for name in PRICELIST_CSV_MERGE_ORDER:
+        if resolve_pricelist_csv_path(project_root, name) is None:
+            missing.append(pricelist_csv_relative_path(name))
+    return missing
