@@ -21,6 +21,156 @@ Alle commando’s vanaf de **projectroot** (`ktm_project/`). Python: `python3`.
 
 ---
 
+## Geoptimaliseerd schema (KTM + HSQ + WP)
+
+Legenda: **A** = automatisch · **‖** = mag tegelijk · **→** = moet eerst klaar zijn · **H** = handmatig (jij in browser/apps)
+
+```mermaid
+flowchart TB
+  subgraph auto [Automatisch - hoef je niet elke run te doen]
+    GH[GitHub Job worker - s nachts Shopify naar Supabase]
+  end
+  subgraph fase0 [Fase 0 - een keer per update-ronde]
+    FTP[A: fetch_input_sftp + prepare_input]
+  end
+  subgraph fase1 [Fase 1 - parallel mogelijk]
+    M1[main.py KTM]
+    M2[main.py --brand hsq]
+    M3[main.py --brand wp]
+  end
+  subgraph fase2 [Fase 2 - per merk na main.py]
+    S1[H: Shopify import delta KTM]
+    S2[H: Shopify import delta HSQ]
+    S3[H: Shopify import delta WP]
+  end
+  subgraph fase3 [Fase 3 - per merk na import van dat merk]
+    Y1[YMM + metafields scripts KTM]
+    Y2[YMM + metafields scripts HSQ]
+    Y3[YMM + metafields scripts WP]
+  end
+  subgraph fase4 [Fase 4 - handmatig in apps]
+    A1[H: YMM-app + Metafields Manager per merk]
+  end
+  FTP --> M1 & M2 & M3
+  M1 --> S1 --> Y1 --> A1
+  M2 --> S2 --> Y2
+  M3 --> S3 --> Y3
+```
+
+### Wat wanneer?
+
+| Fase | Wat | Type | Parallel? |
+|------|-----|------|-----------|
+| — | **Job worker** (Supabase-spiegel) | **A** ’s nachts | Los van jouw dag-workflow |
+| **0** | FTP → `input/`, `input/hsq/`, `input/wp/` | Script 1× | Daarna fase 1 |
+| **1** | `main.py` per merk | Terminal | **‖** 3 terminals tegelijk (zwaar: veel RAM) |
+| **2** | Shopify **product**-import (delta-CSV) | **H** Admin | **‖** 3 imports tegelijk *kan*, maar wacht per merk vóór fase 3 |
+| **3** | YMM-export → metafields-export | Terminal | **‖** per merk: YMM **dan** metafields (niet omwisselen) · **‖** KTM/HSQ/WP in aparte terminals *na* import van dat merk |
+| **4** | YMM-app + Metafields Manager | **H** | Eén app-import tegelijk aanbevolen |
+| **5** | KTM: prijs/ETA API (optioneel) | Terminal | Alleen KTM, na nieuwe producten |
+
+### Bronbestanden per merk (fase 0)
+
+| Merk | Map | XML | CSV (prijs) |
+|------|-----|-----|-------------|
+| **KTM** | `input/` | `CBEXPDN_KTM-DN*.xml` | `0150_35_Z1_EUR_EN_csv.csv` |
+| **HSQ** | `input/hsq/` | `CBEXPDN*.xml` | `1100_…` + `0140_…` |
+| **WP** | `input/wp/` | `CBEXPDN*.xml` | `0910_35_Z1_EUR_EN_csv.csv` |
+
+*(“civ” = **CSV**.)*
+
+### Fase 0 — één keer ophalen (alle merken)
+
+```bash
+cd ~/Documents/ktm_project
+python3 scripts/fetch_input_sftp.py
+python3 scripts/prepare_input_from_ftp.py --extract-xml-from-zips
+```
+
+### Fase 1 — exports genereren (**‖** optioneel: 3 terminal-tabbladen)
+
+```bash
+# Tab 1 — KTM
+python3 -u main.py
+
+# Tab 2 — HSQ
+python3 -u main.py --brand hsq
+
+# Tab 3 — WP
+python3 -u main.py --brand wp
+```
+
+Noteer per merk het delta-bestand (of):
+
+```bash
+ls -t output/products/shopify_export_delta_*.csv | head -1
+ls -t output/hsq/products/shopify_export_delta_*.csv | head -1
+ls -t output/wp/products/shopify_export_delta_*.csv | head -1
+```
+
+### Fase 2 — Shopify product-import (**H**, per merk)
+
+| Merk | Bestand |
+|------|---------|
+| KTM | `output/products/shopify_export_delta_*.csv` |
+| HSQ | `output/hsq/products/shopify_export_delta_*.csv` |
+| WP | `output/wp/products/shopify_export_delta_*.csv` |
+
+**Wacht** tot de import van **dat merk** klaar is vóór fase 3 voor dat merk.
+
+### Fase 3 — YMM + metafields (Terminal, per merk)
+
+Vervang `DELTA.csv` door jouw bestand. Volgorde **binnen een merk**: eerst YMM, dan metafields.
+
+**KTM**
+
+```bash
+python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
+  --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+python3 -u scripts/export_product_metafields.py \
+  --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+```
+
+**HSQ**
+
+```bash
+python3 -u scripts/export_product_ids_and_ymm.py --brand hsq --refresh-shopify-cache \
+  --delta-handles-csv output/hsq/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+python3 -u scripts/export_product_metafields.py --brand hsq \
+  --delta-handles-csv output/hsq/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+```
+
+**WP**
+
+```bash
+python3 -u scripts/export_product_ids_and_ymm.py --brand wp --refresh-shopify-cache \
+  --delta-handles-csv output/wp/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+python3 -u scripts/export_product_metafields.py --brand wp \
+  --delta-handles-csv output/wp/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+```
+
+**Tip:** `--refresh-shopify-cache` alleen bij de **eerste** merk-export van de dag; daarna bij HSQ/WP weglaten (sneller, zelfde cache).
+
+### Fase 4 — Apps (**H**)
+
+| Merk | YMM-app | Metafields Manager |
+|------|---------|-------------------|
+| KTM | `output/ymm/ymm_APP_import_DELTA*.csv` | `output/metafields/product_metafields_metafields_manager_delta.csv` |
+| HSQ | `output/hsq/ymm/…` | `output/hsq/metafields/product_metafields_metafields_manager_delta.csv` |
+| WP | `output/wp/ymm/…` | `output/wp/metafields/…` |
+
+### Snelste dagindeling (aanbevolen)
+
+1. **Ochtend:** fase 0 + fase 1 (parallel `main.py` als je Mac het aankan).  
+2. **Tussendoor:** fase 2 — drie Shopify-imports starten; koffie ☕  
+3. **Per merk zodra import klaar:** fase 3 in terminal.  
+4. **Slot:** fase 4 in apps (één voor één).  
+5. **KTM optioneel:** `shopify_refresh_variant_cache.py` + `shopify_sync_from_pricelist_csv.py`.
+
+**Niet doen:** YMM/metafields vóór Shopify-import · metafields vóór YMM-export · `limit: 0` backfill in GitHub (te zwaar; zie [`docs/supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md)).
+
+---
+
 ## Bronbestanden ophalen (alle merken)
 
 **Automatisch (FTP/FTPS):**

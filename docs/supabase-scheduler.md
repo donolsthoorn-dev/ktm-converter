@@ -43,6 +43,9 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/014_github_workflows_cron_europe_amsterdam.sql`
    - `converter/supabase/migrations/018_customs_missing_nightly_0500.sql`
    - `converter/supabase/migrations/021_workflow_dispatch_log_id_and_write_lock.sql`
+   - `converter/supabase/migrations/022_workflow_dispatch_log_status_skipped.sql`
+   - `converter/supabase/migrations/023_github_dispatch_verify_http_response.sql`
+   - `converter/supabase/migrations/024_github_dispatch_pg_net_collect_response.sql`
 2. Create vault secret for GitHub API token (required):
 
 ```sql

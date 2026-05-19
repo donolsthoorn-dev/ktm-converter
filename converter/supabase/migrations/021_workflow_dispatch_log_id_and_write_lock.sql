@@ -4,6 +4,13 @@
 
 drop function if exists public.dispatch_github_workflow_with_inputs(text, jsonb);
 
+alter table public.workflow_dispatch_log
+  drop constraint if exists workflow_dispatch_log_status_check;
+
+alter table public.workflow_dispatch_log
+  add constraint workflow_dispatch_log_status_check
+  check (status in ('queued', 'failed', 'skipped', 'pending'));
+
 create or replace function public.shopify_write_lock_is_busy()
 returns boolean
 language sql
