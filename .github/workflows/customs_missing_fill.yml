@@ -17,6 +17,10 @@ on:
         description: "Default COO voor missende COO"
         required: false
         default: AT
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
 
 jobs:
   run:

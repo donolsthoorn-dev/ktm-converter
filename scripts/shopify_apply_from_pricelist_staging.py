@@ -242,12 +242,24 @@ def _flush_staging_timestamps(
             )
 
 
+def _resolve_dispatch_log_row_id() -> int | None:
+    """Geplande runs: Supabase zet workflow_dispatch.inputs.dispatch_log_id."""
+    raw = (os.environ.get("DISPATCH_LOG_ID") or "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return None
+
+
 def _workflow_dispatch_log_row_id(
     sess: requests.Session,
     base: str,
     headers: dict[str, str],
     workflow_file: str,
 ) -> int | None:
+    """Fallback voor handmatige runs zonder dispatch_log_id (meest recente rij)."""
+    explicit = _resolve_dispatch_log_row_id()
+    if explicit is not None:
+        return explicit
     r = sess.get(
         f"{base}/workflow_dispatch_log",
         headers=headers,
@@ -565,9 +577,21 @@ def main() -> int:
     if github_run_id_raw.isdigit():
         github_run_id = int(github_run_id_raw)
 
-    log_row_id: int | None = None
+    log_row_id: int | None = _resolve_dispatch_log_row_id()
+    if log_row_id is None:
+        try:
+            log_row_id = _workflow_dispatch_log_row_id(sess, base, headers, workflow_file)
+        except requests.RequestException:
+            log_row_id = None
+    if log_row_id is not None and _resolve_dispatch_log_row_id() is not None:
+        print(f"workflow_dispatch_log.id={log_row_id} (dispatch_log_id)", flush=True)
+    elif log_row_id is not None:
+        print(
+            f"workflow_dispatch_log.id={log_row_id} (fallback: nieuwste rij; "
+            "gebruik dispatch_log_id bij geplande runs)",
+            flush=True,
+        )
     try:
-        log_row_id = _workflow_dispatch_log_row_id(sess, base, headers, workflow_file)
         _workflow_dispatch_log_patch(
             sess,
             base,

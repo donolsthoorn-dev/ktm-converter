@@ -45,8 +45,10 @@ Dat leest de **laatste** `output/products/shopify_export_delta_*.csv` en schrijf
 
 ## Output
 
-- Volledig: `output/metafields/product_metafields_metafields_manager.csv`
-- Delta: `output/metafields/product_metafields_metafields_manager_delta.csv`
+- Volledig: `output/metafields/product_metafields_metafields_manager_part_001.csv` (en `_part_002`, … als > 10 MB)
+- Delta: `output/metafields/product_metafields_metafields_manager_delta.csv` (meestal één bestand)
+
+Volledige catalogus wordt automatisch gesplitst op **10 MB per deel** (zelfde limiet als YMM-app), zodat Metafields Manager-import niet time-out of upload-limiet raakt. Importeer delen **achter elkaar** in dezelfde app.
 
 ## Opties
 

@@ -12,6 +12,10 @@ on:
         description: Also queue shopify_ymm_projection_refresh (needs migration 020 on Supabase)
         type: boolean
         default: false
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
 
 jobs:
   run:

@@ -73,6 +73,17 @@ def main():
         metavar="PATH",
         help="Eén handle per regel (# = commentaar).",
     )
+    p.add_argument(
+        "--ymm-makes",
+        metavar="MAKE",
+        nargs="+",
+        help="Zelfde Make-filter als YMM-export (default: KTM Husqvarna GASGAS).",
+    )
+    p.add_argument(
+        "--ymm-all-makes",
+        action="store_true",
+        help="Geen Make-filter op fits_on (alle merken uit XML).",
+    )
     args = p.parse_args()
     apply_parsed_brand(args.brand)
 
@@ -86,16 +97,25 @@ def main():
 
         filter_handles = load_handles_from_text_file(args.delta_handles_file)
 
+    from modules.ymm_export import resolve_ymm_make_filter
+
+    filter_makes = resolve_ymm_make_filter(
+        args.ymm_makes,
+        all_makes=args.ymm_all_makes,
+    )
+
     out, n = run_metafields_export(
         product_ids_path=args.product_ids,
         output_path=args.output,
         shopify_merge_csv=args.merge_from_shopify_csv,
         filter_handles=filter_handles,
+        filter_makes=filter_makes,
+        ymm_all_makes=args.ymm_all_makes,
     )
     print(
         f"Metafields Manager CSV (merk={config.BRAND_ID}):",
         out,
-        f"({n} regels; zie console voor aantal mét fits_on)",
+        f"({n} productregels; zie console voor split-delen en aantal mét fits_on)",
         flush=True,
     )
 

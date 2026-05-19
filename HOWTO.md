@@ -66,7 +66,9 @@ python3 scripts/export_delta_app_imports.py --brand hsq
 
 Output o.a.: `output/<merk>/ymm/ymm_APP_import_*.csv`
 
-Standaard bevat YMM alleen fitment voor **KTM**, **Husqvarna** en **GASGAS** (geen Yamaha/Kawasaki/Ducati/…). Volledige cross-brand lijst: `--ymm-all-makes`. Andere subset: `--ymm-makes KTM Husqvarna`.
+Standaard bevat YMM (en metafields `fits_on*`) alleen fitment voor **KTM**, **Husqvarna** en **GASGAS**. Volledige cross-brand lijst: `--ymm-all-makes`. Andere subset: `--ymm-makes KTM Husqvarna`.
+
+Na YMM-import: metafields opnieuw importeren (`export_product_metafields.py` per merk) — overschrijft `fits_on` op de producten. Gebruik **geen** `--merge-from-shopify-csv` bij een schone refresh (dat haalt oude shop-data terug).
 
 ### YMM-app: alleen **Update rows** (geen append)
 

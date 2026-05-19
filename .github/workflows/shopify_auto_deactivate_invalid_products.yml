@@ -10,6 +10,10 @@ on:
           - "true"
           - "false"
         default: "true"
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
 
 jobs:
   run:
