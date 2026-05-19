@@ -47,7 +47,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/023_github_dispatch_verify_http_response.sql`
    - `converter/supabase/migrations/024_github_dispatch_pg_net_collect_response.sql`
    - `converter/supabase/migrations/025_github_dispatch_bounded_wait.sql` (verplicht na 024; voorkomt SQL-hang)
-   - `converter/supabase/migrations/026_github_dispatch_commit_before_collect.sql` (verplicht na 025; pg_net COMMIT vóór collect)
+   - `converter/supabase/migrations/027_github_dispatch_fire_and_forget.sql` (verplicht na 025/026; pg_net + cron-compatibel)
 2. Create vault secret for GitHub API token (required):
 
 ```sql
