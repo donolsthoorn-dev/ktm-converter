@@ -50,6 +50,20 @@ def main():
         metavar="PATH",
         help="Tekstbestand: één handle per regel (# = commentaar).",
     )
+    parser.add_argument(
+        "--ymm-makes",
+        metavar="MAKE",
+        nargs="+",
+        help=(
+            "Alleen deze Make-waarden in YMM (bv. KTM Husqvarna GASGAS). "
+            "Standaard: KTM + Husqvarna + GASGAS."
+        ),
+    )
+    parser.add_argument(
+        "--ymm-all-makes",
+        action="store_true",
+        help="Geen Make-filter (ook Yamaha, Kawasaki, Ducati, …).",
+    )
     args = parser.parse_args()
     apply_parsed_brand(args.brand)
 
@@ -66,14 +80,23 @@ def main():
 
         filter_handles = load_handles_from_text_file(args.delta_handles_file)
 
-    from modules.ymm_export import run_exports
+    from modules.ymm_export import resolve_ymm_make_filter, run_exports
+
+    filter_makes = resolve_ymm_make_filter(
+        args.ymm_makes,
+        all_makes=args.ymm_all_makes,
+    )
 
     print(
         f"Start export merk={config.BRAND_ID} (werkmap: {os.getcwd()})…",
         flush=True,
     )
     print(f"  XML: {config.XML_FILE}", flush=True)
-    p1, p2, n = run_exports(filter_handles=filter_handles)
+    p1, p2, n = run_exports(
+        filter_handles=filter_handles,
+        filter_makes=filter_makes,
+        ymm_all_makes=args.ymm_all_makes,
+    )
     print("Product-Ids template:", p1)
     print("YMM app import:", p2, f"({n} data rows)")
 

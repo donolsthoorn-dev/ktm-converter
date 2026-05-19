@@ -66,6 +66,8 @@ python3 scripts/export_delta_app_imports.py --brand hsq
 
 Output o.a.: `output/<merk>/ymm/ymm_APP_import_*.csv`
 
+Standaard bevat YMM alleen fitment voor **KTM**, **Husqvarna** en **GASGAS** (geen Yamaha/Kawasaki/Ducati/…). Volledige cross-brand lijst: `--ymm-all-makes`. Andere subset: `--ymm-makes KTM Husqvarna`.
+
 ### YMM-app: alleen **Update rows** (geen append)
 
 `ymm_APP_import_*.csv` heeft geen kolom **Id** → niet voor Update rows. Wel na vergelijking met een app-export:

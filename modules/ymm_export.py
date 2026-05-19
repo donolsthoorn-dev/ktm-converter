@@ -34,6 +34,18 @@ from modules.xml_loader import (
 BIKE_KLASSE = "$KL-ARTICLE_BIKES"
 YMM_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
+# YMM-app Make: alleen motorfietsmerken van de groep (KTM / Husqvarna / GASGAS).
+DEFAULT_YMM_OEM_MAKES: frozenset[str] = frozenset({"KTM", "Husqvarna", "GASGAS"})
+
+_YMM_MAKE_CANONICAL: dict[str, str] = {
+    "ktm": "KTM",
+    "husqvarna": "Husqvarna",
+    "hqv": "Husqvarna",
+    "hsq": "Husqvarna",
+    "gasgas": "GASGAS",
+    "gas gas": "GASGAS",
+}
+
 
 def _first_text(nodes):
     for n in nodes:
@@ -60,17 +72,114 @@ def _model_display(title: str, year: str) -> str:
     return t or (title or "").strip()
 
 
+# Motorcycle OEM in YMM Make column (longest match first).
+_OEM_MAKE_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("royal enfield", "Royal Enfield"),
+    ("mv agusta", "MV Agusta"),
+    ("husqvarna", "Husqvarna"),
+    ("gas gas", "GASGAS"),
+    ("gasgas", "GASGAS"),
+    ("kawasaki", "Kawasaki"),
+    ("yamaha", "Yamaha"),
+    ("triumph", "Triumph"),
+    ("sherco", "Sherco"),
+    ("suzuki", "Suzuki"),
+    ("ducati", "Ducati"),
+    ("honda", "Honda"),
+    ("aprilia", "Aprilia"),
+    ("benelli", "Benelli"),
+    ("cfmoto", "CFMoto"),
+    ("hyosung", "Hyosung"),
+    ("piaggio", "Piaggio"),
+    ("harley", "Harley-Davidson"),
+    ("indian", "Indian"),
+    ("beta ", "Beta"),
+    ("beta", "Beta"),
+    ("bmw", "BMW"),
+    ("ktm", "KTM"),
+)
+
+_KTM_MODEL_RE = re.compile(
+    r"(^|\s)(duke|adventure|super\s*duke|super\s*adventure|"
+    r"exc|sx|smc|freeride|enduro|rc\s*\d|rc\d)(\s|$|-)",
+    re.I,
+)
+
+
+def _make_from_pseudo_model_key(low: str) -> str:
+    key = low.removeprefix("$m-")
+    if "kawasaki" in key or key.startswith("zx") or key.startswith("kx"):
+        return "Kawasaki"
+    if "yamaha" in key or key.startswith("yz"):
+        return "Yamaha"
+    if "honda" in key or "cbr" in key or "crf" in key or key.startswith("cr"):
+        return "Honda"
+    if "suzuki" in key or "rmz" in key or "gsx" in key:
+        return "Suzuki"
+    if "ducati" in key or "panigale" in key:
+        return "Ducati"
+    if "sherco" in key:
+        return "Sherco"
+    if "betarr" in key or key.startswith("beta"):
+        return "Beta"
+    if "husqvarna" in key or "hqv" in key:
+        return "Husqvarna"
+    if "gasgas" in key or "gg" in key:
+        return "GASGAS"
+    if "ktm" in key:
+        return "KTM"
+    return ""
+
+
+def _make_from_model_title(title: str) -> str:
+    """Infer motorcycle OEM from Bikes MODELL title (WP cross-brand fitment)."""
+    t = (title or "").strip()
+    if not t:
+        return ""
+    low = t.lower()
+    for prefix, make in _OEM_MAKE_PREFIXES:
+        if low.startswith(prefix):
+            return make
+    if low.startswith("beta "):
+        return "Beta"
+    if low.startswith("$m-"):
+        return _make_from_pseudo_model_key(low)
+    if re.match(r"^(te|fe|tc|fc|fx)\s", low):
+        return "Husqvarna"
+    if any(x in low for x in ("vitpilen", "svartpilen", "norden")):
+        return "Husqvarna"
+    if re.match(r"^701(\s|$)", low) or low.startswith("fs "):
+        return "Husqvarna"
+    if re.match(r"^(mc|ec|ex|tx|txt|ee|es)\s", low) or low.startswith("mc-"):
+        return "GASGAS"
+    if _KTM_MODEL_RE.search(low):
+        return "KTM"
+    if re.match(
+        r"^(1[12]\d{2}|[4-9]\d{2}|[1-9]\d?)\s+(sx|xc|rc|duke|adventure|exc|smc|enduro|freeride)",
+        low,
+    ):
+        return "KTM"
+    if re.match(r"^(50|65|85|125|150|200|250|300|350|390|450|500|690|790|890|990|1050|1090|1190|1290|1390)\s", low):
+        return "KTM"
+    return ""
+
+
 def _detect_make(chain_titles: list[str], chain_keys: list[str]) -> str:
     brand_id = get_active_brand().id
-    if brand_id == "hsq":
-        return "Husqvarna"
-    if brand_id == "wp":
-        return "WP"
+    model_title = (chain_titles[0] if chain_titles else "").strip()
+    if model_title:
+        from_title = _make_from_model_title(model_title)
+        if from_title:
+            return from_title
     blob = " ".join(chain_titles).lower() + " " + " ".join(chain_keys).lower()
     if "husqvarna" in blob or "hsq" in blob:
         return "Husqvarna"
     if "gasgas" in blob or "gas gas" in blob:
         return "GASGAS"
+    if brand_id == "wp":
+        return ""
+    if brand_id == "hsq":
+        return "Husqvarna"
     if " white power" in blob or blob.startswith("wp ") or " wp " in blob:
         return "WP"
     return "KTM"
@@ -129,6 +238,8 @@ def collect_sku_to_ymm_from_structure(
             continue
         chain_titles, chain_keys = _structure_meta(structure_index, key)
         make = _detect_make(chain_titles, chain_keys)
+        if not make:
+            continue
         model = _model_display(title, year)
         ymm = (make, model, year)
         for sku in skus:
@@ -174,6 +285,8 @@ def _ymm_from_bike_produkt_elem(elem) -> set[tuple[str, str, str]]:
         return set()
     model = _model_display(title, year)
     make = _detect_make([title], [bike_sku])
+    if not make:
+        return set()
     return {(make, model, year)}
 
 
@@ -537,6 +650,7 @@ def export_ymm_fitment(
     sku_to_shopify_product_id: dict[str, str] | None = None,
     xml_file: str | None = None,
     filter_handles: set[str] | None = None,
+    filter_makes: set[str] | None = None,
 ) -> int:
     """
     Full YMM rows for app bulk insert template:
@@ -582,6 +696,8 @@ def export_ymm_fitment(
             if filter_handles is not None and handle not in filter_handles:
                 continue
             for make, model, year in sorted(ymm_set, key=lambda t: (t[0], t[1], t[2])):
+                if filter_makes is not None and make not in filter_makes:
+                    continue
                 sig = (handle, make, model, year)
                 if sig in seen_rows:
                     continue
@@ -686,11 +802,48 @@ def build_handle_to_product_id(product_ids_path: str) -> dict[str, str]:
     return out
 
 
+def _canonicalize_make_filter_value(value: str) -> str:
+    key = (value or "").strip().lower().replace("_", " ")
+    return _YMM_MAKE_CANONICAL.get(key, (value or "").strip())
+
+
+def resolve_ymm_make_filter(
+    raw: list[str] | None = None,
+    *,
+    all_makes: bool = False,
+) -> set[str] | None:
+    """
+    Standaard: alleen KTM + Husqvarna + GASGAS.
+    all_makes=True of expliciet lege lijst via caller: geen Make-filter.
+    """
+    if all_makes:
+        return None
+    if raw:
+        out: set[str] = set()
+        for item in raw:
+            for part in item.split(","):
+                p = part.strip()
+                if p:
+                    out.add(_canonicalize_make_filter_value(p))
+        return out or None
+    return set(DEFAULT_YMM_OEM_MAKES)
+
+
 def run_exports(
     product_ids_path: str | None = None,
     ymm_path: str | None = None,
     filter_handles: set[str] | None = None,
+    filter_makes: set[str] | None = None,
+    *,
+    ymm_all_makes: bool = False,
 ) -> tuple[str, str, int]:
+    if ymm_all_makes:
+        effective_filter_makes: set[str] | None = None
+    elif filter_makes is not None:
+        effective_filter_makes = filter_makes
+    else:
+        effective_filter_makes = set(DEFAULT_YMM_OEM_MAKES)
+
     print("XML inlezen (kan even duren, geen output tot dit klaar is)...", flush=True)
     structure_index, relations = stream_xml_for_export()
     print(
@@ -717,9 +870,15 @@ def run_exports(
             "product_ids_from_xml_delta.csv" if filter_handles else "product_ids_from_xml.csv",
         )
     if ymm_path is None:
+        make_suffix = ""
+        if effective_filter_makes and effective_filter_makes != set(DEFAULT_YMM_OEM_MAKES):
+            slug = "_".join(sorted(m.replace(" ", "") for m in effective_filter_makes))
+            make_suffix = f"_{slug}"
         ymm_path = os.path.join(
             YMM_OUTPUT_DIR,
-            "ymm_APP_import_DELTA.csv" if filter_handles else "ymm_APP_import_ALL.csv",
+            "ymm_APP_import_DELTA.csv"
+            if filter_handles
+            else f"ymm_APP_import_ALL{make_suffix}.csv",
         )
     shopify_index = None
     sku_to_shopify_product_id: dict[str, str] = {}
@@ -759,7 +918,13 @@ def run_exports(
         product_rows=product_rows,
         sku_to_shopify_product_id=sku_to_shopify_product_id,
         filter_handles=filter_handles,
+        filter_makes=effective_filter_makes,
     )
+    if effective_filter_makes:
+        print(
+            f"YMM Make-filter: {', '.join(sorted(effective_filter_makes))}",
+            flush=True,
+        )
     # Max 10MB per bestand alleen voor volledige catalogus (ALL), niet voor delta-export:
     # dan blijft ymm_APP_import_DELTA.csv één bestand (of handmatig splitsen indien nodig).
     if filter_handles is None:
