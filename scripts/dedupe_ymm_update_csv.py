@@ -30,9 +30,19 @@ os.chdir(PROJECT_ROOT)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from modules.brand_cli import (  # noqa: E402
+    add_brand_argument,
+    apply_parsed_brand,
+    bootstrap_brand_from_argv,
+)
+
+bootstrap_brand_from_argv()
+
+import config  # noqa: E402
+
 
 def _default_input_path() -> str:
-    candidates = sorted((PROJECT_ROOT / "input").glob("YMM-*-update_csv.csv"))
+    candidates = sorted(Path(config.INPUT_DIR).glob("YMM-*-update_csv.csv"))
     if not candidates:
         return ""
     return str(candidates[-1])
@@ -51,27 +61,29 @@ def _norm_product_id(v: str) -> str:
 
 
 def main() -> int:
+    ymm_dir = Path(config.YMM_OUTPUT_DIR)
     parser = argparse.ArgumentParser(
         description="Ontdubbel YMM update-CSV op Product Ids + Make + Model + Year."
     )
+    add_brand_argument(parser)
     parser.add_argument(
         "--input",
-        default=_default_input_path(),
-        help="Pad naar YMM update-CSV (default: nieuwste input/YMM-*-update_csv.csv).",
+        default=None,
+        help=f"Pad naar YMM update-CSV (default: nieuwste {config.INPUT_DIR}/YMM-*-update_csv.csv).",
     )
     parser.add_argument(
         "--output-clean",
-        default="output/ymm/ymm_existing_set_dedup_update.csv",
+        default=str(ymm_dir / "ymm_existing_set_dedup_update.csv"),
         help="Uitvoer: unieke update-CSV.",
     )
     parser.add_argument(
         "--output-delete-ids",
-        default="output/ymm/ymm_existing_set_duplicate_ids.csv",
+        default=str(ymm_dir / "ymm_existing_set_duplicate_ids.csv"),
         help="Uitvoer: duplicate Id-lijst (kolom 'Id').",
     )
     parser.add_argument(
         "--output-duplicate-rows",
-        default="output/ymm/ymm_existing_set_duplicate_rows.csv",
+        default=str(ymm_dir / "ymm_existing_set_duplicate_rows.csv"),
         help="Uitvoer: volledige duplicate rijen (audit).",
     )
     parser.add_argument(
@@ -80,8 +92,9 @@ def main() -> int:
         help="Rijen zonder Product Ids overslaan (en Id opnemen in delete-lijst).",
     )
     args = parser.parse_args()
+    apply_parsed_brand(args.brand)
 
-    in_path = Path(args.input)
+    in_path = Path(args.input or _default_input_path())
     if not in_path.exists():
         print(f"Input niet gevonden: {in_path}")
         return 1
@@ -156,6 +169,7 @@ def main() -> int:
         writer.writeheader()
         writer.writerows(duplicate_rows)
 
+    print(f"Merk: {config.BRAND_ID}")
     print(f"Input: {in_path}")
     print(f"Totaal data-rijen: {total_rows}")
     print(f"Unieke update-rijen: {len(keep_rows)}")

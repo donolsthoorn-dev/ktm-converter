@@ -32,6 +32,10 @@ on:
           - policy
           - all
         default: price_eta
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch; leeg bij handmatig)"
+        required: false
+        default: ""
   # workflow_run:
   #   workflows: [Job worker]
   #   types: [completed]
@@ -42,19 +46,21 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     concurrency:
       group: shopify-write-lock
       cancel-in-progress: false
     env:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}
       APPLY_SCOPE: ${{ github.event.inputs.apply_scope || 'price_eta' }}
+      DISPATCH_LOG_ID: ${{ github.event.inputs.dispatch_log_id || '' }}
       WORKFLOW_FILE_NAME: price_eta_status_sync.yml
       SKIP_STAGING_REBUILD: "0"
       SKIP_REASON: ""
       SKIP_REASON_DETAIL: ""
       SHOPIFY_REST_PREEMPTIVE_SLEEP_SEC: "0.15"
       SHOPIFY_REST_THROTTLE_USED_THRESHOLD: "24"
+      SHOPIFY_PRICE_CONCURRENCY: "8"
     steps:
       - uses: actions/checkout@v6
 
@@ -179,6 +185,7 @@ jobs:
           WORKFLOW_FILE: price_eta_status_sync.yml
           GITHUB_RUN_ID: ${{ github.run_id }}
           APPLY_SCOPE: ${{ env.APPLY_SCOPE }}
+          DISPATCH_LOG_ID: ${{ env.DISPATCH_LOG_ID }}
           SKIP_REASON: ${{ env.SKIP_REASON }}
           SKIP_REASON_DETAIL: ${{ env.SKIP_REASON_DETAIL }}
         run: |
@@ -196,6 +203,7 @@ jobs:
           scope = (os.environ.get("APPLY_SCOPE") or "").strip()
           skip_reason = (os.environ.get("SKIP_REASON") or "").strip() or "skip_guard"
           skip_detail = (os.environ.get("SKIP_REASON_DETAIL") or "").strip()
+          dispatch_log_id = (os.environ.get("DISPATCH_LOG_ID") or "").strip()
           if not base or not key or not wf or not run_id_raw.isdigit():
               print("Skip-log: context ontbreekt, sla Supabase-log update over.")
               raise SystemExit(0)
@@ -209,24 +217,25 @@ jobs:
               "Accept": "application/json",
           }
 
-          # Pak de meest recente dispatch-logrij voor dit workflow_file.
-          q = urllib.parse.urlencode(
-              {
-                  "select": "id",
-                  "workflow_file": f"eq.{wf}",
-                  "order": "created_at.desc",
-                  "limit": "1",
-              }
-          )
-          req = urllib.request.Request(f"{base}/rest/v1/workflow_dispatch_log?{q}", headers=hdr)
-          with urllib.request.urlopen(req, timeout=20) as resp:
-              rows = json.loads(resp.read().decode("utf-8", "replace")) or []
-          if not rows:
-              print("Skip-log: geen workflow_dispatch_log rij gevonden.")
-              raise SystemExit(0)
-          row_id = rows[0].get("id")
+          row_id = None
+          if dispatch_log_id.isdigit():
+              row_id = int(dispatch_log_id)
+          else:
+              q = urllib.parse.urlencode(
+                  {
+                      "select": "id",
+                      "workflow_file": f"eq.{wf}",
+                      "order": "created_at.desc",
+                      "limit": "1",
+                  }
+              )
+              req = urllib.request.Request(f"{base}/rest/v1/workflow_dispatch_log?{q}", headers=hdr)
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  rows = json.loads(resp.read().decode("utf-8", "replace")) or []
+              if rows and rows[0].get("id") is not None:
+                  row_id = rows[0]["id"]
           if row_id is None:
-              print("Skip-log: gevonden rij heeft geen id.")
+              print("Skip-log: geen workflow_dispatch_log rij gevonden.")
               raise SystemExit(0)
 
           patch_body = {
@@ -326,9 +335,12 @@ jobs:
       - name: Verwijder oude prijs-CSV's uit input (stale guard)
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         run: |
+          rm -f input/0150_35_Z1_EUR_EN_csv.csv
+          rm -f input/hsq/1100_35_Z1_EUR_EN_csv.csv
+          rm -f input/hsq/0140_35_Z1_EUR_EN_csv.csv
+          rm -f input/wp/0910_35_Z1_EUR_EN_csv.csv
           rm -f input/1100_35_Z1_EUR_EN_csv.csv
           rm -f input/0910_35_Z1_EUR_EN_csv.csv
-          rm -f input/0150_35_Z1_EUR_EN_csv.csv
           rm -f input/0140_35_Z1_EUR_EN_csv.csv
 
       - name: Staging → input/
@@ -342,23 +354,26 @@ jobs:
       - name: Valideer complete prijs-CSV set (1100/0910/0150/0140)
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
         run: |
-          missing=0
-          for f in \
-            1100_35_Z1_EUR_EN_csv.csv \
-            0910_35_Z1_EUR_EN_csv.csv \
-            0150_35_Z1_EUR_EN_csv.csv \
-            0140_35_Z1_EUR_EN_csv.csv; do
-            if [ ! -s "input/$f" ]; then
-              echo "Ontbreekt of leeg: input/$f"
-              missing=1
-            else
-              ls -l "input/$f"
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "Onvolledige CSV-set; stop om verkeerde delta te voorkomen."
-            exit 1
-          fi
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          root = Path.cwd()
+          sys.path.insert(0, str(root))
+          from modules.brand_config import missing_pricelist_csv_paths, resolve_pricelist_csv_path
+          from modules.brand_config import PRICELIST_CSV_MERGE_ORDER
+
+          missing = missing_pricelist_csv_paths(root)
+          for name in PRICELIST_CSV_MERGE_ORDER:
+              p = resolve_pricelist_csv_path(root, name)
+              if p is not None:
+                  print(p)
+          if missing:
+              print("Onvolledige CSV-set; stop om verkeerde delta te voorkomen.")
+              for rel in missing:
+                  print(f"Ontbreekt of leeg: {rel}")
+              raise SystemExit(1)
+          PY
 
       - name: CSV vs mirror → Supabase pricelist_sync_staging
         if: env.RUN_MODE == 'staging' || env.RUN_MODE == 'apply'
@@ -392,5 +407,6 @@ jobs:
           SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
           SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_NAMESPACE }}
           SHOPIFY_VARIANT_ETA_METAFIELD_KEY: ${{ secrets.SHOPIFY_VARIANT_ETA_METAFIELD_KEY }}
+          DISPATCH_LOG_ID: ${{ env.DISPATCH_LOG_ID }}
         run: python scripts/shopify_apply_from_pricelist_staging.py --scope "${{ env.APPLY_SCOPE }}"
 

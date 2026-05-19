@@ -9,7 +9,8 @@ from functools import lru_cache
 
 from lxml import etree
 
-from config import CULTURE, INPUT_DIR, XML_FILE
+import config
+from config import CULTURE
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 SIZE_RE = re.compile(r"^(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|XXXXL)$", re.IGNORECASE)
@@ -53,7 +54,11 @@ def strip_language_suffix(sku: str) -> str:
 
 @lru_cache(maxsize=1)
 def load_handle_overrides():
-    path = os.path.join(INPUT_DIR, "handle-overrides.json")
+    path = os.path.join(config.INPUT_DIR, "handle-overrides.json")
+    if not os.path.isfile(path) and config.INPUT_DIR != "input":
+        shared = os.path.join("input", "handle-overrides.json")
+        if os.path.isfile(shared):
+            path = shared
 
     if not os.path.exists(path):
         return {"keys": {}, "skus": {}}
@@ -136,18 +141,40 @@ def textart_lines(elem, name):
     return lines
 
 
+def _format_description_text(text: str, textart_name: str, brand) -> str:
+    """Eén TEXTART-waarde omzetten naar Body (HTML)."""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    if textart_name in brand.description_paragraph_textart_names:
+        if raw.startswith("<"):
+            return raw
+        return f"<p>{html.escape(raw)}</p>"
+    return raw
+
+
 def build_description(elem):
-    # Prefer the richest HTML fields first (any culture if EN-GB missing).
-    for name in ("BESCHRTEXT_ALG", "BESCHRTEXT_GEN_D", "BESCHRTEXT_GEN"):
+    brand = config.get_active_brand()
+
+    for name in brand.description_textart_names:
         text = get_html_textart_any_culture(elem, name)
         if text:
-            return text
+            formatted = _format_description_text(text, name, brand)
+            if formatted:
+                return formatted
 
-    # Fallback: plain feature lines -> HTML list.
-    lines = textart_lines(elem, "BESCHRTEXT_EIGENSCH")
-    if lines:
-        items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
-        return f"<ul>{items}</ul>"
+    for name in brand.description_features_textart_names:
+        lines = textart_lines(elem, name)
+        if lines:
+            items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+            return f"<ul>{items}</ul>"
+
+    for name in brand.description_paragraph_textart_names + brand.description_fallback_textart_names:
+        text = get_html_textart_any_culture(elem, name)
+        if text:
+            formatted = _format_description_text(text, name, brand)
+            if formatted:
+                return formatted
 
     return ""
 
@@ -286,7 +313,8 @@ def _build_handle_uncased(key: str, skus: list[str]) -> str:
 
 
 def build_handle(key: str, skus: list[str]) -> str:
-    return normalize_shopify_product_handle(_build_handle_uncased(key, skus))
+    base = normalize_shopify_product_handle(_build_handle_uncased(key, skus))
+    return config.apply_handle_prefix(base)
 
 
 def get_attr_value(
@@ -465,7 +493,7 @@ def load_products():
     image_map = defaultdict(list)
 
     context = etree.iterparse(
-        XML_FILE,
+        config.XML_FILE,
         events=("end",),
         tag=("STRUKTUR_ELEMENT", "PRODUKT_ZU_STRUKTUR_ELEMENT", "PRODUKT"),
     )

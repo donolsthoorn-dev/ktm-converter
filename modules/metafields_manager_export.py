@@ -25,9 +25,12 @@ from collections import defaultdict
 from config import IDS_OUTPUT_DIR, METAFIELDS_OUTPUT_DIR, XML_FILE
 from modules.xml_loader import normalize_shopify_product_handle
 from modules.ymm_export import (
+    DEFAULT_YMM_OEM_MAKES,
+    YMM_MAX_FILE_SIZE_BYTES,
     build_handle_to_product_id,
     build_merged_sku_to_ymm,
     build_product_rows,
+    split_csv_max_bytes_with_header,
     stream_xml_for_export,
 )
 
@@ -327,6 +330,7 @@ def export_product_metafields_csv(
     shopify_merge: dict[str, dict[str, str]] | None = None,
     xml_file: str | None = None,
     filter_handles: set[str] | None = None,
+    filter_makes: set[str] | None = None,
 ) -> tuple[int, int]:
     """
     Write one row per unique product handle from product_rows **plus** handles only in shopify_merge.
@@ -376,7 +380,10 @@ def export_product_metafields_csv(
             skus = handle_to_skus.get(handle, [])
             ymm_union: set[tuple[str, str, str]] = set()
             for sku in skus:
-                ymm_union.update(sku_to_ymm.get(sku, set()))
+                for ymm in sku_to_ymm.get(sku, set()):
+                    if filter_makes is not None and ymm[0] not in filter_makes:
+                        continue
+                    ymm_union.add(ymm)
 
             if ymm_union:
                 fits_on = _ymm_tuples_to_fits_on_json(ymm_union)
@@ -450,12 +457,35 @@ def export_product_metafields_csv(
     return rows_written, with_fits
 
 
+def _ensure_metafields_named_as_parts(path: str, split_paths: list[str]) -> list[str]:
+    """Volledige export: altijd …_part_001.csv (ook als één deel < 10 MB)."""
+    if not split_paths or len(split_paths) != 1:
+        return split_paths
+    only = split_paths[0]
+    if os.path.basename(only) != "product_metafields_metafields_manager.csv":
+        return split_paths
+    d = os.path.dirname(only) or "."
+    target = os.path.join(d, "product_metafields_metafields_manager_part_001.csv")
+    if os.path.abspath(only) != os.path.abspath(target):
+        os.replace(only, target)
+    return [target]
+
+
 def run_metafields_export(
     product_ids_path: str | None = None,
     output_path: str | None = None,
     shopify_merge_csv: str | None = None,
     filter_handles: set[str] | None = None,
+    filter_makes: set[str] | None = None,
+    *,
+    ymm_all_makes: bool = False,
 ) -> tuple[str, int]:
+    if ymm_all_makes:
+        effective_filter_makes: set[str] | None = None
+    elif filter_makes is not None:
+        effective_filter_makes = filter_makes
+    else:
+        effective_filter_makes = set(DEFAULT_YMM_OEM_MAKES)
     product_ids_path = product_ids_path or os.path.join(
         IDS_OUTPUT_DIR,
         ("product_ids_from_xml_delta.csv" if filter_handles else "product_ids_from_xml.csv"),
@@ -494,6 +524,11 @@ def run_metafields_export(
         "Tweede XML-pass (ZBH2BIKE) voor fits_on / YMM…",
         flush=True,
     )
+    if effective_filter_makes:
+        print(
+            f"Metafields Make-filter: {', '.join(sorted(effective_filter_makes))}",
+            flush=True,
+        )
     n, n_fits = export_product_metafields_csv(
         output_path,
         structure_index,
@@ -502,10 +537,34 @@ def run_metafields_export(
         handle_to_product_id,
         shopify_merge=merge_map,
         filter_handles=filter_handles,
+        filter_makes=effective_filter_makes,
     )
     print(
         f"Metafields: {n} productregels, waarvan {n_fits} met fits_on "
         f"(YMM: Bikes MODELL + ZBH2BIKE).",
         flush=True,
     )
+    max_mb = YMM_MAX_FILE_SIZE_BYTES // (1024 * 1024)
+    if filter_handles is None and os.path.isfile(output_path):
+        parts = split_csv_max_bytes_with_header(
+            output_path,
+            max_bytes=YMM_MAX_FILE_SIZE_BYTES,
+        )
+        parts = _ensure_metafields_named_as_parts(output_path, parts)
+        if len(parts) > 1:
+            print(
+                f"Metafields CSV gesplitst in {len(parts)} delen "
+                f"(max {max_mb} MB per deel, Metafields Manager-import):",
+                flush=True,
+            )
+            for p in parts:
+                print(f"  {p} ({os.path.getsize(p) / (1024 * 1024):.1f} MB)", flush=True)
+        elif parts:
+            print(
+                f"Metafields CSV: {parts[0]} "
+                f"({os.path.getsize(parts[0]) / (1024 * 1024):.1f} MB; split bij > {max_mb} MB)",
+                flush=True,
+            )
+        if parts:
+            output_path = parts[0]
     return output_path, n

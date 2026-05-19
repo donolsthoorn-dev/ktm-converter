@@ -62,12 +62,12 @@ DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.j
 DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_pricelist_sync_state.json"
 LEGACY_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
 
-DEFAULT_KTM_PRICE_CSV_NAMES: tuple[str, ...] = (
-    "1100_35_Z1_EUR_EN_csv.csv",
-    "0910_35_Z1_EUR_EN_csv.csv",
-    "0150_35_Z1_EUR_EN_csv.csv",
-    "0140_35_Z1_EUR_EN_csv.csv",
+from modules.brand_config import (  # noqa: E402
+    PRICELIST_CSV_MERGE_ORDER,
+    resolve_pricelist_csv_path,
 )
+
+DEFAULT_KTM_PRICE_CSV_NAMES = PRICELIST_CSV_MERGE_ORDER
 
 
 def migrate_legacy_state_file(target: Path) -> None:
@@ -167,21 +167,24 @@ def parse_hq_eta_to_iso(raw: str) -> str | None:
 def resolve_csv_path(explicit: str | None) -> Path:
     if explicit:
         p = Path(explicit)
-        if not p.is_file():
-            raise FileNotFoundError(f"CSV niet gevonden: {p}")
-        return p.resolve()
-    input_dir = PROJECT_ROOT / "input"
-    for name in DEFAULT_KTM_PRICE_CSV_NAMES:
-        p = input_dir / name
         if p.is_file():
             return p.resolve()
-    for name in sorted(os.listdir(input_dir)):
-        if not name.endswith(".csv"):
-            continue
-        if name.endswith("_Z1_EUR_EN_csv.csv"):
-            return (input_dir / name).resolve()
+        found = resolve_pricelist_csv_path(PROJECT_ROOT, p.name)
+        if found is not None:
+            return found
+        raise FileNotFoundError(f"CSV niet gevonden: {p}")
+    for name in DEFAULT_KTM_PRICE_CSV_NAMES:
+        p = resolve_pricelist_csv_path(PROJECT_ROOT, name)
+        if p is not None:
+            return p
+    input_dir = PROJECT_ROOT / "input"
+    if input_dir.is_dir():
+        for name in sorted(os.listdir(input_dir)):
+            if name.endswith("_Z1_EUR_EN_csv.csv"):
+                return (input_dir / name).resolve()
     raise FileNotFoundError(
-        f"Geen KTM prijs-CSV in {input_dir} (verwacht o.a. {', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)}); "
+        "Geen prijs-CSV gevonden (verwacht o.a. "
+        f"{', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)} in input/, input/hsq/, input/wp/); "
         "gebruik --csv PAD"
     )
 

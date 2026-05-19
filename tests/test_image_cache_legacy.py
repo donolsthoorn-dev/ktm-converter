@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -61,6 +62,49 @@ def test_try_resolve_skip_verify_keeps_dead_dict_url():
             u = image_manager.try_resolve_image_cache_or_cdn("foo.jpg", cache)
     assert u == dead
     assert cache["foo.jpg"]["url"] == dead
+
+
+def test_load_cache_quarantines_invalid_json(tmp_path, monkeypatch) -> None:
+    cache_file = tmp_path / "image_cache.json"
+    monkeypatch.setattr(image_manager, "CACHE_FILE", str(cache_file))
+    cache_file.write_text('{"ok.jpg": {"url": "http://x"}\n', encoding="utf-8")
+    loaded = image_manager.load_cache()
+    assert loaded == {}
+    assert not cache_file.exists()
+    assert list(tmp_path.glob("image_cache.json.corrupt-*"))
+
+
+def test_save_cache_safe_while_cache_mutates(tmp_path, monkeypatch) -> None:
+    """Parallel workers mogen cache wijzigen; save_cache_safe mag niet crashen."""
+    import threading
+
+    cache_file = tmp_path / "image_cache.json"
+    monkeypatch.setattr(image_manager, "CACHE_FILE", str(cache_file))
+    cache: dict = {"a.jpg": {"url": "https://example.com/a.jpg"}}
+    errors: list[BaseException] = []
+
+    def mutator() -> None:
+        for n in range(200):
+            with image_manager._cache_mut_lock:
+                cache[f"k{n}.jpg"] = {"url": f"https://example.com/{n}.jpg"}
+
+    def saver() -> None:
+        try:
+            for _ in range(30):
+                image_manager.save_cache_safe(cache)
+        except BaseException as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=mutator), threading.Thread(target=saver)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+        assert not t.is_alive(), "timeout in save_cache_safe concurrency test"
+    assert not errors, errors
+    assert cache_file.is_file()
+    loaded = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
 
 
 def test_try_resolve_disallow_guessed_cdn_skips_reachable_build_url():

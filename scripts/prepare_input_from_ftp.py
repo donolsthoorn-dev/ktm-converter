@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config  # noqa: E402
+from modules.brand_config import FTP_FILE_ROUTES, route_dir_for_filename  # noqa: E402
 from modules.env_loader import load_dotenv  # noqa: E402
 
 load_dotenv()
@@ -81,7 +82,10 @@ def main() -> int:
     parser.add_argument(
         "--input-dir",
         default=config.INPUT_DIR,
-        help=f"Doelmap voor ETL input (default: {config.INPUT_DIR}).",
+        help=(
+            f"Standaard doelmap (default: {config.INPUT_DIR}). "
+            f"Prijs-CSV's worden gerouteerd: {', '.join(f'{k}→{v}' for k, v in sorted(FTP_FILE_ROUTES.items()))}."
+        ),
     )
     parser.add_argument(
         "--files",
@@ -137,7 +141,9 @@ def main() -> int:
 
     copied = 0
     for src in sorted(selected, key=lambda p: p.name.lower()):
-        dst = input_dir / src.name
+        route = route_dir_for_filename(src.name)
+        dest_dir = Path(route) if route else input_dir
+        dst = dest_dir / src.name
         if args.dry_run:
             action = "move" if args.move else "copy"
             print(f"[dry-run] {action} {src} -> {dst}")

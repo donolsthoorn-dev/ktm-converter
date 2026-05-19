@@ -68,6 +68,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import VAT_MULTIPLIER  # noqa: E402
+from modules.brand_config import (  # noqa: E402
+    PRICELIST_CSV_MERGE_ORDER,
+    resolve_pricelist_csv_path,
+    resolve_pricelist_csv_paths as _resolve_pricelist_csv_paths,
+)
 from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
@@ -75,12 +80,7 @@ DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_pricelist_sync_state.json
 LEGACY_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_0150_sync_state.json"
 
 # Standaard merge-volgorde: later in de lijst overschrijft bij dubbele ArticleNumber tussen bestanden.
-DEFAULT_KTM_PRICE_CSV_NAMES: tuple[str, ...] = (
-    "1100_35_Z1_EUR_EN_csv.csv",
-    "0910_35_Z1_EUR_EN_csv.csv",
-    "0150_35_Z1_EUR_EN_csv.csv",
-    "0140_35_Z1_EUR_EN_csv.csv",
-)
+DEFAULT_KTM_PRICE_CSV_NAMES = PRICELIST_CSV_MERGE_ORDER
 
 
 def migrate_legacy_state_file(target: Path) -> None:
@@ -147,59 +147,31 @@ def parse_hq_eta_to_iso(raw: str) -> str | None:
 def resolve_csv_path(explicit: str | None) -> Path:
     """Eén CSV-pad (legacy / bootstrap)."""
     if explicit:
-        p = Path(explicit)
-        if not p.is_file():
-            raise FileNotFoundError(f"CSV niet gevonden: {p}")
-        return p.resolve()
-    input_dir = PROJECT_ROOT / "input"
+        paths = _resolve_pricelist_csv_paths(PROJECT_ROOT, [explicit])
+        return paths[0]
     for name in DEFAULT_KTM_PRICE_CSV_NAMES:
-        p = input_dir / name
-        if p.is_file():
-            return p.resolve()
-    for name in sorted(os.listdir(input_dir)):
-        if not name.endswith(".csv"):
-            continue
-        if name.endswith("_Z1_EUR_EN_csv.csv"):
-            return (input_dir / name).resolve()
+        p = resolve_pricelist_csv_path(PROJECT_ROOT, name)
+        if p is not None:
+            return p
+    input_dir = PROJECT_ROOT / "input"
+    if input_dir.is_dir():
+        for name in sorted(os.listdir(input_dir)):
+            if name.endswith("_Z1_EUR_EN_csv.csv"):
+                return (input_dir / name).resolve()
     raise FileNotFoundError(
-        f"Geen KTM prijs-CSV in {input_dir} (verwacht o.a. {', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)}); "
+        "Geen prijs-CSV gevonden (verwacht o.a. "
+        f"{', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)} in input/, input/hsq/, input/wp/); "
         "gebruik --csv PAD"
     )
 
 
 def resolve_csv_paths(explicit: list[str] | None) -> list[Path]:
     """
-    Lijst van prijs-CSV-paden. Zonder --csv: de vier standaard KTM-bestanden die in input/ bestaan
-    (merge in vaste volgorde; ontbrekende namen worden overgeslagen met waarschuwing), anders
-    fallback naar één automatisch prijs-CSV-bestand. Met expliciete paden: alle moeten bestaan.
+    Lijst van prijs-CSV-paden. Zonder --csv: vier merk-bestanden (1100→0910→0150→0140)
+    via FTP-routes (input/, input/hsq/, input/wp/). Met --csv: pad of bestandsnaam.
     """
-    input_dir = PROJECT_ROOT / "input"
-    if explicit:
-        out: list[Path] = []
-        for s in explicit:
-            p = Path(s)
-            if not p.is_file():
-                p = input_dir / s
-            if not p.is_file():
-                raise FileNotFoundError(f"CSV niet gevonden: {s}")
-            out.append(p.resolve())
-        return out
-
-    found: list[Path] = []
-    missing: list[str] = []
-    for name in DEFAULT_KTM_PRICE_CSV_NAMES:
-        p = input_dir / name
-        if p.is_file():
-            found.append(p.resolve())
-        else:
-            missing.append(name)
+    found = _resolve_pricelist_csv_paths(PROJECT_ROOT, explicit)
     if found:
-        if missing:
-            print(
-                "Waarschuwing: deze prijs-CSV's ontbreken in input/ en worden overgeslagen: "
-                + ", ".join(missing),
-                flush=True,
-            )
         return found
     return [resolve_csv_path(None)]
 
@@ -1099,8 +1071,8 @@ def main() -> int:
         help=(
             "KTM prijs-CSV (zelfde kolommen als ERP-export; herhaalbaar voor merge). "
             f"Default zonder deze vlag: merge van {', '.join(DEFAULT_KTM_PRICE_CSV_NAMES)} "
-            "die in input/ bestaan (volgorde = 1100 → 0910 → 0150 → 0140; laatste wint bij dubbele SKU), "
-            "of anders eerste *_Z1_EUR_EN_csv.csv in input/."
+            "(volgorde = 1100 → 0910 → 0150 → 0140; laatste wint bij dubbele SKU) "
+            "uit input/, input/hsq/ en input/wp/, of anders eerste *_Z1_EUR_EN_csv.csv in input/."
         ),
     )
     p.add_argument("--dry-run", action="store_true", help="Geen API-calls; wel delta-tonen")

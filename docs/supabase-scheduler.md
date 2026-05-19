@@ -12,9 +12,12 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
 | `ktm_job_worker_nightly` | `job-worker.yml` | Dagelijks **03:00** |
 | `ktm_shopify_auto_deactivate_after_policy` | `shopify_auto_deactivate_invalid_products.yml` (apply) | Dagelijks **04:00** |
 | `ktm_customs_missing_fill_nightly` | `customs_missing_fill.yml` (missende HS/COO aanvullen) | Dagelijks **05:00** |
-| `ktm_price_eta_apply_hourly_0700_2300` | `price_eta_status_sync.yml` apply, standaard `apply_scope=price_eta` | **07:00** t/m **23:00**, elk heel uur (**:00**) |
+| `ktm_price_eta_apply_hourly_0700_2300` | `price_eta_status_sync.yml` apply, `apply_scope=price_eta` | **07:00** t/m **23:00**, elk heel uur (**:00**) |
 | `ktm_price_eta_policy_nightly` | `price_eta_status_sync.yml` apply, `apply_scope=policy` | **00:15**, **07:15**, **12:15**, **18:15** |
 
+- dispatch stuurt `dispatch_log_id` mee → GitHub-run koppelt aan de juiste `workflow_dispatch_log`-rij (geen “laatste rij”-verwarring meer)
+- `shopify_write_lock_busy`: geen nieuwe dispatch naar GitHub zolang een Shopify-write-run `run_state=running` is (log `skipped`, geen spook-`queued`)
+- verweesde `queued` zonder `github_run_id` (>2u) → `dispatch_never_started`
 - guard: `price_eta` start niet als er al een `scope=policy` run in progress is (tussenliggende uren worden dan bewust overgeslagen)
 - zulke overgeslagen runs worden gelogd met `run_state=skipped` en reden `policy_run_in_progress`
 - missing-SKU CSV/artifact wordt alleen gemaakt bij `apply_scope=policy` (of `all`)
@@ -39,6 +42,11 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/013_policy_apply_cron_15_0_6_12_18_utc.sql` (historisch; policy-UTC wordt door 014 vervangen)
    - `converter/supabase/migrations/014_github_workflows_cron_europe_amsterdam.sql`
    - `converter/supabase/migrations/018_customs_missing_nightly_0500.sql`
+   - `converter/supabase/migrations/021_workflow_dispatch_log_id_and_write_lock.sql`
+   - `converter/supabase/migrations/022_workflow_dispatch_log_status_skipped.sql`
+   - `converter/supabase/migrations/023_github_dispatch_verify_http_response.sql`
+   - `converter/supabase/migrations/024_github_dispatch_pg_net_collect_response.sql`
+   - `converter/supabase/migrations/025_github_dispatch_bounded_wait.sql` (verplicht na 024; voorkomt SQL-hang)
 2. Create vault secret for GitHub API token (required):
 
 ```sql

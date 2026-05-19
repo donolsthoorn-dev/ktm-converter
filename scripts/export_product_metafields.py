@@ -3,11 +3,11 @@
 Build a Metafields Manager–style product CSV (fits_on JSON + flat YMM columns).
 
 Prerequisite: run scripts/export_product_ids_and_ymm.py first so
-  output/ids/product_ids_from_xml.csv
+  output/<merk>/ids/product_ids_from_xml.csv
 exists with Product Id + handle mapping (or pass --product-ids).
 
 Output default:
-  output/metafields/product_metafields_metafields_manager.csv
+  output/<merk>/metafields/product_metafields_metafields_manager.csv
   (of …_delta.csv bij --delta-handles-csv / --delta-handles-file)
 """
 
@@ -21,31 +21,46 @@ os.chdir(ROOT)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from modules.brand_cli import (  # noqa: E402
+    add_brand_argument,
+    apply_parsed_brand,
+    bootstrap_brand_from_argv,
+)
+
+bootstrap_brand_from_argv()
+
 import config  # noqa: E402, F401 — laadt .env
 from modules.metafields_manager_export import run_metafields_export  # noqa: E402
 
 
 def main():
     p = argparse.ArgumentParser(
-        description="Metafields Manager product CSV uit KTM XML + product_ids_from_xml.",
+        description=(
+            "Metafields Manager product CSV uit merk-XML + product_ids_from_xml "
+            f"(default onder {config.METAFIELDS_OUTPUT_DIR})."
+        ),
     )
+    add_brand_argument(p)
     p.add_argument(
         "--product-ids",
         default=None,
-        help="Pad naar product_ids_from_xml.csv (default: output/ids/...).",
+        help=f"Pad naar product_ids_from_xml.csv (default: {config.IDS_OUTPUT_DIR}/…).",
     )
     p.add_argument(
         "-o",
         "--output",
         default=None,
-        help="Uitvoer-CSV (default: output/metafields/product_metafields_metafields_manager.csv).",
+        help=(
+            "Uitvoer-CSV "
+            f"(default: {config.METAFIELDS_OUTPUT_DIR}/product_metafields_metafields_manager.csv)."
+        ),
     )
     p.add_argument(
         "--merge-from-shopify-csv",
         default=None,
         metavar="PATH",
         help="Shopify product-export (CSV) met kolom Handle + fits_on/Fits on: vult ontbrekende "
-        "fits_on en voegt producten toe die niet in de KTM-XML staan.",
+        "fits_on en voegt producten toe die niet in de merk-XML staan.",
     )
     dh = p.add_mutually_exclusive_group()
     dh.add_argument(
@@ -58,7 +73,19 @@ def main():
         metavar="PATH",
         help="Eén handle per regel (# = commentaar).",
     )
+    p.add_argument(
+        "--ymm-makes",
+        metavar="MAKE",
+        nargs="+",
+        help="Zelfde Make-filter als YMM-export (default: KTM Husqvarna GASGAS).",
+    )
+    p.add_argument(
+        "--ymm-all-makes",
+        action="store_true",
+        help="Geen Make-filter op fits_on (alle merken uit XML).",
+    )
     args = p.parse_args()
+    apply_parsed_brand(args.brand)
 
     filter_handles = None
     if args.delta_handles_csv:
@@ -70,16 +97,25 @@ def main():
 
         filter_handles = load_handles_from_text_file(args.delta_handles_file)
 
+    from modules.ymm_export import resolve_ymm_make_filter
+
+    filter_makes = resolve_ymm_make_filter(
+        args.ymm_makes,
+        all_makes=args.ymm_all_makes,
+    )
+
     out, n = run_metafields_export(
         product_ids_path=args.product_ids,
         output_path=args.output,
         shopify_merge_csv=args.merge_from_shopify_csv,
         filter_handles=filter_handles,
+        filter_makes=filter_makes,
+        ymm_all_makes=args.ymm_all_makes,
     )
     print(
-        "Metafields Manager CSV:",
+        f"Metafields Manager CSV (merk={config.BRAND_ID}):",
         out,
-        f"({n} regels; zie console voor aantal mét fits_on)",
+        f"({n} productregels; zie console voor split-delen en aantal mét fits_on)",
         flush=True,
     )
 

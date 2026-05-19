@@ -3,7 +3,8 @@ import glob
 import io
 import os
 
-from config import INPUT_DIR, VAT_MULTIPLIER
+import config
+from config import VAT_MULTIPLIER
 
 # Standaard KTM-export (input/); structuur van dit bestand is leidend voor kolomnamen.
 DEFAULT_0150_CSV_NAME = "0150_35_Z1_EUR_EN_csv.csv"
@@ -11,22 +12,59 @@ DEFAULT_0150_CSV_NAME = "0150_35_Z1_EUR_EN_csv.csv"
 
 def _find_0150_csv_path() -> str:
     """
-    1) KTM_0150_CSV (absoluut pad of bestandsnaam onder input/)
-    2) Anders input/DEFAULT_0150_CSV_NAME als dat bestand bestaat
-    3) Anders eerste *0150*.csv in input/ (fallback)
+    KTM: 1) KTM_0150_CSV, 2) DEFAULT onder input/, 3) eerste *0150*.csv.
     """
+    input_dir = config.INPUT_DIR
     explicit = os.environ.get("KTM_0150_CSV", "").strip()
     if explicit:
-        p = explicit if os.path.isabs(explicit) else os.path.join(INPUT_DIR, explicit)
+        p = explicit if os.path.isabs(explicit) else os.path.join(input_dir, explicit)
         if os.path.isfile(p):
             return p
-    default_path = os.path.join(INPUT_DIR, DEFAULT_0150_CSV_NAME)
+    default_path = os.path.join(input_dir, DEFAULT_0150_CSV_NAME)
     if os.path.isfile(default_path):
         return default_path
-    for f in os.listdir(INPUT_DIR):
+    if not os.path.isdir(input_dir):
+        raise FileNotFoundError("0150 prijsbestand niet gevonden.")
+    for f in os.listdir(input_dir):
         if "0150" in f and f.endswith(".csv"):
-            return os.path.join(INPUT_DIR, f)
+            return os.path.join(input_dir, f)
     raise FileNotFoundError("0150 prijsbestand niet gevonden.")
+
+
+def _find_brand_price_csv_paths() -> list[str]:
+    """Prijs-CSV's voor actief merk (HSQ: 1100 dan 0140; WP: 0910)."""
+    brand = config.get_active_brand()
+    if brand.id == "ktm":
+        return [_find_0150_csv_path()]
+
+    input_dir = config.INPUT_DIR
+    explicit = os.environ.get(brand.price_csv_env_var, "").strip()
+    if explicit:
+        p = explicit if os.path.isabs(explicit) else os.path.join(input_dir, explicit)
+        if os.path.isfile(p):
+            return [p]
+
+    paths: list[str] = []
+    seen: set[str] = set()
+    for name in brand.price_csv_names:
+        p = os.path.join(input_dir, name)
+        if os.path.isfile(p) and p not in seen:
+            paths.append(p)
+            seen.add(p)
+
+    if os.path.isdir(input_dir):
+        for pattern in brand.price_csv_fallback_globs:
+            for p in sorted(glob.glob(os.path.join(input_dir, pattern))):
+                if p not in seen:
+                    paths.append(p)
+                    seen.add(p)
+
+    if not paths:
+        codes = ", ".join(brand.price_csv_names)
+        raise FileNotFoundError(
+            f"Geen prijs-CSV voor merk '{brand.id}' in {input_dir} (verwacht o.a. {codes})."
+        )
+    return paths
 
 
 def normalize_sku_key(sku: str | None) -> str:
@@ -123,7 +161,7 @@ def load_article_status_from_35_z1_csv_files(input_dir: str | None = None) -> di
     Alle *35_Z1_EUR_EN_csv.csv onder input_dir (default INPUT_DIR): ArticleNumber → ArticleStatus.
     Bij dezelfde SKU in meerdere bestanden wint de laatst verwerkte file (alfabetisch op pad).
     """
-    base = os.path.normpath(input_dir or INPUT_DIR)
+    base = os.path.normpath(input_dir or config.INPUT_DIR)
     pattern = os.path.join(base, "*35_Z1_EUR_EN_csv.csv")
     paths = sorted(glob.glob(pattern))
     merged: dict[str, str] = {}
@@ -132,14 +170,51 @@ def load_article_status_from_35_z1_csv_files(input_dir: str | None = None) -> di
     return merged
 
 
-def load_price_index():
+def _merge_price_row(
+    row: list[str],
+    header_len: int,
+    sku_col: int,
+    price_col: int,
+    status_col: int,
+    gtin_col: int | None,
+    price_index: dict[str, str],
+    barcode_index: dict[str, str],
+    status_index: dict[str, str],
+) -> None:
+    if len(row) < header_len:
+        row = list(row) + [""] * (header_len - len(row))
+    min_len = max(sku_col, price_col, status_col) + 1
+    if len(row) < min_len:
+        return
 
-    price_index = {}
-    barcode_index = {}
-    status_index = {}
+    sku_raw = row[sku_col].strip()
+    if not sku_raw:
+        return
+    sku = sku_raw.upper()
+    price_raw = row[price_col].strip()
+    article_status = row[status_col].strip()
+    gtin = ""
+    if gtin_col is not None and gtin_col < len(row):
+        gtin = row[gtin_col].strip()
 
-    path = _find_0150_csv_path()
+    if price_raw:
+        try:
+            base_price = float(price_raw.replace(",", "."))
+            final_price = round(base_price * VAT_MULTIPLIER, 2)
+            price_index[sku] = f"{final_price:.2f}"
+        except ValueError:
+            pass
 
+    if gtin and gtin.isdigit():
+        barcode_index[sku] = gtin
+
+    status_index[sku] = article_status
+
+
+def _load_single_price_csv(path: str) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    price_index: dict[str, str] = {}
+    barcode_index: dict[str, str] = {}
+    status_index: dict[str, str] = {}
     encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
 
     for enc in encodings:
@@ -155,48 +230,42 @@ def load_price_index():
 
                 header_len = len(header)
                 sku_col, price_col, status_col, gtin_col = _resolve_0150_column_indices(header)
-                min_len = max(sku_col, price_col, status_col) + 1
 
                 for row in reader:
-                    # Trailing lege velden ontbreken soms in de parse; vul aan t.o.v. header.
-                    if len(row) < header_len:
-                        row = list(row) + [""] * (header_len - len(row))
-                    if len(row) < min_len:
-                        continue
-
-                    sku_raw = row[sku_col].strip()
-                    if not sku_raw:
-                        continue
-                    sku = sku_raw.upper()
-                    price_raw = row[price_col].strip()
-                    article_status = row[status_col].strip()
-                    gtin = ""
-                    if gtin_col is not None:
-                        gtin = row[gtin_col].strip()
-
-                    # ---- PRICE ----
-                    if price_raw:
-                        try:
-                            base_price = float(price_raw.replace(",", "."))
-                            final_price = round(base_price * VAT_MULTIPLIER, 2)
-                            price_index[sku] = f"{final_price:.2f}"
-                        except ValueError:
-                            pass
-
-                    # ---- BARCODE ----
-                    if gtin and gtin.isdigit():
-                        barcode_index[sku] = gtin
-
-                    # ---- ARTICLE STATUS ----
-                    status_index[sku] = article_status
-
-            print(f"{len(price_index)} prijzen ingelezen.")
-            print(f"{len(barcode_index)} barcodes ingelezen.")
-            print(f"{len(status_index)} artikelstatussen ingelezen.")
-
+                    _merge_price_row(
+                        row,
+                        header_len,
+                        sku_col,
+                        price_col,
+                        status_col,
+                        gtin_col,
+                        price_index,
+                        barcode_index,
+                        status_index,
+                    )
             return price_index, barcode_index, status_index
-
         except UnicodeDecodeError:
             continue
 
-    raise RuntimeError("Prijsbestand kon niet worden gelezen.")
+    raise RuntimeError(f"Prijsbestand kon niet worden gelezen: {path}")
+
+
+def load_price_index():
+    price_index: dict[str, str] = {}
+    barcode_index: dict[str, str] = {}
+    status_index: dict[str, str] = {}
+
+    paths = _find_brand_price_csv_paths()
+    for path in paths:
+        part_price, part_barcode, part_status = _load_single_price_csv(path)
+        price_index.update(part_price)
+        barcode_index.update(part_barcode)
+        status_index.update(part_status)
+        if len(paths) > 1:
+            print(f"  prijs-CSV: {os.path.basename(path)} ({len(part_price)} regels)")
+
+    print(f"{len(price_index)} prijzen ingelezen.")
+    print(f"{len(barcode_index)} barcodes ingelezen.")
+    print(f"{len(status_index)} artikelstatussen ingelezen.")
+
+    return price_index, barcode_index, status_index

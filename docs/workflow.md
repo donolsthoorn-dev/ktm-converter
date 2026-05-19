@@ -1,5 +1,7 @@
 # Operationeel: van FTP naar Shopify en apps
 
+**Stappenplan per merk (KTM / HSQ / WP):** **`docs/workflow_per_merk.md`** — copy-paste checklists met inputbestanden, paden en commando’s.
+
 Architectuur en technische context: **`PROJECT_CONTEXT_KTM.md`**.  
 Metafields/YMM-details: **`docs/metafields_manager_export.md`**, **`docs/zbh2bike_ymm.md`**.  
 Shopify-env: **`docs/shopify_env.md`**. Caches: **`docs/shopify_cache_en_scheduling.md`**.
@@ -147,3 +149,11 @@ Uitgebreide commando’s, delta vs. volledig, `export_delta_app_imports.py`: **`
 6. Optioneel §3b: variant-cache → `shopify_sync_eta_from_pricelist_csv.py`
 
 Eerste keer / volledige resync: zonder delta-flags; zie `docs/metafields_manager_export.md`.
+
+---
+
+## 11. GitHub Actions: nachtelijke Supabase-job
+
+Los van FTP/`main.py`: workflow **Job worker** (`.github/workflows/job-worker.yml`) kopieert ’s nachts Shopify → Supabase en ververst de YMM-projectie. **Geen** volledige YMM-backfill naar Shopify in die run.
+
+Handmatig backfill (kleine batches): **`docs/supabase-ymm-pipeline.md`**. Rode run in Actions → logs + tabel `jobs` in Supabase (`error_message`).

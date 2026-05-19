@@ -35,15 +35,19 @@ os.chdir(PROJECT_ROOT)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from modules.brand_cli import (  # noqa: E402
+    add_brand_argument,
+    apply_parsed_brand,
+    bootstrap_brand_from_argv,
+)
+
+bootstrap_brand_from_argv()
+
 import config  # noqa: E402
 
 SHOP = config.SHOPIFY_SHOP_DOMAIN
 TOKEN = config.SHOPIFY_ACCESS_TOKEN
 API_VER = config.SHOPIFY_ADMIN_API_VERSION
-
-INPUT_DIR = PROJECT_ROOT / "input"
-YMM_DIR = PROJECT_ROOT / "output" / "ymm"
-DEFAULT_OUT = YMM_DIR / "shopify_producten_zonder_ymm.csv"
 _REQUEST_TIMEOUT = (12, 120)
 
 
@@ -88,9 +92,9 @@ def _next_page_url(link_header: str | None) -> str | None:
     return None
 
 
-def _latest_existing_update_csv() -> str:
-    files = sorted(glob.glob(str(INPUT_DIR / "YMM-*-update_csv.csv")), key=os.path.getmtime)
-    return files[-1] if files else ""
+def _latest_existing_update_csv(input_dir: Path) -> str:
+    files = sorted(input_dir.glob("YMM-*-update_csv.csv"), key=os.path.getmtime)
+    return str(files[-1]) if files else ""
 
 
 def _norm_product_id(value: str) -> str:
@@ -273,18 +277,23 @@ def write_output_csv(path: Path, rows: list[dict[str, str]]) -> None:
 
 def main() -> int:
     load_dotenv()
+    ymm_dir = Path(config.YMM_OUTPUT_DIR)
+    input_dir = Path(config.INPUT_DIR)
+    default_out = ymm_dir / "shopify_producten_zonder_ymm.csv"
+
     ap = argparse.ArgumentParser(
         description="Exporteer Shopify-producten zonder YMM-data (op basis van YMM update_csv)."
     )
+    add_brand_argument(ap)
     ap.add_argument(
         "--ymm-existing",
-        default=_latest_existing_update_csv(),
-        help="Pad naar huidige YMM update_csv met kolom Product Ids.",
+        default=None,
+        help=f"Pad naar YMM update_csv met kolom Product Ids (default: nieuwste in {input_dir}).",
     )
     ap.add_argument(
         "--out",
-        default=str(DEFAULT_OUT),
-        help=f"Output CSV (default: {DEFAULT_OUT})",
+        default=str(default_out),
+        help=f"Output CSV (default: {default_out})",
     )
     ap.add_argument(
         "--refresh",
@@ -292,12 +301,15 @@ def main() -> int:
         help="Aanwezig voor CLI-consistentie; deze run haalt altijd live data op.",
     )
     args = ap.parse_args()
+    apply_parsed_brand(args.brand)
+    ymm_dir = Path(config.YMM_OUTPUT_DIR)
+    input_dir = Path(config.INPUT_DIR)
 
     if not TOKEN.strip():
         print("SHOPIFY_ACCESS_TOKEN ontbreekt (.env).", flush=True)
         return 1
 
-    ymm_path = (args.ymm_existing or "").strip()
+    ymm_path = (args.ymm_existing or "").strip() or _latest_existing_update_csv(input_dir)
     if not ymm_path or not os.path.exists(ymm_path):
         print("Geen YMM update_csv gevonden/meegegeven.", flush=True)
         return 1
@@ -322,6 +334,7 @@ def main() -> int:
             if (r.get("Product_id", "") or "").strip()
         }
     )
+    print(f"Merk (paden): {config.BRAND_ID}", flush=True)
     print(f"Shopify producten totaal: {len(products)}", flush=True)
     print(f"Producten zonder YMM: {missing_products}", flush=True)
     print(f"CSV-rijen geschreven: {len(rows)}", flush=True)

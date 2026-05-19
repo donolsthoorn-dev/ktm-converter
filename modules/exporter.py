@@ -393,8 +393,8 @@ def export(products, filename):
 
                 title = primary.get("title")
                 category = primary.get("category")
-                type_value = primary.get("type")
-                tags_value = primary.get("tags") or category
+                type_value = config.apply_type_tag_label(primary.get("type") or "")
+                tags_value = config.apply_type_tag_label(primary.get("tags") or category or "")
                 body_html = primary.get("description") if idx == 0 else ""
                 plain_description = strip_html(primary.get("description") or "")
                 seo_title = truncate(title or "", 70)
@@ -403,7 +403,7 @@ def export(products, filename):
                 setcol(row, "Handle", handle)
                 setcol(row, "Title", title if idx == 0 else "")
                 setcol(row, "Body (HTML)", body_html)
-                setcol(row, "Vendor", "KTM")
+                setcol(row, "Vendor", config.get_active_brand().shopify_vendor)
                 if idx == 0:
                     setcol(row, "Product category", map_shopify_product_category(category))
                 setcol(row, "Type", type_value if idx == 0 else "")
