@@ -11,7 +11,8 @@ De **nachtelijke catalog mirror** (`shopify_catalog_mirror` in `job-worker.yml`)
 
 **Standaard vult de mirror geen YMM meer** (`shopify_ymm` uit Shopify is uit). Optioneel legacy: `SHOPIFY_MIRROR_SYNC_FITS_ON=1`.
 
-Migratie **`028_canonical_product_fits_on.sql`** uitvoeren in Supabase SQL Editor.
+Migraties **`028_canonical_product_fits_on.sql`** en **`031_canonical_ymm_summary.sql`** uitvoeren in Supabase SQL Editor.  
+`ymm_summary` wordt bij XML-sync in Python berekend (per OEM rijk, bij cross-brand met ` | `) en via projection naar Shopify gepusht.
 
 ---
 

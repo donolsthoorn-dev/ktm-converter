@@ -3,6 +3,7 @@
 Alle commando’s vanaf de **projectroot** (`ktm_project/`). Python: `python3` (zie `pyproject.toml`).
 
 **→ Start hier:** [`docs/STAPPENPLAN.md`](docs/STAPPENPLAN.md) — stappen **1 t/m 6** (KTM + HSQ + WP).  
+**Alle merken `main.py`:** `python3 scripts/run_main_all_brands.py` (zie STAPPENPLAN §2).  
 Detail / naslag: [`docs/workflow_per_merk.md`](docs/workflow_per_merk.md). Techniek: [`docs/workflow.md`](docs/workflow.md).
 
 ---

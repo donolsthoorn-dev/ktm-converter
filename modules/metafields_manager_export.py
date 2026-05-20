@@ -272,13 +272,13 @@ def _sort_line_tags(tags: set[str]) -> list[str]:
     return [t for t in _LINE_TAG_ORDER if t in tags]
 
 
-def _ymm_summary(tuples: set[tuple[str, str, str]]) -> str:
+def _ymm_summary_one_make(tuples: set[tuple[str, str, str]]) -> str:
     """
-    Rijke samenvatting zoals veel Metafields-exports:
+    Rijke samenvatting voor één OEM (één make in de tuple-set):
+      KTM 790-890 (STREET) 2021-2027
       KTM 125-500 (EXC, SX, XC, XCF) 2019-2023
-      (XCF = modellen met «cc XC-F», los van 2T-XC en van EXC/EXC-F.)
     Fallback als cc/lijn niet te parsen valt:
-      KTM — 2023-2026
+      KTM — 2021-2027
     """
     if not tuples:
         return ""
@@ -292,7 +292,7 @@ def _ymm_summary(tuples: set[tuple[str, str, str]]) -> str:
     y_part = f"{y_lo}-{y_hi}" if years and y_lo is not None else ""
 
     makes_upper = {t[0].upper() for t in tuples}
-    make_part = ", ".join(sorted(makes_upper))
+    make_label = sorted(makes_upper)[0] if makes_upper else ""
 
     ccs: list[int] = []
     line_tags: set[str] = set()
@@ -304,29 +304,43 @@ def _ymm_summary(tuples: set[tuple[str, str, str]]) -> str:
         if tag:
             line_tags.add(tag)
 
-    # Eén merk + cc-range + minstens één lijn-tag → volledige zin
-    if len(makes_upper) == 1 and ccs and line_tags and y_part:
-        make = next(iter(makes_upper))
+    if make_label and ccs and line_tags and y_part:
         lo, hi = min(ccs), max(ccs)
         cc_str = f"{lo}-{hi}" if lo != hi else str(lo)
         tag_str = ", ".join(_sort_line_tags(line_tags))
-        s = f"{make} {cc_str} ({tag_str}) {y_part}"
-        return s.upper()
+        return f"{make_label} {cc_str} ({tag_str}) {y_part}".upper()
 
-    # Eén merk + cc maar geen herkende lijn (alleen street of exotisch)
-    if len(makes_upper) == 1 and ccs and y_part:
-        make = next(iter(makes_upper))
+    if make_label and ccs and y_part:
         lo, hi = min(ccs), max(ccs)
         cc_str = f"{lo}-{hi}" if lo != hi else str(lo)
-        s = f"{make} {cc_str} {y_part}"
-        return s.upper()
+        return f"{make_label} {cc_str} {y_part}".upper()
 
-    # Geen cc: korte fallback
-    if y_part:
-        s = f"{make_part} — {y_part}"
-    else:
-        s = make_part
-    return s.upper()
+    if y_part and make_label:
+        return f"{make_label} — {y_part}".upper()
+    return make_label.upper() if make_label else ""
+
+
+def _ymm_summary(tuples: set[tuple[str, str, str]]) -> str:
+    """
+    Samenvatting voor Metafields / Shopify. Bij meerdere OEM's (cross-brand):
+    per merk een rijke regel, gescheiden met ' | '.
+    """
+    if not tuples:
+        return ""
+    by_make: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
+    for make, model, year in tuples:
+        by_make[make.upper()].add((make, model, year))
+
+    parts: list[str] = []
+    for make_key in sorted(by_make.keys()):
+        part = _ymm_summary_one_make(by_make[make_key])
+        if part:
+            parts.append(part)
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    return " | ".join(parts)
 
 
 def export_product_metafields_csv(

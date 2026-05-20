@@ -35,7 +35,13 @@ Optioneel: productafbeeldingen in `input/` (HSQ/WP gebruiken ook afbeeldingen ui
 
 ## 2. Genereer Shopify product-CSV’s (`main.py`)
 
-Drie keer achter elkaar in dezelfde terminal (of drie tabbladen tegelijk):
+**Optioneel — één commando (alle merken, alleen CSV’s):**
+
+```bash
+python3 scripts/run_main_all_brands.py
+```
+
+**Of drie keer achter elkaar:**
 
 ```bash
 python3 -u main.py
@@ -96,7 +102,7 @@ python3 -u scripts/export_product_metafields.py --brand wp
 
 ### Automatisch: XML → Supabase → Shopify (aanbevolen i.p.v. Metafields Manager)
 
-**Eerst in Supabase:** migratie `028_canonical_product_fits_on.sql` uitvoeren (SQL Editor).
+**Eerst in Supabase:** migraties `028_canonical_product_fits_on.sql` en `031_canonical_ymm_summary.sql` uitvoeren (SQL Editor).
 
 Twee sporen:
 

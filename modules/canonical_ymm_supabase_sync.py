@@ -20,7 +20,7 @@ from modules.cross_brand_ymm import (
     resolve_cross_brand_xml_paths,
     ymm_lookup_for_sku,
 )
-from modules.metafields_manager_export import _ymm_tuples_to_fits_on_json
+from modules.metafields_manager_export import _ymm_summary, _ymm_tuples_to_fits_on_json
 from modules.shopify_supabase_mirror import _supabase_upsert
 from modules.ymm_content_hash import ymm_json_content_hash
 from modules.ymm_export import DEFAULT_YMM_OEM_MAKES, resolve_ymm_make_filter
@@ -247,6 +247,7 @@ def run_sync_canonical_ymm_to_supabase(
             {
                 "shopify_product_id": pid,
                 "ymm_json": ymm_json,
+                "ymm_summary": _ymm_summary(ymm_union),
                 "content_hash": ymm_json_content_hash(ymm_json),
                 "xml_synced_at": synced,
                 "updated_at": synced,
