@@ -209,6 +209,81 @@ def _run_shopify_ymm_backfill_from_supabase(
     return (summary, err)
 
 
+def _run_canonical_ymm_sync(
+    job: dict[str, Any],
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    from modules.canonical_ymm_supabase_sync import run_sync_canonical_ymm_to_supabase
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+        print(msg, flush=True)
+
+    payload = job.get("payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    stats, err = run_sync_canonical_ymm_to_supabase(
+        payload_dict, session, base, headers, log=_log
+    )
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
+
+
+def _run_shopify_ymm_push(
+    job: dict[str, Any],
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    from modules.shopify_ymm_supabase_pipeline import run_shopify_ymm_push_from_supabase
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+        print(msg, flush=True)
+
+    payload = job.get("payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    stats, err = run_shopify_ymm_push_from_supabase(
+        payload_dict, session, base, headers, log=_log
+    )
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
+
+
+def _run_canonical_ymm_pipeline(
+    job: dict[str, Any],
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    from modules.shopify_ymm_supabase_pipeline import run_canonical_ymm_pipeline
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+        print(msg, flush=True)
+
+    payload = job.get("payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    stats, err = run_canonical_ymm_pipeline(
+        payload_dict, session, base, headers, log=_log
+    )
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
+
+
 def _dispatch_job(
     job: dict[str, Any],
     session: requests.Session,
@@ -224,7 +299,40 @@ def _dispatch_job(
         return _run_shopify_ymm_backfill(job)
     if jt == "shopify_ymm_backfill_from_supabase":
         return _run_shopify_ymm_backfill_from_supabase(job, session, base, headers)
+    if jt == "canonical_ymm_sync_to_supabase":
+        return _run_canonical_ymm_sync(job, session, base, headers)
+    if jt == "shopify_ymm_push_from_supabase":
+        return _run_shopify_ymm_push(job, session, base, headers)
+    if jt == "canonical_ymm_pipeline":
+        return _run_canonical_ymm_pipeline(job, session, base, headers)
+    if jt == "shopify_ymm_push_diff_from_supabase":
+        return _run_shopify_ymm_push_diff(job, session, base, headers)
     return _run_stub(job)
+
+
+def _run_shopify_ymm_push_diff(
+    job: dict[str, Any],
+    session: requests.Session,
+    base: str,
+    headers: dict[str, str],
+) -> tuple[str, str | None]:
+    from modules.shopify_ymm_supabase_pipeline import run_shopify_ymm_push_diff_from_supabase
+
+    log_lines: list[str] = []
+
+    def _log(msg: str) -> None:
+        log_lines.append(msg)
+        print(msg, flush=True)
+
+    payload = job.get("payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    stats, err = run_shopify_ymm_push_diff_from_supabase(
+        payload_dict, session, base, headers, log=_log
+    )
+    summary = "\n".join(log_lines).strip()
+    if not summary and stats:
+        summary = json.dumps(stats, ensure_ascii=False)
+    return (summary, err)
 
 
 def main() -> int:

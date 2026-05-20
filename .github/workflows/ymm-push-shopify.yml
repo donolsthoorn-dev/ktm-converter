@@ -1,0 +1,123 @@
+# XML → Supabase (canonical) → Shopify YMM (handmatige trigger, kleine batches).
+# Migratie 028 verplicht. Mirror vult geen YMM meer; diff-push via content_hash.
+# Secrets: SUPABASE_*, SHOPIFY_* (zelfde als job-worker.yml)
+
+name: YMM push to Shopify
+
+on:
+  workflow_dispatch:
+    inputs:
+      handles:
+        description: "Shopify handles (komma-gescheiden)"
+        required: true
+        default: "wp-a54029994500,hsq-a54029994500,a54029994500"
+      dry_run:
+        description: "Dry-run (geen Supabase/Shopify writes)"
+        type: boolean
+        default: true
+      run_xml_sync:
+        description: "Stap 1 XML→Supabase (vereist CBEXPDN in input/ op runner)"
+        type: boolean
+        default: false
+      skip_shopify_push:
+        description: "Alleen Supabase sync + projection, geen Shopify API"
+        type: boolean
+        default: false
+
+jobs:
+  ymm_pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install "requests>=2.28,<3" lxml
+
+      - name: Build payload JSON
+        id: payload
+        run: |
+          DRY="${{ inputs.dry_run }}"
+          HANDLES="${{ inputs.handles }}"
+          python3 - <<'PY'
+          import json, os
+          handles = [h.strip().lower() for h in os.environ["HANDLES"].split(",") if h.strip()]
+          payload = {
+              "dry_run": os.environ["DRY"].lower() == "true",
+              "only_handles": handles,
+              "overwrite": True,
+              "limit": 0,
+          }
+          with open("job_payload.json", "w") as f:
+              json.dump(payload, f)
+          PY
+        env:
+          DRY: ${{ inputs.dry_run }}
+          HANDLES: ${{ inputs.handles }}
+
+      - name: Queue canonical_ymm_sync_to_supabase
+        if: inputs.run_xml_sync == true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PAYLOAD=$(cat job_payload.json)
+          python scripts/queue_supabase_job.py canonical_ymm_sync_to_supabase \
+            --trigger manual --payload-json "$PAYLOAD"
+
+      - name: Queue shopify_ymm_projection_refresh
+        if: inputs.run_xml_sync == true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/queue_supabase_job.py shopify_ymm_projection_refresh --trigger manual
+
+      - name: Queue shopify_ymm_projection_refresh (push-only pad)
+        if: inputs.run_xml_sync == false && inputs.skip_shopify_push == false
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/queue_supabase_job.py shopify_ymm_projection_refresh --trigger manual
+
+      - name: Queue shopify_ymm_push_diff_from_supabase
+        if: inputs.skip_shopify_push == false
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PAYLOAD=$(cat job_payload.json)
+          python scripts/queue_supabase_job.py shopify_ymm_push_diff_from_supabase \
+            --trigger manual --payload-json "$PAYLOAD"
+
+      - name: Process queued jobs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
+          SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
+        run: |
+          failed=0
+          for i in 1 2 3 4 5 6 7 8; do
+            set +e
+            out="$(python scripts/supabase_job_worker.py 2>&1)"
+            ec=$?
+            set -e
+            echo "$out"
+            if [ "$ec" -ne 0 ]; then
+              echo "Worker exit $ec" >&2
+              failed=1
+            fi
+            case "$out" in
+              *"Geen queued jobs."*) break ;;
+            esac
+          done
+          exit "$failed"

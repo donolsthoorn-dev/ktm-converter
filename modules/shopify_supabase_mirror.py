@@ -8,7 +8,8 @@ Optioneel (env):
     (defaults: global / inventory_policy_eta_date; lege waarde = defaults — GitHub Actions zet ontbrekende
     secrets vaak als "" en zou anders ETA uitzetten)
   SHOPIFY_SYNC_VARIANT_ETA=0 — ETA-sync volledig uitschakelen
-  SHOPIFY_PRODUCT_FITS_ON_NAMESPACE / SHOPIFY_PRODUCT_FITS_ON_KEY — product JSON → shopify_ymm.ymm_json
+  SHOPIFY_MIRROR_SYNC_FITS_ON=1 — ook fits_on uit Shopify → shopify_ymm (legacy; default UIT).
+  Canonical YMM uit XML gaat naar canonical_product_fits_on, niet via deze mirror.
 
 Prijzen (price, compareAtPrice) gaan altijd mee naar shopify_variants.
 """
@@ -30,6 +31,12 @@ import config
 _REQUEST_TIMEOUT = (15, 120)
 _PAGE_PRODUCTS = 40
 _PAGE_VARIANTS = 250
+
+
+def _mirror_sync_fits_on_from_shopify() -> bool:
+    """Default false: YMM-bron is XML (canonical_product_fits_on), niet Shopify-spiegel."""
+    raw = os.environ.get("SHOPIFY_MIRROR_SYNC_FITS_ON", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
 
 
 def _fits_on_ns_key() -> tuple[str, str]:
@@ -56,7 +63,7 @@ def _eta_metafield_ns_key() -> tuple[str, str] | None:
 def _mirror_queries() -> tuple[str, str, bool, bool]:
     """(query_products, query_variant_page, use_fits_meta, use_eta_meta)."""
     fits_ns, fits_key = _fits_on_ns_key()
-    use_fits = bool(fits_ns and fits_key)
+    use_fits = _mirror_sync_fits_on_from_shopify() and bool(fits_ns and fits_key)
     eta_cfg = _eta_metafield_ns_key()
     use_eta = eta_cfg is not None
     eta_ns, eta_key = eta_cfg if eta_cfg else ("", "")
@@ -459,7 +466,9 @@ def run_mirror(
             f"{stats['variants_upserted']} varianten, {stats['pages']} Shopify-pagina's."
         ]
         if stats["ymm_rows"]:
-            parts.append(f"YMM: {stats['ymm_rows']} rijen.")
+            parts.append(f"YMM (legacy shopify_ymm): {stats['ymm_rows']} rijen.")
+        elif _mirror_sync_fits_on_from_shopify():
+            parts.append("YMM: geen rijen (fits_on leeg in Shopify).")
         if stats["eta_rows"]:
             parts.append(f"ETA: {stats['eta_rows']} rijen.")
         _log(" ".join(parts))

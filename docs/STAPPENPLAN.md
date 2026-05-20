@@ -94,6 +94,35 @@ python3 -u scripts/export_product_metafields.py --brand wp
 
 **Cross-brand fitment (standaard):** YMM en Metafields gebruiken per SKU de **union** van KTM + HSQ + WP XML (zelfde onderdeel-SKU → dezelfde `fits_on` op alle drie Shopify-handles). Uitzetten: `--no-cross-brand-ymm` op beide export-scripts.
 
+### Automatisch: XML → Supabase → Shopify (aanbevolen i.p.v. Metafields Manager)
+
+**Eerst in Supabase:** migratie `028_canonical_product_fits_on.sql` uitvoeren (SQL Editor).
+
+Twee sporen:
+
+1. **Fitment:** XML → tabel `canonical_product_fits_on` → diff-push naar Shopify (`content_hash` / `pushed_hash`).
+2. **Catalogus (nacht):** GitHub **Job worker** → `shopify_products` / `shopify_variants` / `shopify_eta` (prijzen, customs) — **geen** YMM uit Shopify meer.
+
+Na nieuwe XML lokaal:
+
+```bash
+# Canonical vullen + projection
+python3 scripts/run_canonical_ymm_pipeline.py \
+  --handles wp-a54029994500,hsq-a54029994500,a54029994500 \
+  --sync-only --write
+
+# Alleen gewijzigde naar Shopify
+python3 scripts/run_canonical_ymm_pipeline.py \
+  --handles wp-a54029994500,hsq-a54029994500,a54029994500 \
+  --push-only --write
+```
+
+Of alles in één keer: `--write` (zonder `--sync-only` / `--push-only`).
+
+**GitHub:** **YMM delivery (Supabase → Shopify)** (wekelijks diff-push); **YMM push to Shopify** (handmatig test). Export-CSV (stap 4) blijft optionele backup.
+
+Zie [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md).
+
 **Alleen nieuwe producten** (na delta-import): voeg per merk `--delta-handles-csv` toe met het delta-bestand van stap 2. Voorbeeld KTM:
 
 ```bash
@@ -119,9 +148,11 @@ Eén import tegelijk in de app aanbevolen.
 
 ---
 
-## 6. Importeer Metafields handmatig (Metafields Manager)
+## 6. Metafields in Shopify
 
-Per merk het CSV-bestand uit `output/…/metafields/` (bijv. `product_metafields_metafields_manager_delta.csv` of `_part_001.csv`).
+**Automatisch (aanbevolen):** zie sectie hierboven (XML → Supabase → Shopify API).
+
+**Handmatig (backup):** Metafields Manager — per merk het CSV-bestand uit `output/…/metafields/`.
 
 Eén import tegelijk aanbevolen.
 
@@ -142,10 +173,11 @@ python3 scripts/shopify_sync_from_pricelist_csv.py
 
 | Wat | Waar |
 |-----|------|
-| Shopify → Supabase (’s nachts) | GitHub Actions **Job worker** |
-| Supabase YMM-projectie / backfill | [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md) |
+| Shopify catalogus → Supabase (’s nachts) | GitHub Actions **Job worker** (producten/varianten/ETA) |
+| YMM diff-push naar Shopify (wekelijks) | GitHub **YMM delivery** |
+| XML → canonical + push | [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md) |
 
-Dat is **niet** hetzelfde als stap 4–6 (XML → CSV → apps).
+Stap 4 CSV-export is **backup**; YMM-app-import (stap 5) blijft apart.
 
 ---
 

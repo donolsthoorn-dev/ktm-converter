@@ -1,0 +1,92 @@
+# Periodiek: push gewijzigde canonical YMM naar Shopify (diff op content_hash).
+# Vereist: migratie 028 + eerst canonical_ymm_sync_to_supabase (na nieuwe XML).
+# Catalog mirror (producten/prijzen/ETA) blijft in job-worker.yml.
+
+name: YMM delivery (Supabase → Shopify)
+
+on:
+  schedule:
+    # Maandag 05:15 UTC (na weekend XML-sync indien handmatig)
+    - cron: "15 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      handles:
+        description: "Optioneel: komma-gescheiden handles (leeg = alle pending diffs)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry-run (geen Shopify writes / geen pushed_hash update)"
+        type: boolean
+        default: true
+      limit:
+        description: "Max producten per run (0 = geen limiet)"
+        type: string
+        default: "500"
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install "requests>=2.28,<3"
+
+      - name: Build job payload
+        run: |
+          python3 - <<'PY'
+          import json, os
+          handles_raw = os.environ.get("HANDLES", "").strip()
+          handles = [h.strip().lower() for h in handles_raw.split(",") if h.strip()] if handles_raw else []
+          payload = {
+              "dry_run": os.environ.get("DRY_RUN", "true").lower() == "true",
+              "only_diff": True,
+              "overwrite": True,
+              "limit": int(os.environ.get("LIMIT", "500") or "500"),
+          }
+          if handles:
+              payload["only_handles"] = handles
+          with open("job_payload.json", "w") as f:
+              json.dump(payload, f)
+          PY
+        env:
+          HANDLES: ${{ inputs.handles }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          LIMIT: ${{ inputs.limit }}
+
+      - name: Queue shopify_ymm_push_diff_from_supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/queue_supabase_job.py shopify_ymm_push_diff_from_supabase \
+            --trigger schedule --payload-json "$(cat job_payload.json)"
+
+      - name: Process queued jobs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
+          SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
+        run: |
+          failed=0
+          for i in 1 2 3 4 5 6; do
+            set +e
+            out="$(python scripts/supabase_job_worker.py 2>&1)"
+            ec=$?
+            set -e
+            echo "$out"
+            if [ "$ec" -ne 0 ]; then failed=1; fi
+            case "$out" in *"Geen queued jobs."*) break ;; esac
+          done
+          exit "$failed"
