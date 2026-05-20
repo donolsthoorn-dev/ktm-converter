@@ -89,6 +89,11 @@ def main():
         action="store_true",
         help="Geen Make-filter op fits_on (alle merken uit XML).",
     )
+    p.add_argument(
+        "--no-cross-brand-ymm",
+        action="store_true",
+        help="Alleen huidig merk-XML voor fits_on (geen union KTM+HSQ+WP op SKU).",
+    )
     args = p.parse_args()
     apply_parsed_brand(args.brand)
 
@@ -120,6 +125,7 @@ def main():
         filter_makes=filter_makes,
         ymm_all_makes=args.ymm_all_makes,
         refresh_shopify_cache=args.refresh_shopify_cache,
+        unified_cross_brand_ymm=not args.no_cross_brand_ymm,
     )
     print(
         f"Metafields Manager CSV (merk={config.BRAND_ID}):",

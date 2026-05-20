@@ -62,7 +62,7 @@ python3 scripts/export_product_metafields.py --product-ids output/ids/product_id
 |--------|------|
 | `handle`, `title` | XML-structuur + `build_product_rows` |
 | `id` | `Product Id` uit `product_ids_from_xml.csv` (zelfde mapping als YMM-export) |
-| `fits_on` | JSON `{ "MAKE": { "Model": ["year",…], … } }` uit alle variant-SKU’s: **Bikes MODELL** (`PRODUKT_ZU_STRUKTUR_ELEMENT`) **plus** inverse **ZBH2BIKE**-lijsten op motor-PRODUKT’s (zie `docs/zbh2bike_ymm.md`). **Inhoud** (niet de kolomkoppen) vanaf `fits_on` t/m `MPN` wordt in **hoofdletters** geschreven, zoals in een typische Metafields Manager-export. |
+| `fits_on` | JSON `{ "MAKE": { "Model": ["year",…], … } }` uit alle variant-SKU’s: **Bikes MODELL** + **ZBH2BIKE** (zie `docs/zbh2bike_ymm.md`). Standaard **cross-brand**: union van KTM-, HSQ- en WP-CBEXPDN op **dezelfde SKU** (zelfde fitment op `a54029994500`, `hsq-…`, `wp-…`). Uitzetten: `--no-cross-brand-ymm`. **Inhoud** (niet de kolomkoppen) vanaf `fits_on` t/m `MPN` in **hoofdletters**. |
 | `fits_on_year`, `fits_on_make`, `fits_on_model` | Unieke waarden, gescheiden met `\|\|` (zoals je bestaande export) |
 | `ymm_summary` | Als er cc + lijn-tags uit de modelnamen te halen valt: `KTM 125-500 (EXC, SX, XC, XCF) 2019-2023` — volgorde EXC→SX→XC→XCF; **XCF** alleen bij echte `«cc» XC-F` (niet `EXC-F`, dat hoort bij EXC). Anders korte fallback `KTM — 2019-2023`. |
 | `MPN` | Eerste (alfabetisch) variant-SKU van het product |

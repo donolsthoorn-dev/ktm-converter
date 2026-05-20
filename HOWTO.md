@@ -2,8 +2,8 @@
 
 Alle commando’s vanaf de **projectroot** (`ktm_project/`). Python: `python3` (zie `pyproject.toml`).
 
-**Checklist per merk (KTM / HSQ / WP):** [`docs/workflow_per_merk.md`](docs/workflow_per_merk.md) — incl. **geoptimaliseerd schema** (parallel vs handmatig vs automatisch).  
-Uitgebreide uitleg: [`docs/workflow.md`](docs/workflow.md). Flow alleen nieuwe producten: [`docs/workflow_nieuwe_producten.txt`](docs/workflow_nieuwe_producten.txt).
+**→ Start hier:** [`docs/STAPPENPLAN.md`](docs/STAPPENPLAN.md) — stappen **1 t/m 6** (KTM + HSQ + WP).  
+Detail / naslag: [`docs/workflow_per_merk.md`](docs/workflow_per_merk.md). Techniek: [`docs/workflow.md`](docs/workflow.md).
 
 ---
 

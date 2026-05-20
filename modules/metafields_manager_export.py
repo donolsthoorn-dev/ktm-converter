@@ -25,6 +25,12 @@ from collections import defaultdict
 from config import IDS_OUTPUT_DIR, METAFIELDS_OUTPUT_DIR, XML_FILE
 from modules.xml_loader import normalize_shopify_product_handle
 from modules.shopify_client import get_shopify_sku_to_product_id
+from modules.cross_brand_ymm import (
+    build_canonical_sku_to_ymm,
+    build_normalized_sku_ymm_lookup,
+    resolve_cross_brand_xml_paths,
+    ymm_lookup_for_sku,
+)
 from modules.ymm_export import (
     DEFAULT_YMM_OEM_MAKES,
     YMM_MAX_FILE_SIZE_BYTES,
@@ -333,6 +339,7 @@ def export_product_metafields_csv(
     xml_file: str | None = None,
     filter_handles: set[str] | None = None,
     filter_makes: set[str] | None = None,
+    sku_to_ymm: dict[str, set[tuple[str, str, str]]] | None = None,
 ) -> tuple[int, int]:
     """
     Write one row per unique product handle from product_rows **plus** handles only in shopify_merge.
@@ -343,7 +350,11 @@ def export_product_metafields_csv(
     """
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     shopify_merge = shopify_merge or {}
-    sku_to_ymm = build_merged_sku_to_ymm(structure_index, relations, xml_file=xml_file or XML_FILE)
+    if sku_to_ymm is None:
+        sku_to_ymm = build_merged_sku_to_ymm(
+            structure_index, relations, xml_file=xml_file or XML_FILE
+        )
+    ymm_lookup = build_normalized_sku_ymm_lookup(sku_to_ymm)
     handle_to_skus = _build_handle_to_skus(product_rows)
     handle_to_title = _build_handle_to_title(product_rows)
 
@@ -351,7 +362,7 @@ def export_product_metafields_csv(
 
     def _xml_fits_on(h: str) -> bool:
         for sku in handle_to_skus.get(h, []):
-            if sku_to_ymm.get(sku):
+            if ymm_lookup_for_sku(ymm_lookup, sku):
                 return True
         return False
 
@@ -382,7 +393,7 @@ def export_product_metafields_csv(
             skus = handle_to_skus.get(handle, [])
             ymm_union: set[tuple[str, str, str]] = set()
             for sku in skus:
-                for ymm in sku_to_ymm.get(sku, set()):
+                for ymm in ymm_lookup_for_sku(ymm_lookup, sku):
                     if filter_makes is not None and ymm[0] not in filter_makes:
                         continue
                     ymm_union.add(ymm)
@@ -502,6 +513,7 @@ def run_metafields_export(
     *,
     ymm_all_makes: bool = False,
     refresh_shopify_cache: bool = False,
+    unified_cross_brand_ymm: bool = True,
 ) -> tuple[str, int]:
     if ymm_all_makes:
         effective_filter_makes: set[str] | None = None
@@ -610,10 +622,28 @@ def run_metafields_export(
                     f"Rapport ontbrekende Product Id's: {report_path}",
                     flush=True,
                 )
-    print(
-        "Tweede XML-pass (ZBH2BIKE) voor fits_on / YMM…",
-        flush=True,
-    )
+    sku_to_ymm: dict[str, set[tuple[str, str, str]]] | None = None
+    if unified_cross_brand_ymm:
+        xml_paths = resolve_cross_brand_xml_paths()
+        print(
+            f"Cross-brand fits_on: union uit {len(xml_paths)} XML's "
+            f"({', '.join(os.path.basename(p) for p in xml_paths)})…",
+            flush=True,
+        )
+        sku_to_ymm = build_canonical_sku_to_ymm(
+            xml_paths,
+            filter_makes=effective_filter_makes,
+        )
+        with_fits_skus = sum(1 for t in sku_to_ymm.values() if t)
+        print(
+            f"Cross-brand fits_on: {with_fits_skus} SKU's met YMM-tuples.",
+            flush=True,
+        )
+    else:
+        print(
+            "Tweede XML-pass (ZBH2BIKE) voor fits_on — alleen huidig merk-XML…",
+            flush=True,
+        )
     if effective_filter_makes:
         print(
             f"Metafields Make-filter: {', '.join(sorted(effective_filter_makes))}",
@@ -628,10 +658,11 @@ def run_metafields_export(
         shopify_merge=merge_map,
         filter_handles=filter_handles,
         filter_makes=effective_filter_makes,
+        sku_to_ymm=sku_to_ymm,
     )
+    ymm_src = "cross-brand KTM+HSQ+WP" if unified_cross_brand_ymm else "merk-XML"
     print(
-        f"Metafields: {n} productregels, waarvan {n_fits} met fits_on "
-        f"(YMM: Bikes MODELL + ZBH2BIKE).",
+        f"Metafields: {n} productregels, waarvan {n_fits} met fits_on ({ymm_src}).",
         flush=True,
     )
     max_mb = YMM_MAX_FILE_SIZE_BYTES // (1024 * 1024)

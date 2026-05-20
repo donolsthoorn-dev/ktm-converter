@@ -1,6 +1,6 @@
 # 📦 PROJECT CONTEXT – KTM → Shopify Export
 
-Snelle commando’s (copy-paste): **`HOWTO.md`**. **Checklist per merk (KTM/HSQ/WP):** **`docs/workflow_per_merk.md`**. Operationeel stappenplan (FTP → import → apps): **`docs/workflow.md`**. YMM/metafields in detail: **`docs/metafields_manager_export.md`**.
+**Dagelijks stappenplan (KTM/HSQ/WP):** **`docs/STAPPENPLAN.md`**. Commando’s: **`HOWTO.md`**. Techniek/FTP: **`docs/workflow.md`**. YMM/metafields detail: **`docs/metafields_manager_export.md`**.
 
 ## Doel
 

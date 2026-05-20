@@ -365,13 +365,14 @@ def build_merged_sku_to_ymm(
     return merge_sku_ymm_maps(struct, zbh)
 
 
-def stream_xml_for_export():
+def stream_xml_for_export(xml_path: str | None = None):
     """Single pass: structure + relations (sku -> list of element keys)."""
+    path = xml_path or XML_FILE
     structure_index = {}
     relations = defaultdict(list)
 
     context = etree.iterparse(
-        XML_FILE,
+        path,
         events=("end",),
         tag=("STRUKTUR_ELEMENT", "PRODUKT_ZU_STRUKTUR_ELEMENT"),
     )
@@ -651,6 +652,7 @@ def export_ymm_fitment(
     xml_file: str | None = None,
     filter_handles: set[str] | None = None,
     filter_makes: set[str] | None = None,
+    sku_to_ymm: dict[str, set[tuple[str, str, str]]] | None = None,
 ) -> int:
     """
     Full YMM rows for app bulk insert template:
@@ -670,18 +672,36 @@ def export_ymm_fitment(
     seen_rows = set()
     handle_to_product_id = handle_to_product_id or {}
 
-    sku_to_ymm = build_merged_sku_to_ymm(structure_index, relations, xml_file=xml_file or XML_FILE)
+    if sku_to_ymm is None:
+        sku_to_ymm = build_merged_sku_to_ymm(
+            structure_index, relations, xml_file=xml_file or XML_FILE
+        )
+    from modules.cross_brand_ymm import (
+        build_normalized_sku_ymm_lookup,
+        ymm_lookup_for_sku,
+    )
 
-    all_skus = {s for sks in relations.values() for s in sks if s} | set(sku_to_ymm.keys())
+    ymm_lookup = build_normalized_sku_ymm_lookup(sku_to_ymm)
+
+    brand_skus = {s for sks in relations.values() for s in sks if s}
+    if product_rows:
+        brand_skus |= {
+            (p.get("sku") or "").strip()
+            for p in product_rows
+            if (p.get("sku") or "").strip()
+        }
     sku_to_keys = _build_sku_to_keys(relations)
-    sku_to_handle = {s: resolve_handle_for_sku(s, relations, sku_to_keys) for s in all_skus}
+    sku_to_handle = {
+        s: resolve_handle_for_sku(s, relations, sku_to_keys) for s in brand_skus
+    }
     sku_to_candidate_handles = build_sku_to_candidate_handles(product_rows) if product_rows else {}
     sku_to_shopify_product_id = sku_to_shopify_product_id or {}
 
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(header)
-        for sku, ymm_set in sorted(sku_to_ymm.items(), key=lambda x: x[0]):
+        for sku in sorted(brand_skus, key=lambda x: x.upper()):
+            ymm_set = ymm_lookup_for_sku(ymm_lookup, sku)
             if not ymm_set:
                 continue
             handle = sku_to_handle.get(sku, sku)
@@ -862,6 +882,7 @@ def run_exports(
     filter_makes: set[str] | None = None,
     *,
     ymm_all_makes: bool = False,
+    unified_cross_brand_ymm: bool = True,
 ) -> tuple[str, str, int]:
     if ymm_all_makes:
         effective_filter_makes: set[str] | None = None
@@ -932,10 +953,27 @@ def run_exports(
         sku_to_shopify_product_id=sku_to_shopify_product_id,
     )
     handle_to_product_id = build_handle_to_product_id(product_ids_path)
-    print(
-        "Tweede XML-pass (ZBH2BIKE: motor → onderdelen) voor YMM-export…",
-        flush=True,
-    )
+    sku_to_ymm: dict[str, set[tuple[str, str, str]]] | None = None
+    if unified_cross_brand_ymm:
+        from modules.cross_brand_ymm import (
+            build_canonical_sku_to_ymm,
+            resolve_cross_brand_xml_paths,
+        )
+
+        xml_paths = resolve_cross_brand_xml_paths()
+        print(
+            f"Cross-brand YMM: union uit {len(xml_paths)} XML's voor fitment-rijen…",
+            flush=True,
+        )
+        sku_to_ymm = build_canonical_sku_to_ymm(
+            xml_paths,
+            filter_makes=effective_filter_makes,
+        )
+    else:
+        print(
+            "Tweede XML-pass (ZBH2BIKE: motor → onderdelen) — alleen huidig merk-XML…",
+            flush=True,
+        )
     n_ymm = export_ymm_fitment(
         ymm_path,
         structure_index,
@@ -945,6 +983,7 @@ def run_exports(
         sku_to_shopify_product_id=sku_to_shopify_product_id,
         filter_handles=filter_handles,
         filter_makes=effective_filter_makes,
+        sku_to_ymm=sku_to_ymm,
     )
     if effective_filter_makes:
         print(

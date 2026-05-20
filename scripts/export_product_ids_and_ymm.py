@@ -64,6 +64,11 @@ def main():
         action="store_true",
         help="Geen Make-filter (ook Yamaha, Kawasaki, Ducati, …).",
     )
+    parser.add_argument(
+        "--no-cross-brand-ymm",
+        action="store_true",
+        help="Alleen huidig merk-XML voor YMM-rijen (geen union KTM+HSQ+WP op SKU).",
+    )
     args = parser.parse_args()
     apply_parsed_brand(args.brand)
 
@@ -96,6 +101,7 @@ def main():
         filter_handles=filter_handles,
         filter_makes=filter_makes,
         ymm_all_makes=args.ymm_all_makes,
+        unified_cross_brand_ymm=not args.no_cross_brand_ymm,
     )
     print("Product-Ids template:", p1)
     print("YMM app import:", p2, f"({n} data rows)")

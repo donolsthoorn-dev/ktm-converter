@@ -2,8 +2,8 @@ Workflow: nieuwe producten (zonder ETA / 0150-API-prijs-sync)
 ============================================================
 
 Zie ook:
-  docs/workflow_per_merk.md  — checklist KTM / HSQ / WP (input, main.py, Shopify, YMM)
-  docs/workflow.md           — volledige operationele handleiding (FTP, ETA, fouten)
+  docs/STAPPENPLAN.md        — hoofdstappen 1–6 (KTM + HSQ + WP)
+  docs/workflow.md           — FTP, ETA, fouten
 
 Wat je overslaat
 ----------------

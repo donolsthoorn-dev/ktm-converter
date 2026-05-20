@@ -82,6 +82,11 @@ def get_image_search_roots() -> list[str]:
     return roots
 
 
+def resolve_brand_xml_file(brand_id: str | None = None) -> str:
+    """Pad naar CBEXPDN-XML voor merk (env of nieuwste xml_glob in input_dir)."""
+    return _resolve_xml_file(get_brand_config(brand_id))
+
+
 def _resolve_xml_file(brand: BrandConfig) -> str:
     """Pad naar export-XML: env per merk, anders nieuwste match op xml_glob in input_dir."""
     raw = os.environ.get(brand.xml_env_var, "").strip()
