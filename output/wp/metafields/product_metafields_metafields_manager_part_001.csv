@@ -1160,7 +1160,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9399609950538,wp-0761c141v002220,XPLOR PRO 6500 Cartridge,,,,,,,,,,,,,,,,,,0761C141V002220
 9399602151754,wp-0791l101u400220,AER Conversion kit,,,,,,,,,,,,,,,,,,0791L101U400220
 9399610409290,wp-0797c167u002220,XPLOR PRO 6500 Cartridge,,,,,,,,,,,,,,,,,,0797C167U002220
-15665042194762,wp-0900001601200,"Collar screw M16 x 1,5",,,,,,,,,,,,,,,,,,0900001601200
+8543683248458,wp-0900001601200,"Collar screw M16 x 1,5",,,,,,,,,,,,,,,,,,0900001601200
 9400592925002,wp-0963c104w001220,APEX PRO 6500 Cartridge,,,,,,,,,,,,,,,,,,0963C104W001220
 9400593711434,wp-0963c404w313220,APEX PRO 6746 Shock absorber,,,,,,,,,,,,,,,,,,0963C404W313220
 9400592007498,wp-10150u07set,XACT PRO HUSQVARNA SUSPENSION SET,,,,,,,,,,,,,,,,,,10150U07SET
@@ -1641,7 +1641,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9400619467082,wp-a460c199x400220,XACT PRO Cairoli Edition,,,,,,,,,,,,,,,,,,A460C199X400220
 9399611392330,wp-a460c401w411220,XACT PRO 8950 Shock absorber,,,,,,,,,,,,,,,,,,A460C401W411220
 9399611523402,wp-a460c409w411220,XACT PRO 8950 Shock absorber,,,,,,,,,,,,,,,,,,A460C409W411220
-15665046159690,wp-a48009072000c1s,Spoke nipple,,,,,,,,,,,,,,,,,,A48009072000C1S
+10218359193930,wp-a48009072000c1s,Spoke nipple,,,,,,,,,,,,,,,,,,A48009072000C1S
 9399610638666,wp-a480c108w002220,XACT PRO 6500 Cartridge,,,,,,,,,,,,,,,,,,A480C108W002220
 9399618142538,wp-a49001997000,Dirt scraper,,,,,,,,,,,,,,,,,,A49001997000
 9399618011466,wp-a49010901544c1a,Factory Racing rear wheel 2.15x18&quot;,,,,,,,,,,,,,,,,,,A49010901544C1A
@@ -1667,8 +1667,8 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9400594006346,wp-a59012955544,Lowering kit,,,,,,,,,,,,,,,,,,A59012955544
 15665046421834,wp-a601c142y001220,XPLOR PRO 6500 Cartridge,,,,,,,,,,,,,,,,,,A601C142Y001220
 15665046487370,wp-a601c442y313220,XPLOR PRO 6746 Federbein,,,,,,,,,,,,,,,,,,A601C442Y313220
-15665046651210,wp-a606c141y401102,Fork 690 SMC R 2025,,,,,,,,,,,,,,,,,,A606C141Y401102
-15665046716746,wp-a606c410y313000,Shock absorber 690 Enduro R 2025,,,,,,,,,,,,,,,,,,A606C410Y313000
+,wp-a606c141y401102,Fork 690 SMC R 2025,,,,,,,,,,,,,,,,,,A606C141Y401102
+,wp-a606c410y313000,Shock absorber 690 Enduro R 2025,,,,,,,,,,,,,,,,,,A606C410Y313000
 9399616078154,wp-a60712955044,Lowering kit,,,,,,,,,,,,,,,,,,A60712955044
 9400592990538,wp-a607c126x001220,APEX PRO 6500 Cartridge,,,,,,,,,,,,,,,,,,A607C126X001220
 9400592597322,wp-a607c249x100200,APEX PRO 7117 Steering damper kit,,,,,,,,,,,,,,,,,,A607C249X100200
@@ -1681,8 +1681,8 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 15665046847818,wp-a674c101y702220,APEX PRO 8500 Cartridge,,,,,,,,,,,,,,,,,,A674C101Y702220
 15665046946122,wp-a674c401y413220,APEX PRO 8750 Shock absorber,,,,,,,,,,,,,,,,,,A674C401Y413220
 15665047011658,wp-a67912955044,Lowering kit,,,,,,,,,,,,,,,,,,A67912955044
-15665047109962,wp-a681c422y413200,Shock absorber 1390 Super Duke RR 2025,,,,,,,,,,,,,,,,,,A681C422Y413200
-15665047273802,wp-a719c122y402200,Fork 1390 Super Duke RR Track 2025,,,,,,,,,,,,,,,,,,A719C122Y402200
+,wp-a681c422y413200,Shock absorber 1390 Super Duke RR 2025,,,,,,,,,,,,,,,,,,A681C422Y413200
+,wp-a719c122y402200,Fork 1390 Super Duke RR Track 2025,,,,,,,,,,,,,,,,,,A719C122Y402200
 15665047372106,wp-a719c122y402220,WP Apex Pro Fork,,,,,,,,,,,,,,,,,,A719C122Y402220
 15665047437642,wp-a719c423y413220,WP Apex Pro Shock,,,,,,,,,,,,,,,,,,A719C423Y413220
 9399646519626,wp-ag180001int,Tent Frame 3 x 3 m,,,,,,,,,,,,,,,,,,AG180001INT
@@ -1733,7 +1733,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9399625417034,wp-r14047t,Fork repair kit,,,,,,,,,,,,,,,,,,R14047T
 15665047699786,wp-r14054t,Spacer kit,,,,,,,,,,,,,,,,,,R14054T
 9399627776330,wp-r516,Fork repair kit,,,,,,,,,,,,,,,,,,R516
-15665047798090,wp-r516t,Fork gasket kit 43 mm,,,,,,,,,,,,,,,,,,R516T
+9357001457994,wp-r516t,Fork gasket kit 43 mm,,,,,,,,,,,,,,,,,,R516T
 ,wp-rc1252014,RC 125 2014,,,,,,,,,,,,,,,,,,F5003N1
 ,wp-rc1252018,RC 125 2018,,,,,,,,,,,,,,,,,,F5003R1
 ,wp-rc1252019,RC 125 2019,,,,,,,,,,,,,,,,,,F5003S1
@@ -1762,7 +1762,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9399627874634,wp-rp10006,fork repair kit,,,,,,,,,,,,,,,,,,RP10006
 9399627972938,wp-rp10007,fork repair kit,,,,,,,,,,,,,,,,,,RP10007
 9399626760522,wp-rp10012,Fork repair kit,,,,,,,,,,,,,,,,,,RP10012
-15665047929162,wp-rp10048t,Fork repair kit,,,,,,,,,,,,,,,,,,RP10048T
+8753710924106,wp-rp10048t,Fork repair kit,,,,,,,,,,,,,,,,,,RP10048T
 ,wp-rr2t2502019-kopie,$M-BETARR2T2502019-KOPIE,,,,,,,,,,,,,,,,,,RR2T2502019-KOPIE
 ,wp-rr2t2502019-kopie-kopie,$M-BETARR2T3002019-KOPIE,,,,,,,,,,,,,,,,,,RR2T2502019-KOPIE-KOPIE
 ,wp-rr2t3002017,$M-RR2T3002017,,,,,,,,,,,,,,,,,,RR2T3002017
@@ -1784,7 +1784,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9399621189962,wp-s8098200410000x,FORK SPRING SET,,,,,,,,,,,,,,,,,,S80982004100000
 15665048355146,wp-s80982004xs,Shock absorber spring,,,,,,,,,,,,,,,,,,S809820040S0020
 9399621091658,wp-s809900036s0000,Fork spring set,,,,,,,,,,,,,,,,,,S809900036S0000
-15665048551754,wp-s809900047s0000,$M-S809900047S0000,,,,,,,,,,,,,,,,,,S809900047S0000
+,wp-s809900047s0000,$M-S809900047S0000,,,,,,,,,,,,,,,,,,S809900047S0000
 15665048650058,wp-s80992001x,FORK SPRING SET,,,,,,,,,,,,,,,,,,S809920013S0000
 15665048781130,wp-s8198000x00028,Shock Absorber Spring,,,,,,,,,,,,,,,,,,S81980000800028
 9399624433994,wp-s82882000100000,Spring retainer,,,,,,,,,,,,,,,,,,S82882000100000
@@ -1828,7 +1828,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9399656907082,wp-t1206,Pressing tool,,,,,,,,,,,,,,,,,,T1206
 9399656972618,wp-t1207s,Pressing tool,,,,,,,,,,,,,,,,,,T1207S
 9399657038154,wp-t1208,Pressing tool,,,,,,,,,,,,,,,,,,T1208
-15665049829706,wp-t1209,Guide bush removal/fitting tool,,,,,,,,,,,,,,,,,,T1209
+7113470116021,wp-t1209,Guide bush removal/fitting tool,,,,,,,,,,,,,,,,,,T1209
 9400594891082,wp-t1211,Clamping jaw D= 54,,,,,,,,,,,,,,,,,,T1211
 9400595087690,wp-t12126s,Socket,,,,,,,,,,,,,,,,,,T12126S
 9400597184842,wp-t12127,Socket,,,,,,,,,,,,,,,,,,T12127
@@ -1843,7 +1843,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9400615534922,wp-t1216,Pressing tool,,,,,,,,,,,,,,,,,,T1216
 9399650779466,wp-t1218,Pin wrench,,,,,,,,,,,,,,,,,,T1218
 9400615895370,wp-t1238,Socket,,,,,,,,,,,,,,,,,,T1238
-15665050190154,wp-t1240s,Vacuum pump,,,,,,,,,,,,,,,,,,T1240S
+8775278887242,wp-t1240s,Vacuum pump,,,,,,,,,,,,,,,,,,T1240S
 9399652057418,wp-t1245s,Filling adapter,,,,,,,,,,,,,,,,,,T1245S
 9399649075530,wp-t1252,Dorn guide bush holder,,,,,,,,,,,,,,,,,,T1252
 9399663493450,wp-t1255,Vacuum oil,,,,,,,,,,,,,,,,,,T1255
@@ -1960,7 +1960,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9399652843850,wp-t1517s,Shock length measuring tool,,,,,,,,,,,,,,,,,,T1517S
 9399654089034,wp-t152,Belray Molylube Antiseize,,,,,,,,,,,,,,,,,,T152
 9400595841354,wp-t1558s,Housing for nitrogen filling device,,,,,,,,,,,,,,,,,,T1558S
-15665050878282,wp-t1561s,Spring mounting tool,,,,,,,,,,,,,,,,,,T1561S
+,wp-t1561s,Spring mounting tool,,,,,,,,,,,,,,,,,,T1561S
 9399652188490,wp-t1563,Adaptor PDS Ø 58mm,,,,,,,,,,,,,,,,,,T1563
 9399652254026,wp-t1564,Adaptor SX Ø 65mm,,,,,,,,,,,,,,,,,,T1564
 9399652286794,wp-t1565,Filling adapter,,,,,,,,,,,,,,,,,,T1565

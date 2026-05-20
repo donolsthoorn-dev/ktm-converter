@@ -155,11 +155,10 @@ declare
   v_id bigint;
 begin
   perform net.check_worker_is_up();
-  v_id := net.http_post(
+  v_id := net.http_get(
     url := 'https://api.github.com/zen',
-    body := '{}'::jsonb,
     params := '{}'::jsonb,
-    headers := '{"Content-Type": "application/json"}'::jsonb,
+    headers := '{}'::jsonb,
     timeout_milliseconds := 5000
   );
   perform net.wake();

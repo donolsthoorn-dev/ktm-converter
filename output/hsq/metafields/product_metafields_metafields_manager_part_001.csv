@@ -3174,11 +3174,11 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 8774809780554,hsq-22112922001,Side bag,,,,,,,,,,,,,,,,,,22112922001
 8774806241610,hsq-22112922011,Side bag fixing mechanism,,,,,,,,,,,,,,,,,,22112922011
 8774807486794,hsq-22112922101,Side bag left,,,,,,,,,,,,,,,,,,22112922101
-15664992485706,hsq-22112922500,Touring side case left,,,,,,,,,,,,,,,,,,22112922500
+,hsq-22112922500,Touring side case left,,,,,,,,,,,,,,,,,,22112922500
 8774806896970,hsq-22112923000,Touratech case,,,,,,,,,,,,,,,,,,22112923000
 8774809747786,hsq-22112923001,Side bag,,,,,,,,,,,,,,,,,,22112923001
 8774807454026,hsq-22112923101,Side bag right,,,,,,,,,,,,,,,,,,22112923101
-15664992518474,hsq-22112923500,Touring side case right,,,,,,,,,,,,,,,,,,22112923500
+,hsq-22112923500,Touring side case right,,,,,,,,,,,,,,,,,,22112923500
 8774806864202,hsq-22112929000,Top case,,,,,,,,,,,,,,,,,,22112929000
 8774806831434,hsq-22112929500,Touring top case,,,,,,,,,,,,,,,,,,22112929500
 8774806798666,hsq-22112932500,Touring case set,,,,,,,,,,,,,,,,,,22112932500
@@ -3328,7 +3328,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 15664995008842,hsq-3ag210069100,TIRE 16,,,,,,,,,,,,,,,,,,3AG210069100
 15664995041610,hsq-3ag210069200,SMART BATTERY CHARGER,,,,,,,,,,,,,,,,,,3AG210069200
 15664995107146,hsq-3ag210069300,MOTOR AND ESC COMBO 12,,,,,,,,,,,,,,,,,,3AG210069300
-15664995172682,hsq-3ag210069400,MOTOR AND ESC COMBO BRUSHLESS 16,,,,,,,,,,,,,,,,,,3AG210069400
+7113435676853,hsq-3ag210069400,MOTOR AND ESC COMBO BRUSHLESS 16,,,,,,,,,,,,,,,,,,3AG210069400
 15664995270986,hsq-3ag210080400,FRONT WHEEL 12,,,,,,,,,,,,,,,,,,3AG210080400
 15664995336522,hsq-3ag210080500,REAR WHEEL 12,,,,,,,,,,,,,,,,,,3AG210080500
 15664995369290,hsq-3ag210080600,FRONT WHEEL 16,,,,,,,,,,,,,,,,,,3AG210080600
@@ -3348,37 +3348,37 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9370535723338,hsq-3ag240057100,D3O CP1 CHEST PROTECTOR LEFT,,,,,,,,,,,,,,,,,,3AG240057100
 9369922470218,hsq-3ag240057200,D3O CP1 CHEST PROTECTOR RIGHT,,,,,,,,,,,,,,,,,,3AG240057200
 8774947766602,hsq-3ag24005860x,D3O VIPER CENTRAL BACK PROTECTOR,,,,,,,,,,,,,,,,,,3AG240058603
-15664995631434,hsq-3ag240069800,Paddock Tent Carry Wheel Bag,,,,,,,,,,,,,,,,,,3AG240069800
+8636804301130,hsq-3ag240069800,Paddock Tent Carry Wheel Bag,,,,,,,,,,,,,,,,,,3AG240069800
 15664995729738,hsq-3ag24007260x,D3O VIPER AIR BACK PROTECTOR,,,,,,,,,,,,,,,,,,3AG240072602
 15664995828042,hsq-3ag25003600x,TECH-AIR® OFFROAD AIRBAG VEST,,,,,,,,,,,,,,,,,,3AG250036002
-15664995860810,hsq-3ag25003700x,TECH 7 MX SOLE BLACK,,,,,,,,,,,,,,,,,,3AG250037001
-15664995893578,hsq-3ag250037100,Tech 7 Buckle Base Black,,,,,,,,,,,,,,,,,,3AG250037100
-15664995959114,hsq-3ag250037200,Tech 7 Buckle Strap Black,,,,,,,,,,,,,,,,,,3AG250037200
+,hsq-3ag25003700x,TECH 7 MX SOLE BLACK,,,,,,,,,,,,,,,,,,3AG250037001
+10347888214346,hsq-3ag250037100,Tech 7 Buckle Base Black,,,,,,,,,,,,,,,,,,3AG250037100
+10347888181578,hsq-3ag250037200,Tech 7 Buckle Strap Black,,,,,,,,,,,,,,,,,,3AG250037200
 9369922273610,hsq-3ag250037500,Velocity Photocromic lens Clear Adaptive 37-87 VLT,,,,,,,,,,,,,,,,,,3AG250037500
-15664995991882,hsq-3ag250037600,Velocity Photocromic lens Light Grey Adaptive 28-80 VLT,,,,,,,,,,,,,,,,,,3AG250037600
-15664996024650,hsq-3ag250037700,Velocity Cryztal Iriz Lens Fuchsia 22 VLT,,,,,,,,,,,,,,,,,,3AG250037700
-15664996057418,hsq-3ag250037800,Velocity Cryztal Iriz Lens Prisma 60 VLT,,,,,,,,,,,,,,,,,,3AG250037800
-15664996122954,hsq-3ag250037900,Velocity Cryztal Iriz Lens Platinum  30 VLT,,,,,,,,,,,,,,,,,,3AG250037900
-15664996155722,hsq-3ag250038200,Velocity Iriz Lens Blue 49 VLT,,,,,,,,,,,,,,,,,,3AG250038200
-15664996188490,hsq-3ag250038300,Velocity Iriz Lens Bronze 68 VLT,,,,,,,,,,,,,,,,,,3AG250038300
-15664996221258,hsq-3ag250038600,Velocity Iriz Lens Platinum 28 VLT,,,,,,,,,,,,,,,,,,3AG250038600
-15664996254026,hsq-3ag250038900,Velocity Iriz Lens Silver 50 VLT,,,,,,,,,,,,,,,,,,3AG250038900
-15664996352330,hsq-3ag250039000,Velocity Iriz Lens Red 28 VLT,,,,,,,,,,,,,,,,,,3AG250039000
-15664996483402,hsq-3ag250039200,Velocity Iriz Lens Purple 78 VLT,,,,,,,,,,,,,,,,,,3AG250039200
-15664996516170,hsq-3ag250039300,Velocity Enduro Lens Clear 83 VLT,,,,,,,,,,,,,,,,,,3AG250039300
-15664996745546,hsq-3ag250039400,Velocity Enduro Lens Rose Ultra Contrast 32 VLT,,,,,,,,,,,,,,,,,,3AG250039400
-15664996778314,hsq-3ag250040000,Velocity Lens Clear 83 VLT,,,,,,,,,,,,,,,,,,3AG250040000
-15664996811082,hsq-3ag250040100,Velocity Lens Light Grey 58 VLT,,,,,,,,,,,,,,,,,,3AG250040100
-15664997040458,hsq-3ag250040200,Velocity Lens Yellow 70 VLT,,,,,,,,,,,,,,,,,,3AG250040200
-15664997073226,hsq-3ag250040300,Velocity Lens Blue 52 VLT,,,,,,,,,,,,,,,,,,3AG250040300
-15664997105994,hsq-3ag250040400,Velocity Lens Orange 51 VLT,,,,,,,,,,,,,,,,,,3AG250040400
-15664997302602,hsq-3ag250040500,Velocity Lens Rose 32 VLT,,,,,,,,,,,,,,,,,,3AG250040500
-15664997368138,hsq-3ag250040600,Velocity Lens Smoke 28 VLT,,,,,,,,,,,,,,,,,,3AG250040600
-15664997433674,hsq-3ag250040700,Velocity 5.5/6.5 Roll-Off Kit,,,,,,,,,,,,,,,,,,3AG250040700
-15664997499210,hsq-3ag250040800,Velocity 5.5/6.5 Roll-Off Film 48mm (6pcs),,,,,,,,,,,,,,,,,,3AG250040800
-15664997728586,hsq-3ag250040900,Velocity 6.5 Roll-Off Dirt Strips (3pcs),,,,,,,,,,,,,,,,,,3AG250040900
-15664997761354,hsq-3ag250041000,Velocity Tear-Off Standard (20pcs),,,,,,,,,,,,,,,,,,3AG250041000
-15664997892426,hsq-3ag250041100,Velocity Nose Deflector Black,,,,,,,,,,,,,,,,,,3AG250041100
+,hsq-3ag250037600,Velocity Photocromic lens Light Grey Adaptive 28-80 VLT,,,,,,,,,,,,,,,,,,3AG250037600
+,hsq-3ag250037700,Velocity Cryztal Iriz Lens Fuchsia 22 VLT,,,,,,,,,,,,,,,,,,3AG250037700
+,hsq-3ag250037800,Velocity Cryztal Iriz Lens Prisma 60 VLT,,,,,,,,,,,,,,,,,,3AG250037800
+,hsq-3ag250037900,Velocity Cryztal Iriz Lens Platinum  30 VLT,,,,,,,,,,,,,,,,,,3AG250037900
+,hsq-3ag250038200,Velocity Iriz Lens Blue 49 VLT,,,,,,,,,,,,,,,,,,3AG250038200
+,hsq-3ag250038300,Velocity Iriz Lens Bronze 68 VLT,,,,,,,,,,,,,,,,,,3AG250038300
+,hsq-3ag250038600,Velocity Iriz Lens Platinum 28 VLT,,,,,,,,,,,,,,,,,,3AG250038600
+,hsq-3ag250038900,Velocity Iriz Lens Silver 50 VLT,,,,,,,,,,,,,,,,,,3AG250038900
+,hsq-3ag250039000,Velocity Iriz Lens Red 28 VLT,,,,,,,,,,,,,,,,,,3AG250039000
+,hsq-3ag250039200,Velocity Iriz Lens Purple 78 VLT,,,,,,,,,,,,,,,,,,3AG250039200
+,hsq-3ag250039300,Velocity Enduro Lens Clear 83 VLT,,,,,,,,,,,,,,,,,,3AG250039300
+,hsq-3ag250039400,Velocity Enduro Lens Rose Ultra Contrast 32 VLT,,,,,,,,,,,,,,,,,,3AG250039400
+,hsq-3ag250040000,Velocity Lens Clear 83 VLT,,,,,,,,,,,,,,,,,,3AG250040000
+,hsq-3ag250040100,Velocity Lens Light Grey 58 VLT,,,,,,,,,,,,,,,,,,3AG250040100
+,hsq-3ag250040200,Velocity Lens Yellow 70 VLT,,,,,,,,,,,,,,,,,,3AG250040200
+,hsq-3ag250040300,Velocity Lens Blue 52 VLT,,,,,,,,,,,,,,,,,,3AG250040300
+,hsq-3ag250040400,Velocity Lens Orange 51 VLT,,,,,,,,,,,,,,,,,,3AG250040400
+,hsq-3ag250040500,Velocity Lens Rose 32 VLT,,,,,,,,,,,,,,,,,,3AG250040500
+,hsq-3ag250040600,Velocity Lens Smoke 28 VLT,,,,,,,,,,,,,,,,,,3AG250040600
+,hsq-3ag250040700,Velocity 5.5/6.5 Roll-Off Kit,,,,,,,,,,,,,,,,,,3AG250040700
+,hsq-3ag250040800,Velocity 5.5/6.5 Roll-Off Film 48mm (6pcs),,,,,,,,,,,,,,,,,,3AG250040800
+,hsq-3ag250040900,Velocity 6.5 Roll-Off Dirt Strips (3pcs),,,,,,,,,,,,,,,,,,3AG250040900
+,hsq-3ag250041000,Velocity Tear-Off Standard (20pcs),,,,,,,,,,,,,,,,,,3AG250041000
+,hsq-3ag250041100,Velocity Nose Deflector Black,,,,,,,,,,,,,,,,,,3AG250041100
 8774893207882,hsq-3hs1458300,Logo Beanie,,,,,,,,,,,,,,,,,,3HS1458300
 ,hsq-3hs1470600,Moose,,,,,,,,,,,,,,,,,,3HS1470600
 8774859489610,hsq-3hs155620x,Basic Logo Tee,,,,,,,,,,,,,,,,,,3HS1556201
@@ -3419,7 +3419,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 15664999334218,hsq-3hs199830001,Flame Strap Lock,,,,,,,,,,,,,,,,,,3HS199830001
 15664999366986,hsq-3hs199830002,Flame Buckle Base,,,,,,,,,,,,,,,,,,3HS199830002
 15664999432522,hsq-3hs199830003,Flame Buckle Strap,,,,,,,,,,,,,,,,,,3HS199830003
-15664999465290,hsq-3hs19991001x,Kids Railed Helmet Interior,,,,,,,,,,,,,,,,,,3HS199910012
+,hsq-3hs19991001x,Kids Railed Helmet Interior,,,,,,,,,,,,,,,,,,3HS199910012
 8774947209546,hsq-3hs20000620x,Brisker Gloves,,,,,,,,,,,,,,,,,,3HS200006202
 8774854410570,hsq-3hs20001050x,Women Origin Shirt,,,,,,,,,,,,,,,,,,3HS200010501
 9637449859402,hsq-3hs200016200,No Drag Bag,,,,,,,,,,,,,,,,,,3HS200016200
@@ -3664,7 +3664,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 15665002348874,hsq-3hs23003450x,Kids Gravity eDrive-MTB Helmet,,,,,,,,,,,,,,,,,,3HS230034503
 8774957171018,hsq-3hs230036100,Moto 9S Flex Railed Helmet Shield,,,,,,,,,,,,,,,,,,3HS230036100
 15665002381642,hsq-3hs230036200,Moto 9 MIPS® Helmet Shield Dark Blue,,,,,,,,,,,,,,,,,,3HS230036200
-15665002611018,hsq-3hs230036800,Kids Gravity eDrive Helmet Shield,,,,,,,,,,,,,,,,,,3HS230036800
+8774954254666,hsq-3hs230036800,Kids Gravity eDrive Helmet Shield,,,,,,,,,,,,,,,,,,3HS230036800
 8774957039946,hsq-3hs230037600,Velocity Iriz Ultracontrast Lens Blue,,,,,,,,,,,,,,,,,,3HS230037600
 15665002676554,hsq-3hs230037900,Velocity Lens Clear,,,,,,,,,,,,,,,,,,3HS230037900
 15665002873162,hsq-3hs230038100,Velocity Lens Yellow,,,,,,,,,,,,,,,,,,3HS230038100
@@ -3677,7 +3677,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 15665003266378,hsq-3hs230043500,Kids Railed Goggles Tear-Off (10pcs) OS,,,,,,,,,,,,,,,,,,3HS230043500
 8774956941642,hsq-3hs230044100,Authentic Helmet Shield,,,,,,,,,,,,,,,,,,3HS230044100
 15665003331914,hsq-3hs23005210x,Team Shoes,,,,,,,,,,,,,,,,,,3HS230052100
-15665003462986,hsq-3hs230052300,Moto-10 Railed Shield / Mouthpiece Set OS,,,,,,,,,,,,,,,,,,3HS230052300
+8774956515658,hsq-3hs230052300,Moto-10 Railed Shield / Mouthpiece Set OS,,,,,,,,,,,,,,,,,,3HS230052300
 15665003495754,hsq-3hs230052400,Heritage Curved Cap,,,,,,,,,,,,,,,,,,3HS230052400
 8774845530442,hsq-3hs23005250x,Heritage T-shirt,,,,,,,,,,,,,,,,,,3HS230052501
 8774867648842,hsq-3hs23005260x,Heritage Hoodie,,,,,,,,,,,,,,,,,,3HS230052601
@@ -3772,13 +3772,13 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 15665006018890,hsq-3hs240045100,Crossfire 3 SRS Buckle Strap Short,,,,,,,,,,,,,,,,,,3HS240045100
 15665006084426,hsq-3hs240045200,Crossfire 3 SRS Buckle Strap Mid,,,,,,,,,,,,,,,,,,3HS240045200
 15665006117194,hsq-3hs240045300,Crossfire 3 SRS Buckle Strap Long,,,,,,,,,,,,,,,,,,3HS240045300
-15665006182730,hsq-3hs240045400,X-Power Buckle Base,,,,,,,,,,,,,,,,,,3HS240045400
+8774953369930,hsq-3hs240045400,X-Power Buckle Base,,,,,,,,,,,,,,,,,,3HS240045400
 15665006215498,hsq-3hs240045500,X-Power Buckle Strap Short,,,,,,,,,,,,,,,,,,3HS240045500
-15665006281034,hsq-3hs240045600,X-Power Buckle Strap Mid,,,,,,,,,,,,,,,,,,3HS240045600
+8774953501002,hsq-3hs240045600,X-Power Buckle Strap Mid,,,,,,,,,,,,,,,,,,3HS240045600
 15665006346570,hsq-3hs240045700,X-Power Buckle Strap Long,,,,,,,,,,,,,,,,,,3HS240045700
 15665006379338,hsq-3hs24004580x,X-Power Replacement Sole,,,,,,,,,,,,,,,,,,3HS240045801
 15665006412106,hsq-3hs240047000,X-Power Strap Lock,,,,,,,,,,,,,,,,,,3HS240047000
-15665006477642,hsq-3hs240052400,MX-9 ADV MIPS® Visor CY24,,,,,,,,,,,,,,,,,,3HS240052400
+8774956581194,hsq-3hs240052400,MX-9 ADV MIPS® Visor CY24,,,,,,,,,,,,,,,,,,3HS240052400
 8774951829834,hsq-3hs24005600x,SPARK 2 CROWN PADDING,,,,,,,,,,,,,,,,,,3HS240056001
 8774951928138,hsq-3hs24005610x,SPARK 2 CHEEK PADS,,,,,,,,,,,,,,,,,,3HS240056101
 15665006510410,hsq-3hs240056200,SPARK 2 SUN VISOR DARK OS,,,,,,,,,,,,,,,,,,3HS240056200
@@ -3815,7 +3815,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 15665008279882,hsq-3hs25001040x,Railed Jersey BLK/BLUE,,,,,,,,,,,,,,,,,,3HS250010402
 10316838666570,hsq-3hs25001050x,Railed Pants,,,,,,,,,,,,,,,,,,3HS250010502
 15665008312650,hsq-3hs25001070x,Gotland Jacket,,,,,,,,,,,,,,,,,,3HS250010702
-15665008378186,hsq-3hs25001080x,Gotland K-HYDRATECH Pro Jacket,,,,,,,,,,,,,,,,,,3HS250010802
+,hsq-3hs25001080x,Gotland K-HYDRATECH Pro Jacket,,,,,,,,,,,,,,,,,,3HS250010802
 15665008443722,hsq-3hs25001090x,Gotland Vest,,,,,,,,,,,,,,,,,,3HS250010902
 15665008542026,hsq-3hs25001100x,Gotland Jersey Blue,,,,,,,,,,,,,,,,,,3HS250011002
 15665008574794,hsq-3hs25001110x,Gotland Jersey Black,,,,,,,,,,,,,,,,,,3HS250011102
@@ -3943,7 +3943,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 8774829048138,hsq-47037008000,Gasket control cover,,,,,,,,,,,,,,,,,,47037008000
 8774829080906,hsq-47037085000,Stopper plate 85 SX,,,,,,,,,,,,,,,,,,47037085000
 8774828982602,hsq-47037092000,Top sealing element 85 SX,,,,,,,,,,,,,,,,,,47037092000
-15665010901322,hsq-47039093000,$M-47039093000,,,,,,,,,,,,,,,,,,47039093000
+8732963733834,hsq-47039093000,$M-47039093000,,,,,,,,,,,,,,,,,,47039093000
 8774831079754,hsq-47110965010,Chain link,,,,,,,,,,,,,,,,,,47110965010
 8775007895882,hsq-47130097000,Cylinder seal set,,,,,,,,,,,,,,,,,,47130097000
 8774831145290,hsq-47205979010,Damping material kit,,,,,,,,,,,,,,,,,,47205979010
@@ -4535,10 +4535,10 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 8774802407754,hsq-a42005979583,Powercore 2.1 sticker,,,,,,,,,,,,,,,,,,A42005979583
 8790125642058,hsq-a42030097000,Cylinder gasket kit MX 125,,,,,,,,,,,,,,,,,,A42030097000
 8790125871434,hsq-a42030960000,Factory cylinder head combustion chamber insert,,,,,,,,,,,,,,,,,,A42030960000
-15665017684298,hsq-a42037006000,Dichtung Auslasssteuerungsdeckel,,,,,,,,,,,,,,,,,,A42037006000
+15179992990026,hsq-a42037006000,Dichtung Auslasssteuerungsdeckel,,,,,,,,,,,,,,,,,,A42037006000
 8790125379914,hsq-a42037920000,Exhaust flap,,,,,,,,,,,,,,,,,,A42037920000
-15665017782602,hsq-a43030105033,Zylinder kpl. mit Flansch,,,,,,,,,,,,,,,,,,A43030105033
-15665017815370,hsq-a43030160000,Brennraumeinsatz,,,,,,,,,,,,,,,,,,A43030160000
+,hsq-a43030105033,Zylinder kpl. mit Flansch,,,,,,,,,,,,,,,,,,A43030105033
+,hsq-a43030160000,Brennraumeinsatz,,,,,,,,,,,,,,,,,,A43030160000
 8774808830282,hsq-a44003996000,Front sprocket cover,,,,,,,,,,,,,,,,,,A44003996000
 8774805848394,hsq-a44005979010,Damping material kit,,,,,,,,,,,,,,,,,,A44005979010
 8774805815626,hsq-a44005979020,Repair kit,,,,,,,,,,,,,,,,,,A44005979020
@@ -4546,7 +4546,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 8774803587402,hsq-a45005979010,Damping material kit,,,,,,,,,,,,,,,,,,A45005979010
 8774803554634,hsq-a45005979020,Repair kit,,,,,,,,,,,,,,,,,,A45005979020
 8774808305994,hsq-a46003090020,Linkage protection,,,,,,,,,,,,,,,,,,A46003090020
-15665018110282,hsq-a46003090030,Bushing,,,,,,,,,,,,,,,,,,A46003090030
+7149523992757,hsq-a46003090030,Bushing,,,,,,,,,,,,,,,,,,A46003090030
 8774803063114,hsq-a46003923044,Side stand,,,,,,,,,,,,,,,,,,A46003923044
 8774808863050,hsq-a46003996000,Front sprocket cover,,,,,,,,,,,,,,,,,,A46003996000
 8774806045002,hsq-a46005900020,Repair kit,,,,,,,,,,,,,,,,,,A46005900020
@@ -4570,10 +4570,10 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 8774808633674,hsq-a46010910044c1,Rear wheel hub,,,,,,,,,,,,,,,,,,A46010910044C1
 8774807290186,hsq-a46010910044c1a,Rear wheel hub,,,,,,,,,,,,,,,,,,A46010910044C1A
 8774807126346,hsq-a46013975010c1,Brake caliper support,,,,,,,,,,,,,,,,,,A46013975010C1
-15665018437962,hsq-a47005979010,Damping material kit,,,,,,,,,,,,,,,,,,A47005979010
+,hsq-a47005979010,Damping material kit,,,,,,,,,,,,,,,,,,A47005979010
 15665018470730,hsq-a47005979020,Silencer housing,,,,,,,,,,,,,,,,,,A47005979020
-15665018503498,hsq-a47005979030,Noise reduction insert,,,,,,,,,,,,,,,,,,A47005979030
-15665018569034,hsq-a47005979050,End cap,,,,,,,,,,,,,,,,,,A47005979050
+,hsq-a47005979030,Noise reduction insert,,,,,,,,,,,,,,,,,,A47005979030
+,hsq-a47005979050,End cap,,,,,,,,,,,,,,,,,,A47005979050
 8774805946698,hsq-a48005900020,Repair kit,,,,,,,,,,,,,,,,,,A48005900020
 8774805979466,hsq-a48005901020,Repair kit,,,,,,,,,,,,,,,,,,A48005901020
 8774808207690,hsq-a48005905000,Factory header,,,,,,,,,,,,,,,,,,A48005905000
@@ -4592,7 +4592,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 10316824510794,hsq-a48006015000a,Air filter oiled,,,,,,,,,,,,,,,,,,A48006015000A
 10230406906186,hsq-a48009072000c1s,Spoke nipple,,,,,,,,,,,,,,,,,,A48009072000C1S
 8774804144458,hsq-a49001039010,Handlebar mount kit,,,,,,,,,,,,,,,,,,A49001039010
-15665018765642,hsq-a49005981010,Damping material kit,,,,,,,,,,,,,,,,,,A49005981010
+,hsq-a49005981010,Damping material kit,,,,,,,,,,,,,,,,,,A49005981010
 8774802440522,hsq-a49005981583,FMF Q4 sticker,,,,,,,,,,,,,,,,,,A49005981583
 8774807519562,hsq-a4901397503368,Brake caliper support with brake disc guard,,,,,,,,,,,,,,,,,,A4901397503368
 8790126068042,hsq-a4901397513068,Brake disc guard,,,,,,,,,,,,,,,,,,A4901397513068
@@ -4789,7 +4789,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 9370013368650,hsq-hra3510024,"Picture for wall 1250x510, motif 04_2020",,,,,,,,,,,,,,,,,,HRA3510024
 9370013335882,hsq-hra3510025,"Picture for wall 1250x510, motif 07_2020",,,,,,,,,,,,,,,,,,HRA3510025
 9370013270346,hsq-hra3510026,"Picture for wall 1250x510, motif 08_2020",,,,,,,,,,,,,,,,,,HRA3510026
-15664998482250,hsq-hsfunct,Husky Style Functional new,,,,,,,,,,,,,,,,,,3HS192540X
+,hsq-hsfunct,Husky Style Functional new,,,,,,,,,,,,,,,,,,3HS192540X
 8774962577738,hsq-hvp3x3qskt1,HQV 3X3 QUICKSHADE MS COMPLETE,,,,,,,,,,,,,,,,,,HVP3X3QSKT1
 8774962413898,hsq-hvp6x3qskt1,HQV 6X3 QUICKSHADE MS COMPLETE,,,,,,,,,,,,,,,,,,HVP6X3QSKT1
 8774810829130,hsq-j770013824,O-ring,,,,,,,,,,,,,,,,,,J770013824
@@ -4865,7 +4865,7 @@ id,handle,title,fits_on,fits_on_year,fits_on_make,fits_on_model,fits_on_year_new
 8775054852426,hsq-t125s,Pin wrench,,,,,,,,,,,,,,,,,,T125S
 8775049871690,hsq-t14034,Seal Grease,,,,,,,,,,,,,,,,,,T14034
 8775261585738,hsq-t14083,Special tool,,,,,,,,,,,,,,,,,,T14083
-15665022992714,hsq-t14105,Adapter,,,,,,,,,,,,,,,,,,T14105
+9400595546442,hsq-t14105,Adapter,,,,,,,,,,,,,,,,,,T14105
 8775056621898,hsq-t146,Mounting tool,,,,,,,,,,,,,,,,,,T146
 8775057146186,hsq-t147,Clamping bush,,,,,,,,,,,,,,,,,,T147
 8775057703242,hsq-t149,Calibrating central carrier bush,,,,,,,,,,,,,,,,,,T149

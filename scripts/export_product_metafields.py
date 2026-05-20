@@ -42,6 +42,11 @@ def main():
     )
     add_brand_argument(p)
     p.add_argument(
+        "--refresh-shopify-cache",
+        action="store_true",
+        help="Shopify productindex opnieuw ophalen voor ontbrekende Product Id's.",
+    )
+    p.add_argument(
         "--product-ids",
         default=None,
         help=f"Pad naar product_ids_from_xml.csv (default: {config.IDS_OUTPUT_DIR}/…).",
@@ -104,6 +109,9 @@ def main():
         all_makes=args.ymm_all_makes,
     )
 
+    if args.refresh_shopify_cache:
+        os.environ["KTM_FORCE_REFRESH_SHOPIFY_CACHE"] = "1"
+
     out, n = run_metafields_export(
         product_ids_path=args.product_ids,
         output_path=args.output,
@@ -111,6 +119,7 @@ def main():
         filter_handles=filter_handles,
         filter_makes=filter_makes,
         ymm_all_makes=args.ymm_all_makes,
+        refresh_shopify_cache=args.refresh_shopify_cache,
     )
     print(
         f"Metafields Manager CSV (merk={config.BRAND_ID}):",

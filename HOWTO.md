@@ -70,6 +70,8 @@ Standaard bevat YMM (en metafields `fits_on*`) alleen fitment voor **KTM**, **Hu
 
 Na YMM-import: metafields opnieuw importeren (`export_product_metafields.py` per merk) — overschrijft `fits_on` op de producten. Gebruik **geen** `--merge-from-shopify-csv` bij een schone refresh (dat haalt oude shop-data terug).
 
+Kolom **`id`** = Shopify Product Id uit `product_ids_from_xml.csv` + Shopify-cache. Leeg = handle niet (nog) in Shopify. Na nieuwe product-import: eerst `export_product_ids_and_ymm.py --refresh-shopify-cache`, daarna `export_product_metafields.py --refresh-shopify-cache` (zelfde merk).
+
 ### YMM-app: alleen **Update rows** (geen append)
 
 `ymm_APP_import_*.csv` heeft geen kolom **Id** → niet voor Update rows. Wel na vergelijking met een app-export:

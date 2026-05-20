@@ -50,7 +50,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-25T18:16:28+02:00,9399609950538,wp-0761c141v002220,XPLOR PRO 6500 Cartridge 690/701 ENDURO 20-23,WP - Offroad
 2024-07-25T18:11:20+02:00,9399602151754,wp-0791l101u400220,AER Conversion kit,WP - Pro Components
 2024-07-25T18:16:50+02:00,9399610409290,wp-0797c167u002220,XPLOR PRO 6500 Cartridge 125-501 EXC & 125-500 EC/FE/TE/TX 17-23,WP - Offroad
-2026-05-18T21:58:53+02:00,15665042194762,wp-0900001601200,"Collar screw M16 x 1,5",WP - Pro Components
+,8543683248458,wp-0900001601200,"Collar screw M16 x 1,5",Pro Components
 2024-07-26T10:09:11+02:00,9400592925002,wp-0963c104w001220,"APEX PRO 6500 Cartridge 125-390 DUKE 24-25 & 401 SVARTPILEN, VITPILEN 24-25",WP - Cartridge
 2024-07-26T10:09:48+02:00,9400593711434,wp-0963c404w313220,APEX PRO 6746 Shock absorber 125-390 DUKE 24-25,WP - Shock
 2024-07-26T10:08:26+02:00,9400592007498,wp-10150u07set,XACT PRO HUSQVARNA SUSPENSION SET,WP - Pro Components
@@ -833,7 +833,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-26T10:44:22+02:00,9400619467082,wp-a460c199x400220,XACT PRO Cairoli Edition,WP - Offroad
 2024-07-25T18:17:39+02:00,9399611392330,wp-a460c401w411220,XACT PRO 8950 Shock absorber,WP - Offroad
 2024-07-25T18:17:45+02:00,9399611523402,wp-a460c409w411220,XACT PRO 8950 Shock absorber 250-450 SX-F & 350/450 FX 2023,WP - Offroad
-2026-05-18T22:01:01+02:00,15665046159690,wp-a48009072000c1s,Spoke nipple,WP - Pro Components
+,10218359193930,wp-a48009072000c1s,Spoke nipple,Pro Components
 2024-07-25T18:17:07+02:00,9399610638666,wp-a480c108w002220,XACT PRO 6500 Cartridge 450 SMR 21-24 & 450 FS 21-23,WP - Cartridge
 2024-07-25T18:23:37+02:00,9399618142538,wp-a49001997000,Dirt scraper 105-530 EXC/SX & 125-570 FC/FE/FX/TC/TE/TX 10-25,"stock, synkro-clone-ktm-shop-nederland, WP - Technical Accessories"
 2024-07-25T18:23:23+02:00,9399618011466,wp-a49010901544c1a,"Factory Racing rear wheel 2.15x18"" 125-450 SX/XC & 125-450 FC/FS/FX/TC/TX 2023",WP - Technical Accessories
@@ -859,8 +859,8 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-26T10:10:05+02:00,9400594006346,wp-a59012955544,Lowering kit,WP - Technical Accessories
 2026-05-18T22:01:10+02:00,15665046421834,wp-a601c142y001220,XPLOR PRO 6500 Cartridge,WP - Cartridge
 2026-05-18T22:01:13+02:00,15665046487370,wp-a601c442y313220,XPLOR PRO 6746 Federbein,WP - Shock
-2026-05-18T22:01:15+02:00,15665046651210,wp-a606c141y401102,Fork 690 SMC R 2025,WP - Fork
-2026-05-18T22:01:18+02:00,15665046716746,wp-a606c410y313000,Shock absorber 690 Enduro R 2025,WP - Shock
+,,wp-a606c141y401102,Fork 690 SMC R 2025,Fork
+,,wp-a606c410y313000,Shock absorber 690 Enduro R 2025,Shock
 2024-07-25T18:21:19+02:00,9399616078154,wp-a60712955044,Lowering kit,"nada-hidden, WP - Technical Accessories"
 2024-07-26T10:09:14+02:00,9400592990538,wp-a607c126x001220,APEX PRO 6500 Cartridge 990 DUKE 2024,WP - Cartridge
 2024-07-26T10:08:54+02:00,9400592597322,wp-a607c249x100200,APEX PRO 7117 Steering damper kit 990 DUKE & 801 SVARTPILEN/VITPILEN 24-25,WP - Fork
@@ -873,8 +873,8 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2026-05-18T22:01:23+02:00,15665046847818,wp-a674c101y702220,APEX PRO 8500 Cartridge,WP - Cartridge
 2026-05-18T22:01:25+02:00,15665046946122,wp-a674c401y413220,APEX PRO 8750 Shock absorber,WP - Shock
 2026-05-18T22:01:28+02:00,15665047011658,wp-a67912955044,Lowering kit,WP - Technical Accessories
-2026-05-18T22:01:30+02:00,15665047109962,wp-a681c422y413200,Shock absorber 1390 Super Duke RR 2025,WP - Shock
-2026-05-18T22:01:33+02:00,15665047273802,wp-a719c122y402200,Fork 1390 Super Duke RR Track 2025,WP - Fork
+,,wp-a681c422y413200,Shock absorber 1390 Super Duke RR 2025,Shock
+,,wp-a719c122y402200,Fork 1390 Super Duke RR Track 2025,Fork
 2026-05-18T22:01:38+02:00,15665047372106,wp-a719c122y402220,WP Apex Pro Fork,WP - Fork
 2026-05-18T22:01:42+02:00,15665047437642,wp-a719c423y413220,WP Apex Pro Shock,WP - Shock
 2024-07-25T18:48:41+02:00,9399646519626,wp-ag180001int,Tent Frame 3 x 3 m,WP - Retail & Marketing Material
@@ -1541,7 +1541,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-25T18:29:03+02:00,9399625417034,wp-r14047t,Fork repair kit,"Out of stock, stock, synkro-clone-ktm-shop-nederland, WP - Pro Components"
 2026-05-18T22:01:50+02:00,15665047699786,wp-r14054t,Spacer kit,WP - Pro Components
 2024-07-25T18:30:41+02:00,9399627776330,wp-r516,Fork repair kit,WP - Pro Components
-2026-05-18T22:01:53+02:00,15665047798090,wp-r516t,Fork gasket kit 43 mm,WP - Pro Components
+,9357001457994,wp-r516t,Fork gasket kit 43 mm,Pro Components
 ,,wp-rc1252014,RC 125 2014,WP Dealer Net INT
 ,,wp-rc1252018,RC 125 2018,WP Dealer Net INT
 ,,wp-rc1252019,RC 125 2019,WP Dealer Net INT
@@ -1586,7 +1586,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-25T18:30:48+02:00,9399627874634,wp-rp10006,fork repair kit,WP - Pro Components
 2024-07-25T18:30:51+02:00,9399627972938,wp-rp10007,fork repair kit,WP - Pro Components
 2024-07-25T18:29:58+02:00,9399626760522,wp-rp10012,Fork repair kit,WP - Pro Components
-2026-05-18T22:01:56+02:00,15665047929162,wp-rp10048t,Fork repair kit,WP - Pro Components
+,8753710924106,wp-rp10048t,Fork repair kit,Pro Components
 ,,wp-rr2t2502015,Beta RR 2T 250 2015,WP Dealer Net INT
 ,,wp-rr2t2502016,Beta RR 2T 250 2016,WP Dealer Net INT
 ,,wp-rr2t2502017,Beta RR 2T 250 2017,WP Dealer Net INT
@@ -1649,7 +1649,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-25T18:26:35+02:00,9399621189962,wp-s8098200410000x,FORK SPRING SET 1390 SUPER DUKE 24-25,WP - Pro Components
 2026-05-18T22:02:07+02:00,15665048355146,wp-s80982004xs,Shock absorber spring,WP - Pro Components
 2024-07-25T18:26:28+02:00,9399621091658,wp-s809900036s0000,Fork spring set,WP - Pro Components
-2026-05-18T22:02:10+02:00,15665048551754,wp-s809900047s0000,Hauptfeder (43.8) 5.0-450 Gabe,WP - Dealer Shop WP
+,,wp-s809900047s0000,$M-S809900047S0000,Dealer Shop WP
 2026-05-18T22:02:12+02:00,15665048650058,wp-s80992001x,FORK SPRING SET,WP - Dealer Shop WP
 2026-05-18T22:02:15+02:00,15665048781130,wp-s8198000x00028,Shock Absorber Spring,WP - Pro Components
 2024-07-25T18:28:20+02:00,9399624433994,wp-s82882000100000,Spring retainer,WP - Pro Components
@@ -1701,7 +1701,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-25T18:59:55+02:00,9399656907082,wp-t1206,Pressing tool,"Out of stock, WP - Special tools"
 2024-07-25T19:00:01+02:00,9399656972618,wp-t1207s,Pressing tool,"Out of stock, WP - Special tools"
 2024-07-25T19:00:07+02:00,9399657038154,wp-t1208,Pressing tool,WP - Special tools
-2026-05-18T22:02:35+02:00,15665049829706,wp-t1209,Guide bush removal/fitting tool,WP - Special tools
+,7113470116021,wp-t1209,Guide bush removal/fitting tool,Special tools
 2024-07-26T10:10:56+02:00,9400594891082,wp-t1211,Clamping jaw D= 54,WP - Special tools
 2024-07-26T10:11:07+02:00,9400595087690,wp-t12126s,Socket,WP - Special tools
 2024-07-26T10:12:24+02:00,9400597184842,wp-t12127,Socket,WP - Special tools
@@ -1716,7 +1716,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-26T10:39:56+02:00,9400615534922,wp-t1216,Pressing tool,WP - Special tools
 2024-07-25T18:53:34+02:00,9399650779466,wp-t1218,Pin wrench,WP - Special tools
 2024-07-26T10:40:15+02:00,9400615895370,wp-t1238,Socket,WP - Special tools
-2026-05-18T22:02:41+02:00,15665050190154,wp-t1240s,Vacuum pump,WP - Special tools
+,8775278887242,wp-t1240s,Vacuum pump,Special tools
 2024-07-25T18:55:00+02:00,9399652057418,wp-t1245s,Filling adapter,WP - Special tools
 2024-07-25T18:51:26+02:00,9399649075530,wp-t1252,Dorn guide bush holder,WP - Special tools
 2024-07-25T19:05:31+02:00,9399663493450,wp-t1255,Vacuum oil,WP - Special tools
@@ -1833,7 +1833,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-25T18:55:45+02:00,9399652843850,wp-t1517s,Shock length measuring tool,WP - Special tools
 2024-07-25T18:56:55+02:00,9399654089034,wp-t152,Belray Molylube Antiseize,WP - Special tools
 2024-07-26T10:11:35+02:00,9400595841354,wp-t1558s,Housing for nitrogen filling device,WP - Special tools
-2026-05-18T22:03:00+02:00,15665050878282,wp-t1561s,Spring mounting tool,WP - Special tools
+,,wp-t1561s,Spring mounting tool,Special tools
 2024-07-25T18:55:11+02:00,9399652188490,wp-t1563,Adaptor PDS Ø 58mm,WP - Special tools
 2024-07-25T18:55:17+02:00,9399652254026,wp-t1564,Adaptor SX Ø 65mm,WP - Special tools
 2024-07-25T18:55:20+02:00,9399652286794,wp-t1565,Filling adapter,WP - Special tools

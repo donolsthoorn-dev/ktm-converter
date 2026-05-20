@@ -802,6 +802,32 @@ def build_handle_to_product_id(product_ids_path: str) -> dict[str, str]:
     return out
 
 
+def enrich_handle_to_product_id_from_shopify(
+    handle_to_product_id: dict[str, str],
+    handles: set[str],
+    *,
+    force_refresh: bool = False,
+) -> int:
+    """Vul ontbrekende handle→Product Id aan vanuit Shopify productindex (cache/API)."""
+    if not handles:
+        return 0
+    try:
+        index = get_shopify_products_index(force_refresh=force_refresh)
+    except Exception as e:
+        print(f"Shopify index niet geladen voor Product Id-aanvulling: {e}", flush=True)
+        return 0
+    added = 0
+    for h in handles:
+        if handle_to_product_id.get(h):
+            continue
+        ent = index.get(h) or index.get(h.lower()) or {}
+        pid = (ent.get("id") or "").replace("~", "").strip()
+        if pid:
+            handle_to_product_id[h] = pid
+            added += 1
+    return added
+
+
 def _canonicalize_make_filter_value(value: str) -> str:
     key = (value or "").strip().lower().replace("_", " ")
     return _YMM_MAKE_CANONICAL.get(key, (value or "").strip())

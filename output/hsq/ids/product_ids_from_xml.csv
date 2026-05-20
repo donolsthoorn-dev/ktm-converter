@@ -556,12 +556,12 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-04-20T23:34:12+02:00,8774806241610,hsq-22112922011,Side bag fixing mechanism,"HSQ - Technical Accessories, Partstream"
 2024-04-20T22:33:07+02:00,8774710034762,hsq-22112922044,Touratech case,HSQ - Technical Accessories
 2024-04-20T23:35:20+02:00,8774807486794,hsq-22112922101,Side bag left,"HSQ - Technical Accessories, Partstream"
-2026-05-18T21:24:36+02:00,15664992485706,hsq-22112922500,Touring side case left,HSQ - Technical Accessories
+,,hsq-22112922500,Touring side case left,Technical Accessories
 2024-04-20T23:34:49+02:00,8774806896970,hsq-22112923000,Touratech case,"HSQ - Technical Accessories, Partstream"
 2024-04-20T23:37:00+02:00,8774809747786,hsq-22112923001,Side bag,"HSQ - Technical Accessories, Partstream"
 2024-04-20T22:33:15+02:00,8774710067530,hsq-22112923044,Touratech case,HSQ - Technical Accessories
 2024-04-20T23:35:18+02:00,8774807454026,hsq-22112923101,Side bag right,"HSQ - Technical Accessories, Partstream"
-2026-05-18T21:24:39+02:00,15664992518474,hsq-22112923500,Touring side case right,HSQ - Technical Accessories
+,,hsq-22112923500,Touring side case right,Technical Accessories
 2024-04-20T22:32:34+02:00,8774709838154,hsq-22112924060,Inner bag 901 NORDEN  2022-2024,HSQ - Technical Accessories
 2024-04-20T21:54:20+02:00,8774666551626,hsq-22112925044,Side bag set,HSQ - Technical Accessories
 2024-04-20T22:32:30+02:00,8774709772618,hsq-22112925060,Inner bag 901 NORDEN  2022-2024,HSQ - Technical Accessories
@@ -1172,7 +1172,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2026-05-18T21:27:11+02:00,15664995008842,hsq-3ag210069100,TIRE 16,HSQ - Electric Balance Bikes
 2026-05-18T21:27:14+02:00,15664995041610,hsq-3ag210069200,SMART BATTERY CHARGER,HSQ - Electric Balance Bikes
 2026-05-18T21:27:16+02:00,15664995107146,hsq-3ag210069300,MOTOR AND ESC COMBO 12,HSQ - Electric Balance Bikes
-2026-05-18T21:27:19+02:00,15664995172682,hsq-3ag210069400,MOTOR AND ESC COMBO BRUSHLESS 16,HSQ - Electric Balance Bikes
+,7113435676853,hsq-3ag210069400,MOTOR AND ESC COMBO BRUSHLESS 16,Electric Balance Bikes
 2026-05-18T21:27:21+02:00,15664995270986,hsq-3ag210080400,FRONT WHEEL 12,HSQ - Electric Balance Bikes
 2026-05-18T21:27:24+02:00,15664995336522,hsq-3ag210080500,REAR WHEEL 12,HSQ - Electric Balance Bikes
 2026-05-18T21:27:26+02:00,15664995369290,hsq-3ag210080600,FRONT WHEEL 16,HSQ - Electric Balance Bikes
@@ -1192,37 +1192,37 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-05T08:13:33+02:00,9370535723338,hsq-3ag240057100,D3O CP1 CHEST PROTECTOR,HSQ -
 2024-07-04T22:01:02+02:00,9369922470218,hsq-3ag240057200,D3O CP1 CHEST PROTECTOR,HSQ -
 2024-04-21T00:55:41+02:00,8774947766602,hsq-3ag24005860x,D3O VIPER CENTRAL BACK PROTECTOR,HSQ - Functional
-2026-05-18T21:27:38+02:00,15664995631434,hsq-3ag240069800,Paddock Tent Carry Wheel Bag,HSQ - Casual and Accessories
+,8636804301130,hsq-3ag240069800,Paddock Tent Carry Wheel Bag,Casual and Accessories
 2026-05-18T21:27:42+02:00,15664995729738,hsq-3ag24007260x,D3O VIPER AIR BACK PROTECTOR,HSQ - Functional
 2026-05-18T21:27:47+02:00,15664995828042,hsq-3ag25003600x,TECH-AIR® OFFROAD AIRBAG VEST,HSQ - Functional
-2026-05-18T21:27:49+02:00,15664995860810,hsq-3ag25003700x,TECH 7 MX SOLE BLACK,HSQ - Functional
-2026-05-18T21:27:52+02:00,15664995893578,hsq-3ag250037100,Tech 7 Buckle Base Black,HSQ - Functional
-2026-05-18T21:27:54+02:00,15664995959114,hsq-3ag250037200,Tech 7 Buckle Strap Black,HSQ - Functional
+,,hsq-3ag25003700x,TECH 7 MX SOLE BLACK,Functional
+,10347888214346,hsq-3ag250037100,Tech 7 Buckle Base Black,Functional
+,10347888181578,hsq-3ag250037200,Tech 7 Buckle Strap Black,Functional
 2024-07-04T22:00:31+02:00,9369922273610,hsq-3ag250037500,Velocity Photocromic lens Clear Adaptive 37-87 VLT,"HSQ -, nada-hidden"
-2026-05-18T21:27:57+02:00,15664995991882,hsq-3ag250037600,Velocity Photocromic lens Light Grey Adaptive 28-80 VLT,HSQ - Functional
-2026-05-18T21:27:59+02:00,15664996024650,hsq-3ag250037700,Velocity Cryztal Iriz Lens Fuchsia 22 VLT,HSQ - Functional
-2026-05-18T21:28:01+02:00,15664996057418,hsq-3ag250037800,Velocity Cryztal Iriz Lens Prisma 60 VLT,HSQ - Functional
-2026-05-18T21:28:03+02:00,15664996122954,hsq-3ag250037900,Velocity Cryztal Iriz Lens Platinum  30 VLT,HSQ - Functional
-2026-05-18T21:28:06+02:00,15664996155722,hsq-3ag250038200,Velocity Iriz Lens Blue 49 VLT,HSQ - Functional
-2026-05-18T21:28:08+02:00,15664996188490,hsq-3ag250038300,Velocity Iriz Lens Bronze 68 VLT,HSQ - Functional
-2026-05-18T21:28:10+02:00,15664996221258,hsq-3ag250038600,Velocity Iriz Lens Platinum 28 VLT,HSQ - Functional
-2026-05-18T21:28:12+02:00,15664996254026,hsq-3ag250038900,Velocity Iriz Lens Silver 50 VLT,HSQ - Functional
-2026-05-18T21:28:15+02:00,15664996352330,hsq-3ag250039000,Velocity Iriz Lens Red 28 VLT,HSQ - Functional
-2026-05-18T21:28:19+02:00,15664996483402,hsq-3ag250039200,Velocity Iriz Lens Purple 78 VLT,HSQ - Functional
-2026-05-18T21:28:21+02:00,15664996516170,hsq-3ag250039300,Velocity Enduro Lens Clear 83 VLT,HSQ - Functional
-2026-05-18T21:28:24+02:00,15664996745546,hsq-3ag250039400,Velocity Enduro Lens Rose Ultra Contrast 32 VLT,HSQ - Functional
-2026-05-18T21:28:26+02:00,15664996778314,hsq-3ag250040000,Velocity Lens Clear 83 VLT,HSQ - Functional
-2026-05-18T21:28:28+02:00,15664996811082,hsq-3ag250040100,Velocity Lens Light Grey 58 VLT,HSQ - Functional
-2026-05-18T21:28:30+02:00,15664997040458,hsq-3ag250040200,Velocity Lens Yellow 70 VLT,HSQ - Functional
-2026-05-18T21:28:33+02:00,15664997073226,hsq-3ag250040300,Velocity Lens Blue 52 VLT,HSQ - Functional
-2026-05-18T21:28:35+02:00,15664997105994,hsq-3ag250040400,Velocity Lens Orange 51 VLT,HSQ - Functional
-2026-05-18T21:28:37+02:00,15664997302602,hsq-3ag250040500,Velocity Lens Rose 32 VLT,HSQ - Functional
-2026-05-18T21:28:39+02:00,15664997368138,hsq-3ag250040600,Velocity Lens Smoke 28 VLT,HSQ - Functional
-2026-05-18T21:28:41+02:00,15664997433674,hsq-3ag250040700,Velocity 5.5/6.5 Roll-Off Kit,HSQ - Functional
-2026-05-18T21:28:44+02:00,15664997499210,hsq-3ag250040800,Velocity 5.5/6.5 Roll-Off Film 48mm (6pcs),HSQ - Functional
-2026-05-18T21:28:46+02:00,15664997728586,hsq-3ag250040900,Velocity 6.5 Roll-Off Dirt Strips (3pcs),HSQ - Functional
-2026-05-18T21:28:49+02:00,15664997761354,hsq-3ag250041000,Velocity Tear-Off Standard (20pcs),HSQ - Functional
-2026-05-18T21:28:53+02:00,15664997892426,hsq-3ag250041100,Velocity Nose Deflector Black,HSQ - Functional
+,,hsq-3ag250037600,Velocity Photocromic lens Light Grey Adaptive 28-80 VLT,Functional
+,,hsq-3ag250037700,Velocity Cryztal Iriz Lens Fuchsia 22 VLT,Functional
+,,hsq-3ag250037800,Velocity Cryztal Iriz Lens Prisma 60 VLT,Functional
+,,hsq-3ag250037900,Velocity Cryztal Iriz Lens Platinum  30 VLT,Functional
+,,hsq-3ag250038200,Velocity Iriz Lens Blue 49 VLT,Functional
+,,hsq-3ag250038300,Velocity Iriz Lens Bronze 68 VLT,Functional
+,,hsq-3ag250038600,Velocity Iriz Lens Platinum 28 VLT,Functional
+,,hsq-3ag250038900,Velocity Iriz Lens Silver 50 VLT,Functional
+,,hsq-3ag250039000,Velocity Iriz Lens Red 28 VLT,Functional
+,,hsq-3ag250039200,Velocity Iriz Lens Purple 78 VLT,Functional
+,,hsq-3ag250039300,Velocity Enduro Lens Clear 83 VLT,Functional
+,,hsq-3ag250039400,Velocity Enduro Lens Rose Ultra Contrast 32 VLT,Functional
+,,hsq-3ag250040000,Velocity Lens Clear 83 VLT,Functional
+,,hsq-3ag250040100,Velocity Lens Light Grey 58 VLT,Functional
+,,hsq-3ag250040200,Velocity Lens Yellow 70 VLT,Functional
+,,hsq-3ag250040300,Velocity Lens Blue 52 VLT,Functional
+,,hsq-3ag250040400,Velocity Lens Orange 51 VLT,Functional
+,,hsq-3ag250040500,Velocity Lens Rose 32 VLT,Functional
+,,hsq-3ag250040600,Velocity Lens Smoke 28 VLT,Functional
+,,hsq-3ag250040700,Velocity 5.5/6.5 Roll-Off Kit,Functional
+,,hsq-3ag250040800,Velocity 5.5/6.5 Roll-Off Film 48mm (6pcs),Functional
+,,hsq-3ag250040900,Velocity 6.5 Roll-Off Dirt Strips (3pcs),Functional
+,,hsq-3ag250041000,Velocity Tear-Off Standard (20pcs),Functional
+,,hsq-3ag250041100,Velocity Nose Deflector Black,Functional
 2024-04-21T00:33:45+02:00,8774893207882,hsq-3hs1458300,Logo Beanie,"HSQ - Casual and Accessories, nada-hidden"
 ,,hsq-3hs1470600,Moose,Marketing Material
 2024-04-21T00:17:51+02:00,8774859489610,hsq-3hs155620x,Basic Logo Tee,"HSQ - Casual and Accessories, nada-hidden"
@@ -1263,7 +1263,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2026-05-18T21:29:28+02:00,15664999334218,hsq-3hs199830001,Flame Strap Lock,HSQ - Functional
 2026-05-18T21:29:31+02:00,15664999366986,hsq-3hs199830002,Flame Buckle Base,HSQ - Functional
 2026-05-18T21:29:33+02:00,15664999432522,hsq-3hs199830003,Flame Buckle Strap,HSQ - Functional
-2026-05-18T21:29:36+02:00,15664999465290,hsq-3hs19991001x,Kids Railed Helmet Interior,HSQ - Functional
+,,hsq-3hs19991001x,Kids Railed Helmet Interior,Functional
 2024-04-21T00:55:24+02:00,8774947209546,hsq-3hs20000620x,Brisker Gloves,"HSQ - Functional, nada-hidden"
 2024-04-21T00:15:41+02:00,8774854410570,hsq-3hs20001050x,Women Origin Shirt,"HSQ - Casual and Accessories, nada-hidden"
 2025-01-09T09:02:11+01:00,9637449859402,hsq-3hs200016200,No Drag Bag,HSQ - Casual and Accessories
@@ -1509,7 +1509,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2026-05-18T21:31:16+02:00,15665002348874,hsq-3hs23003450x,Kids Gravity eDrive-MTB Helmet,HSQ - Functional
 2024-04-21T00:59:35+02:00,8774957171018,hsq-3hs230036100,Moto 9S Flex Railed Helmet Shield,Partstream
 2026-05-18T21:31:18+02:00,15665002381642,hsq-3hs230036200,Moto 9 MIPS® Helmet Shield Dark Blue,HSQ - Functional
-2026-05-18T21:31:23+02:00,15665002611018,hsq-3hs230036800,Kids Gravity eDrive Helmet Shield,HSQ - Functional
+,8774954254666,hsq-3hs230036800,Kids Gravity eDrive Helmet Shield,Functional
 2024-04-21T00:59:32+02:00,8774957039946,hsq-3hs230037600,Velocity Iriz Ultracontrast Lens Blue,Partstream
 2026-05-18T21:31:25+02:00,15665002676554,hsq-3hs230037900,Velocity Lens Clear,HSQ - Functional
 2026-05-18T21:31:28+02:00,15665002873162,hsq-3hs230038100,Velocity Lens Yellow,HSQ - Functional
@@ -1522,7 +1522,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2026-05-18T21:31:38+02:00,15665003266378,hsq-3hs230043500,Kids Railed Goggles Tear-Off (10pcs) OS,HSQ - Functional
 2024-04-21T00:59:29+02:00,8774956941642,hsq-3hs230044100,Authentic Helmet Shield,Partstream
 2026-05-18T21:31:40+02:00,15665003331914,hsq-3hs23005210x,Team Shoes,HSQ - Casual and Accessories
-2026-05-18T21:31:43+02:00,15665003462986,hsq-3hs230052300,Moto-10 Railed Shield / Mouthpiece Set OS,HSQ - Functional
+,8774956515658,hsq-3hs230052300,Moto-10 Railed Shield / Mouthpiece Set OS,Functional
 2026-05-18T21:31:45+02:00,15665003495754,hsq-3hs230052400,Heritage Curved Cap,HSQ - Casual and Accessories
 2024-04-21T00:11:27+02:00,8774845530442,hsq-3hs23005250x,Heritage Tee,"HSQ - Casual and Accessories, nada-hidden"
 2024-04-21T00:21:17+02:00,8774867648842,hsq-3hs23005260x,Heritage Hoodie,"HSQ - Casual and Accessories, nada-hidden"
@@ -1617,13 +1617,13 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2026-05-18T21:33:12+02:00,15665006018890,hsq-3hs240045100,Crossfire 3 SRS Buckle Strap Short,HSQ - Functional
 2026-05-18T21:33:14+02:00,15665006084426,hsq-3hs240045200,Crossfire 3 SRS Buckle Strap Mid,HSQ - Functional
 2026-05-18T21:33:17+02:00,15665006117194,hsq-3hs240045300,Crossfire 3 SRS Buckle Strap Long,HSQ - Functional
-2026-05-18T21:33:19+02:00,15665006182730,hsq-3hs240045400,X-Power Buckle Base,HSQ - Functional
+,8774953369930,hsq-3hs240045400,X-Power Buckle Base,Functional
 2026-05-18T21:33:22+02:00,15665006215498,hsq-3hs240045500,X-Power Buckle Strap Short,HSQ - Functional
-2026-05-18T21:33:24+02:00,15665006281034,hsq-3hs240045600,X-Power Buckle Strap Mid,HSQ - Functional
+,8774953501002,hsq-3hs240045600,X-Power Buckle Strap Mid,Functional
 2026-05-18T21:33:26+02:00,15665006346570,hsq-3hs240045700,X-Power Buckle Strap Long,HSQ - Functional
 2026-05-18T21:33:29+02:00,15665006379338,hsq-3hs24004580x,X-Power Replacement Sole,HSQ - Functional
 2026-05-18T21:33:32+02:00,15665006412106,hsq-3hs240047000,X-Power Strap Lock,HSQ - Functional
-2026-05-18T21:33:34+02:00,15665006477642,hsq-3hs240052400,MX-9 ADV MIPS® Visor CY24,HSQ - Functional
+,8774956581194,hsq-3hs240052400,MX-9 ADV MIPS® Visor CY24,Functional
 2024-04-21T00:57:33+02:00,8774951829834,hsq-3hs24005600x,SPARK 2 CROWN PADDING,"HSQ - Technical Accessories, Partstream"
 2024-04-21T00:57:37+02:00,8774951928138,hsq-3hs24005610x,SPARK 2 CHEEK PADS,"HSQ - Technical Accessories, Partstream"
 2026-05-18T21:33:37+02:00,15665006510410,hsq-3hs240056200,SPARK 2 SUN VISOR DARK OS,HSQ - Functional
@@ -1660,7 +1660,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2026-05-18T21:34:58+02:00,15665008279882,hsq-3hs25001040x,Railed Jersey BLK/BLUE,HSQ - Functional
 2025-08-01T09:40:32+02:00,10316838666570,hsq-3hs25001050x,Railed Pants,HSQ - Functional
 2026-05-18T21:35:01+02:00,15665008312650,hsq-3hs25001070x,Gotland Jacket,HSQ - Functional
-2026-05-18T21:35:04+02:00,15665008378186,hsq-3hs25001080x,Gotland K-HYDRATECH Pro Jacket,HSQ - Functional
+,,hsq-3hs25001080x,Gotland K-HYDRATECH Pro Jacket,Functional
 2026-05-18T21:35:06+02:00,15665008443722,hsq-3hs25001090x,Gotland Vest,HSQ - Functional
 2026-05-18T21:35:08+02:00,15665008542026,hsq-3hs25001100x,Gotland Jersey Blue,HSQ - Functional
 2026-05-18T21:35:11+02:00,15665008574794,hsq-3hs25001110x,Gotland Jersey Black,HSQ - Functional
@@ -1844,7 +1844,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-04-20T23:56:46+02:00,8774829048138,hsq-47037008000,Gasket control cover,"HSQ - Technical Accessories, Partstream"
 2024-04-20T23:56:48+02:00,8774829080906,hsq-47037085000,Stopper plate 85 SX,"HSQ - Technical Accessories, Partstream"
 2024-04-20T23:56:41+02:00,8774828982602,hsq-47037092000,Top sealing element 85 SX,"HSQ - Technical Accessories, Partstream"
-2026-05-18T21:37:14+02:00,15665010901322,hsq-47039093000,Zündkerze NGK BR10 ECMVX,HSQ - Technical Accessories
+,8732963733834,hsq-47039093000,$M-47039093000,Technical Accessories
 2024-04-20T23:20:05+02:00,8774792577354,hsq-4710109400028,Fork protector kit TC (85) 19-25,HSQ - Trim parts/decals
 2024-04-21T01:10:51+02:00,8774983024970,hsq-4710909924430,Wheel set,HSQ - Original Spare Part Kits
 2024-04-20T23:58:54+02:00,8774831079754,hsq-47110965010,Chain link,"HSQ - Technical Accessories, Partstream"
@@ -3670,10 +3670,10 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-04-29T15:42:46+02:00,8790125642058,hsq-a42030097000,Cylinder gasket kit MX 125,Partstream
 2024-04-29T15:42:49+02:00,8790125871434,hsq-a42030960000,Factory cylinder head combustion chamber insert,Partstream
 2024-04-21T10:31:59+02:00,8775887847754,hsq-a4203297504468a,"Clutch slave cylinder protection TC, TE (125, 150) 2023-2025",HSQ - Protection
-2026-05-18T21:44:53+02:00,15665017684298,hsq-a42037006000,Dichtung Auslasssteuerungsdeckel,HSQ - Technical Accessories
+,15179992990026,hsq-a42037006000,Dichtung Auslasssteuerungsdeckel,Technical Accessories
 2024-04-29T15:42:41+02:00,8790125379914,hsq-a42037920000,Exhaust flap,Partstream
-2026-05-18T21:44:56+02:00,15665017782602,hsq-a43030105033,Zylinder kpl. mit Flansch,HSQ - Technical Accessories
-2026-05-18T21:44:58+02:00,15665017815370,hsq-a43030160000,Brennraumeinsatz,HSQ - Technical Accessories
+,,hsq-a43030105033,Zylinder kpl. mit Flansch,Technical Accessories
+,,hsq-a43030160000,Brennraumeinsatz,Technical Accessories
 2025-01-09T08:55:31+01:00,9637446091082,hsq-a43030905044,150 Factory kit  125 TC 23-25,HSQ - Engine
 2024-04-20T23:02:19+02:00,8774755156298,hsq-a44003090044,"Skid plate TC, TE, TX (250, 300) 2023-2025",HSQ - Protection
 2024-04-20T23:02:13+02:00,8774754697546,hsq-a44003090544,"Skid plate with linkage protection TC, TE, TX (250, 300) 2023-2025",HSQ - Protection
@@ -3727,7 +3727,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-04-20T22:52:55+02:00,8774735200586,hsq-a46003012044c1,"Engine brace set FC, FE, FS, FX (250, 350, 350s, 350w, 450) 23-25",HSQ - Engine
 2024-04-20T22:36:25+02:00,8774713377098,hsq-a46003053000ha,"Chain slider FC, FE, FS, FX, TC, TE, TX (125-501)  22-25",HSQ - Chains/Sprockets
 2024-04-20T23:35:56+02:00,8774808305994,hsq-a46003090020,Linkage protection,"HSQ - Technical Accessories, Partstream"
-2026-05-18T21:45:14+02:00,15665018110282,hsq-a46003090030,Bushing,HSQ - Technical Accessories
+,7149523992757,hsq-a46003090030,Bushing,Technical Accessories
 2024-04-20T23:03:43+02:00,8774761185610,hsq-a46003090044,"Skid plate FC, FE, FS, FX (250, 350, 450, 501s) 2022-2025",HSQ - Protection
 2024-04-20T23:03:40+02:00,8774760989002,hsq-a46003090544,"Skid plate with linkage protection FC, FE, FS, FX (250, 350, 450, 501s) 2022-2025",HSQ - Protection
 2024-04-20T22:52:49+02:00,8774735069514,hsq-a46003912044c1,"Engine brace set FC, FE, FS, FX (250, 350, 350s, 350w, 450) 22-25",HSQ - Engine
@@ -3820,10 +3820,10 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-04-20T22:14:24+02:00,8774691094858,hsq-a47005907500,"FMF Megabomb header  4-stroke FC, FE, FX (350) 23-25",HSQ - Exhaust systems
 2024-04-20T22:14:17+02:00,8774691029322,hsq-a47005907501,"FMF Megabomb header  4-stroke FC, FE, FX (350) 23-25",HSQ - Exhaust systems
 2025-08-01T09:35:12+02:00,10316824609098,hsq-a47005979000,"Akrapovic ""Slip-on line""",HSQ - Technical Accessories
-2026-05-18T21:45:35+02:00,15665018437962,hsq-a47005979010,Damping material kit,HSQ - Technical Accessories
+,,hsq-a47005979010,Damping material kit,Technical Accessories
 2026-05-18T21:45:37+02:00,15665018470730,hsq-a47005979020,Silencer housing,HSQ - Technical Accessories
-2026-05-18T21:45:40+02:00,15665018503498,hsq-a47005979030,Noise reduction insert,HSQ - Technical Accessories
-2026-05-18T21:45:43+02:00,15665018569034,hsq-a47005979050,End cap,HSQ - Technical Accessories
+,,hsq-a47005979030,Noise reduction insert,Technical Accessories
+,,hsq-a47005979050,End cap,Technical Accessories
 2025-01-09T08:55:39+01:00,9637446156618,hsq-a47032900000,Rekluse RadiusX 4.0 centrifugal force clutch kit 250/300/350 FE/TE 24-25,HSQ - Engine
 2026-05-18T21:45:45+02:00,15665018700106,hsq-a480010390xx,Handlebar mount,HSQ - Handlebars/instruments/electrics
 2024-04-20T22:36:39+02:00,8774713573706,hsq-a48004970044,"Factory chain guide FC, FE, FS, FX, TC, TE, TX (85-570)  11-25","HSQ - Chains/Sprockets, Out of stock, stock, synkro-clone-ktm-shop-nederland"
@@ -3861,7 +3861,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-04-20T22:41:19+02:00,8774718161226,hsq-a49002979000ab,Handguard kit,"HSQ - Handlebars/instruments/electrics, nada-hidden"
 2024-04-20T22:41:23+02:00,8774718193994,hsq-a49002979000c1,"Handguard kit FX, TX (300, 350, 450) 23-24",HSQ - Handlebars/instruments/electrics
 2024-04-20T22:14:15+02:00,8774690963786,hsq-a49005981000,"Akrapovič  Slip-on Line  4-stroke FE (250, 350, 450, 501) 24-25",HSQ - Exhaust systems
-2026-05-18T21:45:54+02:00,15665018765642,hsq-a49005981010,Damping material kit,HSQ - Technical Accessories
+,,hsq-a49005981010,Damping material kit,Technical Accessories
 2024-04-20T23:32:04+02:00,8774802440522,hsq-a49005981583,FMF Q4 sticker,"HSQ - Technical Accessories, Partstream"
 2024-04-20T22:55:36+02:00,8774738772298,hsq-a4901090104468,"Factory rear wheel 2.15x18""  FC, FE, FX, TC, TE, TX (125-501)  22-25",HSQ - Wheels
 2024-04-20T22:55:44+02:00,8774738936138,hsq-a49010901544c1a,"Factory Racing rear wheel 2.15x18"" FC, FE, FS, FX, TC, TE, TX (125-501)  22-25",HSQ - Wheels
@@ -4550,7 +4550,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-07-04T23:16:28+02:00,9370013368650,hsq-hra3510024,"Picture for wall 1250x510, motif 04_2020",HSQ - Retail Systems
 2024-07-04T23:16:24+02:00,9370013335882,hsq-hra3510025,"Picture for wall 1250x510, motif 07_2020",HSQ - Retail Systems
 2024-07-04T23:16:20+02:00,9370013270346,hsq-hra3510026,"Picture for wall 1250x510, motif 08_2020",HSQ - Retail Systems
-2026-05-18T21:29:04+02:00,15664998482250,hsq-hsfunct,Husky Style Functional new,HSQ - Functional
+,,hsq-hsfunct,Husky Style Functional new,Functional
 2024-04-21T01:01:59+02:00,8774962577738,hsq-hvp3x3qskt1,HQV 3X3 QUICKSHADE MS COMPLETE,HSQ - Casual and Accessories
 2024-04-21T01:01:55+02:00,8774962413898,hsq-hvp6x3qskt1,HQV 6X3 QUICKSHADE MS COMPLETE,HSQ - Casual and Accessories
 2024-04-20T23:37:32+02:00,8774810829130,hsq-j770013824,O-ring,"HSQ - Technical Accessories, Partstream"
@@ -4770,7 +4770,7 @@ Created At,Product Id,Product SKU,Product Title,Product Tags
 2024-04-21T01:50:16+02:00,8775271481674,hsq-t14091,Ring wrench,HSQ - Special tools
 2024-04-21T01:50:20+02:00,8775272005962,hsq-t14092,Mounting sleeve,HSQ - Special tools
 2024-07-20T10:36:48+02:00,9391407071562,hsq-t14099,Mounting tool,HSQ - Special tools
-2026-05-18T21:49:44+02:00,15665022992714,hsq-t14105,Adapter,HSQ - Special tools
+,9400595546442,hsq-t14105,Adapter,Special tools
 2024-04-21T01:22:57+02:00,8775056621898,hsq-t146,Mounting tool,HSQ - Original Spare Part Kits
 2024-04-21T01:23:00+02:00,8775057146186,hsq-t147,Clamping bush,HSQ - Original Spare Part Kits
 2024-04-21T01:23:03+02:00,8775057703242,hsq-t149,Calibrating central carrier bush,HSQ - Original Spare Part Kits

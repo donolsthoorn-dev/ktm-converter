@@ -24,12 +24,14 @@ from collections import defaultdict
 
 from config import IDS_OUTPUT_DIR, METAFIELDS_OUTPUT_DIR, XML_FILE
 from modules.xml_loader import normalize_shopify_product_handle
+from modules.shopify_client import get_shopify_sku_to_product_id
 from modules.ymm_export import (
     DEFAULT_YMM_OEM_MAKES,
     YMM_MAX_FILE_SIZE_BYTES,
     build_handle_to_product_id,
     build_merged_sku_to_ymm,
     build_product_rows,
+    enrich_handle_to_product_id_from_shopify,
     split_csv_max_bytes_with_header,
     stream_xml_for_export,
 )
@@ -471,6 +473,26 @@ def _ensure_metafields_named_as_parts(path: str, split_paths: list[str]) -> list
     return [target]
 
 
+def _write_missing_product_id_report(
+    output_path: str,
+    missing_handles: set[str],
+    handle_to_skus: dict[str, list[str]],
+) -> str | None:
+    if not missing_handles:
+        return None
+    report_path = os.path.join(
+        os.path.dirname(output_path) or ".",
+        "metafields_missing_product_ids.csv",
+    )
+    with open(report_path, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["handle", "sample_sku", "sku_count"])
+        for h in sorted(missing_handles):
+            skus = handle_to_skus.get(h, [])
+            w.writerow([h, skus[0] if skus else "", len(skus)])
+    return report_path
+
+
 def run_metafields_export(
     product_ids_path: str | None = None,
     output_path: str | None = None,
@@ -479,6 +501,7 @@ def run_metafields_export(
     filter_makes: set[str] | None = None,
     *,
     ymm_all_makes: bool = False,
+    refresh_shopify_cache: bool = False,
 ) -> tuple[str, int]:
     if ymm_all_makes:
         effective_filter_makes: set[str] | None = None
@@ -520,6 +543,73 @@ def run_metafields_export(
             flush=True,
         )
     handle_to_product_id = build_handle_to_product_id(product_ids_path)
+    handle_to_skus = _build_handle_to_skus(product_rows)
+    handles_needed = {(p.get("handle") or "").strip() for p in product_rows}
+    handles_needed |= {h for h in merge_map if h}
+    handles_needed.discard("")
+    missing_before = sum(1 for h in handles_needed if not handle_to_product_id.get(h))
+    if missing_before:
+        added = enrich_handle_to_product_id_from_shopify(
+            handle_to_product_id,
+            handles_needed,
+            force_refresh=refresh_shopify_cache,
+        )
+        if added:
+            print(
+                f"Product Id's aangevuld via Shopify-index: {added} "
+                f"(waren leeg in {os.path.basename(product_ids_path)})",
+                flush=True,
+            )
+        still_missing = sum(1 for h in handles_needed if not handle_to_product_id.get(h))
+        if still_missing:
+            print(
+                f"Waarschuwing: {still_missing} handles nog zonder Product Id "
+                f"(staan niet in Shopify; import werkt soms via handle alleen).",
+                flush=True,
+            )
+    # Tweede fallback: Shopify variant SKU -> product_id voor handles die niet op slug matchen.
+    unresolved_handles = {h for h in handles_needed if not handle_to_product_id.get(h)}
+    if unresolved_handles:
+        try:
+            sku_to_product_id = get_shopify_sku_to_product_id(force_refresh=refresh_shopify_cache)
+        except Exception as e:
+            print(f"Shopify SKU→Product Id niet geladen voor metafields: {e}", flush=True)
+            sku_to_product_id = {}
+        added_by_sku = 0
+        if sku_to_product_id:
+            for h in sorted(unresolved_handles):
+                for sku in handle_to_skus.get(h, []):
+                    pid = (
+                        sku_to_product_id.get(sku)
+                        or sku_to_product_id.get(sku.upper())
+                        or sku_to_product_id.get(sku.lower())
+                        or ""
+                    )
+                    if pid:
+                        handle_to_product_id[h] = str(pid).replace("~", "").strip()
+                        added_by_sku += 1
+                        break
+        if added_by_sku:
+            print(
+                f"Product Id's aangevuld via SKU→Product Id: {added_by_sku}",
+                flush=True,
+            )
+        still_missing_after_sku = sum(1 for h in handles_needed if not handle_to_product_id.get(h))
+        if still_missing_after_sku:
+            report_path = _write_missing_product_id_report(
+                output_path,
+                {h for h in handles_needed if not handle_to_product_id.get(h)},
+                handle_to_skus,
+            )
+            print(
+                f"Nog zonder Product Id na alle fallbacks: {still_missing_after_sku} handles.",
+                flush=True,
+            )
+            if report_path:
+                print(
+                    f"Rapport ontbrekende Product Id's: {report_path}",
+                    flush=True,
+                )
     print(
         "Tweede XML-pass (ZBH2BIKE) voor fits_on / YMM…",
         flush=True,
