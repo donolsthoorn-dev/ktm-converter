@@ -1,5 +1,5 @@
-# XML → Supabase (canonical) → Shopify YMM (handmatige trigger, kleine batches).
-# Migratie 028 verplicht. Mirror vult geen YMM meer; diff-push via content_hash.
+# Supabase canonical YMM → Shopify metafields (handmatige trigger).
+# Na lokale --sync-only: full_push=true, run_xml_sync=false, handles leeg = hele catalogus.
 # Secrets: SUPABASE_*, SHOPIFY_* (zelfde als job-worker.yml)
 
 name: YMM push to Shopify
@@ -8,13 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       handles:
-        description: "Shopify handles (komma-gescheiden)"
-        required: true
-        default: "wp-a54029994500,hsq-a54029994500,a54029994500"
+        description: "Handles (komma-gescheiden); leeg = alle producten met YMM in canonical"
+        required: false
+        default: ""
       dry_run:
         description: "Dry-run (geen Supabase/Shopify writes)"
         type: boolean
         default: true
+      full_push:
+        description: "Volledige push (only_diff=false), niet alleen content_hash-wijzigingen"
+        type: boolean
+        default: false
       run_xml_sync:
         description: "Stap 1 XML→Supabase (vereist CBEXPDN in input/ op runner)"
         type: boolean
@@ -23,11 +27,15 @@ on:
         description: "Alleen Supabase sync + projection, geen Shopify API"
         type: boolean
         default: false
+      limit:
+        description: "Max producten (0 = geen limiet; handig voor test)"
+        type: string
+        default: "0"
 
 jobs:
   ymm_pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     env:
       PYTHONUNBUFFERED: "1"
     steps:
@@ -43,23 +51,26 @@ jobs:
       - name: Build payload JSON
         id: payload
         run: |
-          DRY="${{ inputs.dry_run }}"
-          HANDLES="${{ inputs.handles }}"
           python3 - <<'PY'
           import json, os
-          handles = [h.strip().lower() for h in os.environ["HANDLES"].split(",") if h.strip()]
+          handles = [h.strip().lower() for h in os.environ.get("HANDLES", "").split(",") if h.strip()]
           payload = {
-              "dry_run": os.environ["DRY"].lower() == "true",
-              "only_handles": handles,
+              "dry_run": os.environ.get("DRY", "true").lower() == "true",
               "overwrite": True,
-              "limit": 0,
+              "only_diff": os.environ.get("FULL_PUSH", "false").lower() != "true",
+              "limit": int(os.environ.get("LIMIT", "0") or "0"),
           }
+          if handles:
+              payload["only_handles"] = handles
           with open("job_payload.json", "w") as f:
               json.dump(payload, f)
+          print(json.dumps(payload, indent=2))
           PY
         env:
           DRY: ${{ inputs.dry_run }}
           HANDLES: ${{ inputs.handles }}
+          FULL_PUSH: ${{ inputs.full_push }}
+          LIMIT: ${{ inputs.limit }}
 
       - name: Queue canonical_ymm_sync_to_supabase
         if: inputs.run_xml_sync == true
@@ -72,21 +83,24 @@ jobs:
             --trigger manual --payload-json "$PAYLOAD"
 
       - name: Queue shopify_ymm_projection_refresh
-        if: inputs.run_xml_sync == true
+        if: inputs.run_xml_sync == true || (inputs.skip_shopify_push == false && inputs.run_xml_sync == false)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python scripts/queue_supabase_job.py shopify_ymm_projection_refresh --trigger manual
 
-      - name: Queue shopify_ymm_projection_refresh (push-only pad)
-        if: inputs.run_xml_sync == false && inputs.skip_shopify_push == false
+      - name: Queue shopify_ymm_push (full catalog)
+        if: inputs.skip_shopify_push == false && inputs.full_push == true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/queue_supabase_job.py shopify_ymm_projection_refresh --trigger manual
+        run: |
+          PAYLOAD=$(cat job_payload.json)
+          python scripts/queue_supabase_job.py shopify_ymm_push_from_supabase \
+            --trigger manual --payload-json "$PAYLOAD"
 
       - name: Queue shopify_ymm_push_diff_from_supabase
-        if: inputs.skip_shopify_push == false
+        if: inputs.skip_shopify_push == false && inputs.full_push == false
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -106,7 +120,7 @@ jobs:
           SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
         run: |
           failed=0
-          for i in 1 2 3 4 5 6 7 8; do
+          for i in $(seq 1 24); do
             set +e
             out="$(python scripts/supabase_job_worker.py 2>&1)"
             ec=$?

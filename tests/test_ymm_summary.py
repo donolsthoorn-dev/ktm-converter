@@ -11,6 +11,14 @@ def test_ktm_adventure_single_make() -> None:
     assert _ymm_summary(tuples) == "KTM 790-890 (STREET) 2021-2027"
 
 
+def test_husqvarna_fe_fc() -> None:
+    tuples = {
+        ("HUSQVARNA", "FE 450", "2009"),
+        ("HUSQVARNA", "FE 570", "2009"),
+    }
+    assert _ymm_summary(tuples) == "HUSQVARNA 450-570 (FE) 2009"
+
+
 def test_cross_brand_joined() -> None:
     tuples = set()
     for y in range(2021, 2028):

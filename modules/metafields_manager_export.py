@@ -195,8 +195,28 @@ def _pipe_join_sorted(values: set[str]) -> str:
     return "||".join(sorted((v or "").upper() for v in values))
 
 
-# Volgorde tussen haakjes — afgestemd op Metafields-handexports: EXC, SX, XC, daarna XCF (XC-F 4T apart van 2T-XC)
-_LINE_TAG_ORDER = ("EXC", "SX", "XC", "XCF", "ENDURO", "STREET")
+# Volgorde tussen haakjes — KTM-lijnen + Husqvarna/GASGAS-prefixen (FC, FE, TE, …)
+_LINE_TAG_ORDER = (
+    "EXC",
+    "SX",
+    "XC",
+    "XCF",
+    "FC",
+    "TC",
+    "FX",
+    "FE",
+    "TE",
+    "TX",
+    "EE",
+    "ENDURO",
+    "STREET",
+)
+
+# Husqvarna / GASGAS: cc na lijncode ('FE 450', 'TX 300I', 'TC 85 17/14')
+_OEM_PREFIX_CC_RE = re.compile(
+    r"^(FC|FE|TE|TC|FX|TX|EE|MC|FS|FSR|EC)\s+(\d{2,4})\b",
+    re.I,
+)
 
 
 def _extract_displacement_cc(model: str) -> int | None:
@@ -224,6 +244,11 @@ def _extract_displacement_cc(model: str) -> int | None:
     )
     if m:
         n = int(m.group(1))
+        if 50 <= n <= 2000:
+            return n
+    m = _OEM_PREFIX_CC_RE.match(s)
+    if m:
+        n = int(m.group(2))
         if 50 <= n <= 2000:
             return n
     return None
@@ -265,6 +290,9 @@ def _classify_model_line_tag(model: str) -> str | None:
         return "XC"
     if re.search(r"\bENDURO\b", u):
         return "ENDURO"
+    m = _OEM_PREFIX_CC_RE.match(u)
+    if m:
+        return m.group(1).upper()
     return None
 
 
@@ -289,7 +317,10 @@ def _ymm_summary_one_make(tuples: set[tuple[str, str, str]]) -> str:
             years.append(int(y))
     y_lo = min(years) if years else None
     y_hi = max(years) if years else None
-    y_part = f"{y_lo}-{y_hi}" if years and y_lo is not None else ""
+    if years and y_lo is not None:
+        y_part = str(y_lo) if y_lo == y_hi else f"{y_lo}-{y_hi}"
+    else:
+        y_part = ""
 
     makes_upper = {t[0].upper() for t in tuples}
     make_label = sorted(makes_upper)[0] if makes_upper else ""

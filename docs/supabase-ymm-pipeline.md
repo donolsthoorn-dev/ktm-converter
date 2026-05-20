@@ -109,7 +109,25 @@ Niet combineren met canonical sync op dezelfde tabel.
 | Workflow | Wat |
 |----------|-----|
 | **Job worker** (nacht) | `shopify_catalog_mirror` — producten/varianten/ETA |
-| **YMM delivery** (week) | `shopify_ymm_push_diff_from_supabase` |
-| **YMM push to Shopify** (handmatig) | sync + push voor testhandles |
+| **YMM delivery** (week) | diff-push (`only_diff=true`, default limit 500) |
+| **YMM push to Shopify** (handmatig) | sync en/of push; optioneel **full_push** + lege handles = hele catalogus |
 
-Vereist migratie **019**, **020**, **028** in Supabase.
+### Volledige push na lokale sync (aanbevolen nu)
+
+Supabase staat al goed (`--sync-only --write` lokaal). Start op GitHub:
+
+**Actions → YMM push to Shopify → Run workflow**
+
+| Input | Waarde |
+|-------|--------|
+| `handles` | *(leeg laten)* |
+| `dry_run` | `false` |
+| `full_push` | `true` |
+| `run_xml_sync` | `false` |
+| `skip_shopify_push` | `false` |
+| `limit` | `0` |
+
+≈ lokaal: `python3 scripts/run_canonical_ymm_pipeline.py --push-only --write --full-push`  
+Timeout workflow: 6 uur; je terminal kan dicht.
+
+Vereist migraties **019**, **020**, **028**, **031** + secrets `SUPABASE_*`, `SHOPIFY_*`.
