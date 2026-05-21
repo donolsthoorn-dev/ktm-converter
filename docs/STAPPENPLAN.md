@@ -106,28 +106,40 @@ python3 -u scripts/export_product_metafields.py --brand wp
 
 Twee sporen:
 
-1. **Fitment:** XML → tabel `canonical_product_fits_on` → diff-push naar Shopify (`content_hash` / `pushed_hash`).
-2. **Catalogus (nacht):** GitHub **Job worker** → `shopify_products` / `shopify_variants` / `shopify_eta` (prijzen, customs) — **geen** YMM uit Shopify meer.
+1. **Fitment:** XML → `canonical_product_fits_on` → push naar Shopify (`fits_on` JSON + platte velden + `ymm_summary`).
+2. **Catalogus:** GitHub **Job worker** / `shopify_catalog_mirror` → `shopify_products` / `shopify_variants` / `shopify_eta` — **geen** YMM uit Shopify-spiegel.
 
-Na nieuwe XML lokaal:
+**Volledige handleiding** (diff/full push, GitHub, spook-producten, fouten): [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md).
+
+#### Routine na nieuwe XML
 
 ```bash
-# Canonical vullen + projection
-python3 scripts/run_canonical_ymm_pipeline.py \
-  --handles wp-a54029994500,hsq-a54029994500,a54029994500 \
-  --sync-only --write
+# 1) Catalogus spiegelen (ook na veel verwijderde/nieuwe producten in Shopify)
+python3 scripts/queue_supabase_job.py shopify_catalog_mirror --trigger manual
+python3 scripts/supabase_job_worker.py   # tot Geen queued jobs
 
-# Alleen gewijzigde naar Shopify
-python3 scripts/run_canonical_ymm_pipeline.py \
-  --handles wp-a54029994500,hsq-a54029994500,a54029994500 \
-  --push-only --write
+# 2) Canonical + projection
+python3 scripts/run_canonical_ymm_pipeline.py --sync-only --write
+
+# 3) Alleen wijzigingen naar Shopify
+python3 scripts/run_canonical_ymm_pipeline.py --push-only --write
 ```
 
-Of alles in één keer: `--write` (zonder `--sync-only` / `--push-only`).
+Test met enkele handles: `--handles wp-a54029994500,hsq-a54029994500,a54029994500` bij stap 2 en 3.
 
-**GitHub:** **YMM delivery (Supabase → Shopify)** (wekelijks diff-push); **YMM push to Shopify** (handmatig test). Export-CSV (stap 4) blijft optionele backup.
+#### Bij push-fout `Owner does not exist`
 
-Zie [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md).
+Product staat in Supabase maar **niet** in Shopify → oude `shopify_product_id` (mirror verwijdert spoken niet). Zie **Spook-producten opschonen** in [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md): DELETE canonical + varianten voor rijen met oude `synced_at`, daarna opnieuw sync + push.
+
+#### GitHub Actions
+
+| Workflow | Gebruik |
+|----------|---------|
+| **Job worker** | Catalog mirror (nacht) |
+| **YMM delivery** | Wekelijkse **diff**-push |
+| **YMM push to Shopify** | Handmatig: sync (`run_xml_sync`) en/of push (`full_push` voor hele catalogus) |
+
+Export-CSV (hieronder) blijft optionele backup.
 
 **Alleen nieuwe producten** (na delta-import): voeg per merk `--delta-handles-csv` toe met het delta-bestand van stap 2. Voorbeeld KTM:
 

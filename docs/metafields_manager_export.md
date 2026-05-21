@@ -64,7 +64,7 @@ python3 scripts/export_product_metafields.py --product-ids output/ids/product_id
 | `id` | `Product Id` uit `product_ids_from_xml.csv` (zelfde mapping als YMM-export) |
 | `fits_on` | JSON `{ "MAKE": { "Model": ["year",…], … } }` uit alle variant-SKU’s: **Bikes MODELL** + **ZBH2BIKE** (zie `docs/zbh2bike_ymm.md`). Standaard **cross-brand**: union van KTM-, HSQ- en WP-CBEXPDN op **dezelfde SKU** (zelfde fitment op `a54029994500`, `hsq-…`, `wp-…`). Uitzetten: `--no-cross-brand-ymm`. **Inhoud** (niet de kolomkoppen) vanaf `fits_on` t/m `MPN` in **hoofdletters**. |
 | `fits_on_year`, `fits_on_make`, `fits_on_model` | Unieke waarden, gescheiden met `\|\|` (zoals je bestaande export) |
-| `ymm_summary` | Per OEM rijk waar mogelijk: `KTM 790-890 (STREET) 2021-2027`. Bij cross-brand (meerdere merken): `KTM … \| HUSQVARNA …`. Zelfde string in `canonical_product_fits_on.ymm_summary` en projection. |
+| `ymm_summary` | Per OEM rijk: `KTM 790-890 (STREET) 2021-2027`; Husqvarna/GASGAS `FE 450` → `HUSQVARNA 450-570 (FE) 2009`. Cross-brand: `KTM … \| HUSQVARNA … \| GASGAS …`. Zelfde logica in `canonical_product_fits_on.ymm_summary` en Shopify-push. Zie [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md). |
 | `MPN` | Eerste (alfabetisch) variant-SKU van het product |
 | `parts_*`, `global_fits_on_*`, `fits_on_*_new` | Leeg (niet in KTM XML) |
 
