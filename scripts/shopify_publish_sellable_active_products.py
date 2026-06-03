@@ -17,6 +17,8 @@ Voorbeelden:
   python3 scripts/shopify_publish_sellable_active_products.py
   python3 scripts/shopify_publish_sellable_active_products.py --apply
   python3 scripts/shopify_publish_sellable_active_products.py --apply --limit 50
+  # Na dry-run: apply zonder opnieuw 30k producten te scannen (~1 min i.p.v. ~70 min):
+  python3 scripts/shopify_publish_sellable_active_products.py --apply --reuse-candidates
   python3 scripts/shopify_publish_sellable_active_products.py --input-csv output/active_not_on_webshop.csv
 
 Vereist: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
@@ -342,6 +344,14 @@ def main() -> int:
         help="Gebruik vaste product_id-lijst i.p.v. volledige catalogusscan",
     )
     ap.add_argument(
+        "--reuse-candidates",
+        action="store_true",
+        help=(
+            "Bij --apply: lees kandidaten uit --output-csv (geen REST-catalogusscan). "
+            "Handig na een eerdere dry-run in dezelfde sessie."
+        ),
+    )
+    ap.add_argument(
         "--output-csv",
         type=Path,
         default=Path("output/publish_sellable_active_candidates.csv"),
@@ -391,9 +401,23 @@ def main() -> int:
 
     sess = _http_session()
 
+    csv_source: Path | None = None
     if args.input_csv and args.input_csv.is_file():
-        print(f"Kandidaten uit CSV: {args.input_csv}", flush=True)
-        candidates = _load_candidates_from_csv(args.input_csv)
+        csv_source = args.input_csv
+    elif args.reuse_candidates:
+        if not args.output_csv.is_file():
+            print(
+                f"FOUT: --reuse-candidates maar {args.output_csv} bestaat niet. "
+                "Draai eerst een dry-run.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 2
+        csv_source = args.output_csv
+
+    if csv_source is not None:
+        print(f"Kandidaten uit CSV (geen catalogusscan): {csv_source}", flush=True)
+        candidates = _load_candidates_from_csv(csv_source)
     else:
         print("Catalogusscan: ACTIVE + published_at leeg + ERP verkoopbaar...", flush=True)
         candidates = _collect_candidates_rest(sess, status_by_sku)
