@@ -9,7 +9,7 @@ import os
 from typing import Iterable
 
 import config
-from modules.pricing_loader import normalize_sku_key
+from modules.pricing_loader import lookup_in_str_index, normalize_sku_key
 
 
 def _primary_for_handle(items: list[dict]) -> dict:
@@ -33,7 +33,6 @@ def _reasons_not_in_delta_initial(
     skip_type_reason_if_same_as: str | None = None,
 ) -> list[str]:
     """Waarom deze variant niet in de eerste delta-lijst belandde (main.py eerste delta-loop)."""
-    sku_k = normalize_sku_key(p.get("sku"))
     t = (p.get("type") or "").strip()
     reasons: list[str] = []
     if t in config.DELTA_EXCLUDED_TYPES:
@@ -42,9 +41,9 @@ def _reasons_not_in_delta_initial(
         )
         if not skip_dup:
             reasons.append(f"type uitgesloten ({t})")
-    if _price_float(price_index.get(sku_k, "")) <= 0:
+    if _price_float(lookup_in_str_index(price_index, p.get("sku"))) <= 0:
         reasons.append("geen prijs")
-    if str(status_index.get(sku_k, "") or "").strip() == "80":
+    if str(lookup_in_str_index(status_index, p.get("sku")) or "").strip() == "80":
         reasons.append("status 80")
     return reasons
 

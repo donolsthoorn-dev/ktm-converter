@@ -3,8 +3,9 @@
 Periodieke publicatiecheck op productniveau (Shopify):
 
 - Zet product op DRAFT als:
-  1) alle varianten uitverkocht zijn (inventoryPolicy=DENY en quantity<=0), of
-  2) strict-regel: alle Shopify-varianten hebben CSV-match, overal ArticleStatus=80 en geen voorraad.
+  1) minstens één variant geen geldige prijs heeft (> 0), of
+  2) alle varianten uitverkocht zijn (inventoryPolicy=DENY en quantity<=0), of
+  3) strict-regel: alle Shopify-varianten hebben CSV-match, overal ArticleStatus=80 en geen voorraad.
 - Zet product terug op ACTIVE als:
   - product nu DRAFT staat, alle varianten CSV-match hebben, en strict-regel niet meer geldt.
 
@@ -43,6 +44,7 @@ if str(ROOT) not in sys.path:
 import config  # noqa: E402
 from modules.pricing_loader import (  # noqa: E402
     load_article_status_from_35_z1_csv_files,
+    lookup_in_str_index,
     normalize_sku_key,
 )
 
@@ -233,7 +235,7 @@ def _evaluate_product(
         if not sku:
             all_variants_have_csv_status = False
             break
-        st = (article_status_by_sku.get(sku) or "").strip()
+        st = lookup_in_str_index(article_status_by_sku, sku).strip()
         if not st:
             all_variants_have_csv_status = False
             break
@@ -250,7 +252,9 @@ def _evaluate_product(
     )
 
     action = "noop"
-    if current_status == "ACTIVE" and (all_sold_out or status80_no_stock_strict):
+    if current_status == "ACTIVE" and (
+        has_bad_price or all_sold_out or status80_no_stock_strict
+    ):
         action = "set_draft"
     elif reactivate_candidate:
         action = "set_active"

@@ -11,7 +11,7 @@ import config
 from modules.excluded_report import _primary_for_handle, build_exclusion_reden
 from modules.image_manager import load_cache, resolve_image_url_without_upload
 from modules.image_resolve import build_basename_index, resolve_local_image
-from modules.pricing_loader import load_price_index, normalize_sku_key
+from modules.pricing_loader import load_price_index, lookup_in_str_index, normalize_sku_key
 from modules.xml_loader import load_products
 
 
@@ -21,10 +21,9 @@ def _norm_ref_key(s: str) -> str:
 
 def _attach_pricing(products: list[dict], price_index, barcode_index, status_index) -> None:
     for p in products:
-        sku_key = normalize_sku_key(p["sku"])
-        p["price"] = price_index.get(sku_key, "")
-        p["barcode"] = barcode_index.get(sku_key, "")
-        p["article_status"] = status_index.get(sku_key, "")
+        p["price"] = lookup_in_str_index(price_index, p.get("sku"))
+        p["barcode"] = lookup_in_str_index(barcode_index, p.get("sku"))
+        p["article_status"] = lookup_in_str_index(status_index, p.get("sku"))
         p["product_category"] = p.get("category", "")
         p["type"] = p.get("type", "")
 
@@ -50,19 +49,20 @@ def compute_etl_pipeline_sets(
     for handle, items in products_by_handle.items():
         delta_variant_exists = False
         for p in items:
-            sku_key = normalize_sku_key(p["sku"])
             if (
-                float(price_index.get(sku_key, 0) or 0) > 0
+                float(lookup_in_str_index(price_index, p.get("sku")) or 0) > 0
                 and p.get("type") not in excluded_types
-                and status_index.get(sku_key) != "80"
+                and lookup_in_str_index(status_index, p.get("sku")) != "80"
             ):
                 delta_variant_exists = True
                 break
 
         if delta_variant_exists:
             for p in items:
-                sku_key = normalize_sku_key(p["sku"])
-                if float(price_index.get(sku_key, 0) or 0) > 0 and status_index.get(sku_key) != "80":
+                if (
+                    float(lookup_in_str_index(price_index, p.get("sku")) or 0) > 0
+                    and lookup_in_str_index(status_index, p.get("sku")) != "80"
+                ):
                     delta_products.append(p)
 
     delta_initial_skus = {normalize_sku_key(p["sku"]) for p in delta_products if p.get("sku")}

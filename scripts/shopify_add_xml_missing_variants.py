@@ -51,7 +51,11 @@ from modules.env_loader import load_project_env  # noqa: E402
 
 load_project_env()
 
-from modules.pricing_loader import load_price_index, normalize_sku_key  # noqa: E402
+from modules.pricing_loader import (  # noqa: E402
+    load_price_index,
+    lookup_in_str_index,
+    normalize_sku_key,
+)
 from modules.xml_loader import load_products, normalize_shopify_product_handle  # noqa: E402
 
 
@@ -366,7 +370,7 @@ mutation KtmAddVariants(
             price_raw = want.get("price_incl")
             price_f = _parse_price_to_float(str(price_raw) if price_raw is not None else "")
             if price_f is None or price_f <= 0:
-                p_idx = price_index.get(sku) or price_index.get(normalize_sku_key(sku))
+                p_idx = lookup_in_str_index(price_index, sku)
                 price_f = _parse_price_to_float(str(p_idx) if p_idx else "")
             if price_f is None or price_f <= 0:
                 print(f"[{handle_csv}] SKU {sku}: geen prijs in CSV/0150 — overslaan", flush=True)
@@ -378,7 +382,7 @@ mutation KtmAddVariants(
                 "price": price_f,
                 "optionValues": [{"name": display_value, "optionName": opt_name}],
             }
-            bc = (barcode_index.get(sku) or barcode_index.get(normalize_sku_key(sku)) or "").strip()
+            bc = lookup_in_str_index(barcode_index, sku).strip()
             if bc:
                 entry["barcode"] = bc
             if inv:

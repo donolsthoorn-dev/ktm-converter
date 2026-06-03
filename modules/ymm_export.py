@@ -24,6 +24,7 @@ from lxml import etree
 
 from config import CULTURE, IDS_OUTPUT_DIR, XML_FILE, YMM_OUTPUT_DIR, get_active_brand
 from modules.shopify_client import get_shopify_products_index, get_shopify_sku_to_product_id
+from modules.pricing_loader import canonical_erp_sku_from_xml, erp_sku_keys_for_active_brand
 from modules.xml_loader import (
     build_handle,
     build_hierarchy_titles,
@@ -45,6 +46,18 @@ _YMM_MAKE_CANONICAL: dict[str, str] = {
     "gasgas": "GASGAS",
     "gas gas": "GASGAS",
 }
+
+_ymm_erp_sku_keys_cache: set[str] | None = None
+_ymm_erp_sku_keys_resolved = False
+
+
+def _normalize_xml_sku_for_ymm(raw: str) -> str:
+    """Zelfde WP -00→ERP-regel als xml_loader.load_products."""
+    global _ymm_erp_sku_keys_cache, _ymm_erp_sku_keys_resolved
+    if not _ymm_erp_sku_keys_resolved:
+        _ymm_erp_sku_keys_cache = erp_sku_keys_for_active_brand()
+        _ymm_erp_sku_keys_resolved = True
+    return canonical_erp_sku_from_xml(raw, erp_sku_keys=_ymm_erp_sku_keys_cache)
 
 
 def _first_text(nodes):
@@ -332,7 +345,10 @@ def stream_zbh2bike_part_ymm(
                 if bt.get("name") != "ZBH2BIKE":
                     continue
                 for child in bt.findall("PRODUKT"):
-                    part = (child.get("name") or "").strip()
+                    part_raw = (child.get("name") or "").strip()
+                    if not part_raw:
+                        continue
+                    part = _normalize_xml_sku_for_ymm(part_raw)
                     if not part:
                         continue
                     out[part] |= ymm_bike
@@ -396,7 +412,7 @@ def stream_xml_for_export(xml_path: str | None = None):
             sku = elem.findtext("PRODUKT_NAME")
             key = elem.findtext("ELEMENT_NAME")
             if sku and key:
-                relations[key.strip()].append(sku.strip())
+                relations[key.strip()].append(_normalize_xml_sku_for_ymm(sku))
         elem.clear()
 
     return structure_index, relations

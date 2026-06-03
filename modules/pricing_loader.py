@@ -72,6 +72,99 @@ def normalize_sku_key(sku: str | None) -> str:
     return str(sku or "").strip().upper()
 
 
+# WP CBEXPDN: verkoopeenheid in XML/Shopify (T05049-00) vs ERP ArticleNumber (T05049).
+WP_XML_VARIANT_SUFFIX = "-00"
+
+
+def pricelist_lookup_keys(sku: str | None) -> list[str]:
+    """
+    Sleutels om een XML/Shopify-SKU te matchen op de prijs-CSV (ArticleNumber).
+    Probeert eerst exact, daarna zonder WP-verpakkingssuffix -00.
+    """
+    key = normalize_sku_key(sku)
+    if not key:
+        return []
+    keys = [key]
+    if key.endswith(WP_XML_VARIANT_SUFFIX) and len(key) > len(WP_XML_VARIANT_SUFFIX):
+        base = key[: -len(WP_XML_VARIANT_SUFFIX)]
+        if base and base not in keys:
+            keys.append(base)
+    return keys
+
+
+def shopify_variant_lookup_keys(pricelist_sku: str | None) -> list[str]:
+    """
+    Sleutels in de variant-cache wanneer de ERP-SKU uit de prijs-CSV bekend is.
+    Shopify/XML kan dezelfde artikelen onder Txxxx-00 registreren.
+    """
+    key = normalize_sku_key(pricelist_sku)
+    if not key:
+        return []
+    keys = [key]
+    xml_style = f"{key}{WP_XML_VARIANT_SUFFIX}"
+    if xml_style not in keys:
+        keys.append(xml_style)
+    return keys
+
+
+def lookup_in_str_index(index: dict[str, str], sku: str | None) -> str:
+    """Eerste treffer in index (prijs, barcode, status) via pricelist_lookup_keys."""
+    for k in pricelist_lookup_keys(sku):
+        val = index.get(k)
+        if val not in (None, ""):
+            return str(val)
+    return ""
+
+
+def erp_sku_keys_for_active_brand() -> set[str] | None:
+    """
+    WP: ArticleNumber-set uit prijs-CSV voor XML→ERP SKU-normalisatie (T05049-00 → T05049).
+    Andere merken: None (geen -00-stripping).
+    """
+    if config.get_active_brand().id != "wp":
+        return None
+    try:
+        price_index, _, _ = load_price_index()
+    except FileNotFoundError:
+        return None
+    return set(price_index.keys()) if price_index else None
+
+
+def canonical_erp_sku_from_xml(
+    sku: str | None,
+    *,
+    erp_sku_keys: set[str] | None = None,
+) -> str:
+    """
+    CBEXPDN-verpakkingssuffix -00 verwijderen als de basis-SKU in de ERP-prijslijst staat.
+    Zonder erp_sku_keys (niet-WP of geen CSV): alleen uppercase, geen wijziging.
+    """
+    key = normalize_sku_key(sku)
+    if not key or erp_sku_keys is None:
+        return key
+    if not key.endswith(WP_XML_VARIANT_SUFFIX) or len(key) <= len(WP_XML_VARIANT_SUFFIX):
+        return key
+    base = key[: -len(WP_XML_VARIANT_SUFFIX)]
+    if base and base in erp_sku_keys:
+        return base
+    return key
+
+
+def variant_pairs_for_pricelist_sku(
+    sku_to_vp: dict[str, list[tuple[str, str | None]]],
+    pricelist_sku: str,
+) -> list[tuple[str, str | None]]:
+    """Alle (variant_id, product_id)-paren voor een ERP-SKU, incl. XML-alias (-00)."""
+    seen: set[str] = set()
+    out: list[tuple[str, str | None]] = []
+    for k in shopify_variant_lookup_keys(pricelist_sku):
+        for vid, pid in sku_to_vp.get(k) or []:
+            if vid and vid not in seen:
+                seen.add(vid)
+                out.append((vid, pid))
+    return out
+
+
 def detect_0150_csv_delimiter(first_line: str) -> str:
     """Komma (huidige ERP-export) of puntkomma (oudere bestanden)."""
     for delim in (",", ";"):

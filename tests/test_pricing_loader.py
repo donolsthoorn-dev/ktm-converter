@@ -101,3 +101,30 @@ def test_load_price_index_missing_0150_raises(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(config, "INPUT_DIR", str(tmp_path))
     with pytest.raises(FileNotFoundError, match="0150"):
         pricing_loader.load_price_index()
+
+
+def test_pricelist_lookup_keys_strips_wp_xml_suffix() -> None:
+    assert pricing_loader.pricelist_lookup_keys("T05049-00") == ["T05049-00", "T05049"]
+    assert pricing_loader.pricelist_lookup_keys("T05049") == ["T05049"]
+
+
+def test_lookup_in_str_index_wp_xml_to_erp_sku() -> None:
+    index = {"T05049": "25.95"}
+    assert pricing_loader.lookup_in_str_index(index, "T05049-00") == "25.95"
+
+
+def test_variant_pairs_for_pricelist_sku_matches_xml_suffix() -> None:
+    sku_to_vp = {"T05049-00": [("111", "222")]}
+    pairs = pricing_loader.variant_pairs_for_pricelist_sku(sku_to_vp, "T05049")
+    assert pairs == [("111", "222")]
+
+
+def test_canonical_erp_sku_from_xml_strips_when_base_in_csv() -> None:
+    erp = {"T05049", "T536"}
+    assert pricing_loader.canonical_erp_sku_from_xml("T05049-00", erp_sku_keys=erp) == "T05049"
+    assert pricing_loader.canonical_erp_sku_from_xml("T05049", erp_sku_keys=erp) == "T05049"
+    assert pricing_loader.canonical_erp_sku_from_xml("UNKNOWN-00", erp_sku_keys=erp) == "UNKNOWN-00"
+
+
+def test_canonical_erp_sku_from_xml_no_keys_unchanged() -> None:
+    assert pricing_loader.canonical_erp_sku_from_xml("T05049-00", erp_sku_keys=None) == "T05049-00"

@@ -11,6 +11,11 @@ from lxml import etree
 
 import config
 from config import CULTURE
+from modules.pricing_loader import (
+    WP_XML_VARIANT_SUFFIX,
+    canonical_erp_sku_from_xml,
+    erp_sku_keys_for_active_brand,
+)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 SIZE_RE = re.compile(r"^(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|XXXXL)$", re.IGNORECASE)
@@ -482,9 +487,24 @@ def build_hierarchy_titles(structure_index: dict, start_name: str) -> list[str]:
     return titles
 
 
+def _normalize_xml_sku(raw: str, erp_sku_keys: set[str] | None) -> str:
+    s = (raw or "").strip()
+    if not s:
+        return s
+    return canonical_erp_sku_from_xml(s, erp_sku_keys=erp_sku_keys)
+
+
 def load_products():
 
     print("XML streaming parsen...")
+
+    erp_sku_keys = erp_sku_keys_for_active_brand()
+    if erp_sku_keys is not None:
+        print(
+            f"WP XML SKU-normalisatie actief ({len(erp_sku_keys)} ERP-nummers; "
+            f"suffix {WP_XML_VARIANT_SUFFIX!r} als basis in prijs-CSV)",
+            flush=True,
+        )
 
     structure_index = {}
     relations = defaultdict(list)
@@ -544,13 +564,14 @@ def load_products():
             key = elem.findtext("ELEMENT_NAME")
 
             if sku and key:
-                relations[key.strip()].append(sku.strip())
+                relations[key.strip()].append(_normalize_xml_sku(sku, erp_sku_keys))
 
         # ---------------- ATTRIBUTES ----------------
         elif tag == "PRODUKT":
-            sku = elem.get("name")
+            sku_raw = elem.get("name")
 
-            if sku:
+            if sku_raw:
+                sku = _normalize_xml_sku(sku_raw, erp_sku_keys)
                 attrs = {}
 
                 for a in elem.findall(".//ATTRIBUTE/ATTRIBUT"):
@@ -565,11 +586,11 @@ def load_products():
                             break
 
                 if attrs:
-                    sku_attrs[sku.strip()] = attrs
+                    sku_attrs[sku] = attrs
 
                 desc = build_description(elem)
                 if desc.strip():
-                    sku_descriptions[sku.strip()] = desc
+                    sku_descriptions[sku] = desc
 
         elem.clear()
 

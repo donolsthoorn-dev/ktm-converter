@@ -37,7 +37,11 @@ from modules.image_manager import (
     try_resolve_image_cache_or_cdn,
 )
 from modules.image_resolve import build_basename_index, resolve_local_image
-from modules.pricing_loader import load_price_index, normalize_sku_key
+from modules.pricing_loader import (
+    load_price_index,
+    lookup_in_str_index,
+    normalize_sku_key,
+)
 from modules.xml_loader import load_products
 
 _log = logging.getLogger(__name__)
@@ -107,10 +111,9 @@ def main() -> None:
     # -----------------------------------------------------
 
     for p in products:
-        sku_key = normalize_sku_key(p["sku"])
-        p["price"] = price_index.get(sku_key, "")
-        p["barcode"] = barcode_index.get(sku_key, "")
-        p["article_status"] = status_index.get(sku_key, "")
+        p["price"] = lookup_in_str_index(price_index, p.get("sku"))
+        p["barcode"] = lookup_in_str_index(barcode_index, p.get("sku"))
+        p["article_status"] = lookup_in_str_index(status_index, p.get("sku"))
         p["product_category"] = p.get("category", "")
         p["type"] = p.get("type", "")
 
@@ -134,21 +137,20 @@ def main() -> None:
         delta_variant_exists = False
 
         for p in items:
-            sku_key = normalize_sku_key(p["sku"])
-
             if (
-                float(price_index.get(sku_key, 0)) > 0
+                float(lookup_in_str_index(price_index, p.get("sku")) or 0) > 0
                 and p.get("type") not in excluded_types
-                and status_index.get(sku_key) != "80"
+                and lookup_in_str_index(status_index, p.get("sku")) != "80"
             ):
                 delta_variant_exists = True
                 break
 
         if delta_variant_exists:
             for p in items:
-                sku_key = normalize_sku_key(p["sku"])
-
-                if float(price_index.get(sku_key, 0)) > 0 and status_index.get(sku_key) != "80":
+                if (
+                    float(lookup_in_str_index(price_index, p.get("sku")) or 0) > 0
+                    and lookup_in_str_index(status_index, p.get("sku")) != "80"
+                ):
                     delta_products.append(p)
 
     log.info("Producten in delta: %s", len(delta_products))

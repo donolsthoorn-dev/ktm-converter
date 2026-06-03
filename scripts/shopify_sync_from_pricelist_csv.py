@@ -73,7 +73,11 @@ from modules.brand_config import (  # noqa: E402
     resolve_pricelist_csv_path,
     resolve_pricelist_csv_paths as _resolve_pricelist_csv_paths,
 )
-from modules.pricing_loader import detect_0150_csv_delimiter  # noqa: E402
+from modules.pricing_loader import (  # noqa: E402
+    detect_0150_csv_delimiter,
+    shopify_variant_lookup_keys,
+    variant_pairs_for_pricelist_sku,
+)
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
 DEFAULT_STATE_FILE = PROJECT_ROOT / "cache" / "shopify_pricelist_sync_state.json"
@@ -346,9 +350,10 @@ def load_variant_cache(path: Path) -> dict[str, list[tuple[str, str | None]]]:
 def product_id_for_variant(
     sku_to_vp: dict[str, list[tuple[str, str | None]]], sku: str, variant_id: str
 ) -> str | None:
-    for vid, pid in sku_to_vp.get(sku, []):
-        if vid == variant_id:
-            return pid
+    for cache_key in shopify_variant_lookup_keys(sku):
+        for vid, pid in sku_to_vp.get(cache_key, []):
+            if vid == variant_id:
+                return pid
     return None
 
 
@@ -1019,7 +1024,7 @@ def resolve_desired_product_status_by_product_id(
     """
     seen_active_by_pid: dict[str, bool] = {}
     for sku, desired in desired_by_sku.items():
-        pairs = sku_to_vp.get(sku) or []
+        pairs = variant_pairs_for_pricelist_sku(sku_to_vp, sku)
         desired_ps = str(desired.get("product_status") or "").upper()
         if desired_ps != "ACTIVE":
             continue
@@ -1198,10 +1203,10 @@ def main() -> int:
 
     n_skip_no_variant = 0
     for sku, d in desired_by_sku.items():
-        if sku not in sku_to_vp:
+        pairs = variant_pairs_for_pricelist_sku(sku_to_vp, sku)
+        if not pairs:
             n_skip_no_variant += 1
             continue
-        pairs = sku_to_vp[sku]
         variant_ids = [p[0] for p in pairs]
         unique_product_ids = list(
             dict.fromkeys(p for _v, p in pairs if p)

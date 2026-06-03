@@ -408,7 +408,16 @@ def export(products, filename):
                     setcol(row, "Product category", map_shopify_product_category(category))
                 setcol(row, "Type", type_value if idx == 0 else "")
                 setcol(row, "Tags", tags_value if idx == 0 else "")
-                published = "FALSE" if str(p.get("article_status", "")).strip() == "80" else "TRUE"
+                price_ok = False
+                try:
+                    price_ok = float(str(p.get("price") or "").replace(",", ".")) > 0
+                except (TypeError, ValueError):
+                    price_ok = False
+                published = (
+                    "FALSE"
+                    if str(p.get("article_status", "")).strip() == "80" or not price_ok
+                    else "TRUE"
+                )
                 setcol(row, "Published", published)
 
                 setcol(row, "Variant SKU", p.get("sku"))
