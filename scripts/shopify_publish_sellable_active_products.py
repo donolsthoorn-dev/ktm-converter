@@ -3,12 +3,18 @@
 Publiceer ACTIVE Shopify-producten op het Online Store-kanaal wanneer ze dat volgens ERP
 zouden moeten zijn, maar published_at nog leeg is (Webshop UIT in admin).
 
-Criteria per product:
+Criteria per product (publiceren):
   - status ACTIVE
   - published_at leeg
   - minstens één variant-SKU met ArticleStatus in CSV, en niet overal 80
+  - product_type niet leeg en niet in config.DELTA_EXCLUDED_TYPES (o.a. Archive, Archiv,
+    Additional, Motorcycles, Software enhancements)
+  - minstens één productafbeelding in Shopify
 
-Mutatie: GraphQL productUpdate met status ACTIVE + published: true
+Niet op Online Store (overslaan bij publiceren; bij --apply expliciet unpublish):
+  - uitgesloten type, leeg type, of geen afbeelding
+
+Mutatie: GraphQL productUpdate met status ACTIVE + published: true/false
 (werkt met bestaande product-scopes; geen read/write_publications nodig).
 
 Standaard dry-run. Met --apply worden producten echt gepubliceerd.
@@ -76,6 +82,8 @@ mutation KtmPublishProduct($input: ProductInput!) {
   }
 }
 """
+
+_TYPE_PREFIXES = ("HSQ - ", "WP - ", "KTM - ")
 
 
 def _http_session() -> requests.Session:
@@ -149,6 +157,59 @@ def _product_is_sellable_per_csv(variants: list[dict], status_by_sku: dict[str, 
     return any(st != "80" for st in statuses)
 
 
+def _product_has_shopify_image(product: dict) -> bool:
+    for img in product.get("images") or []:
+        if (img.get("src") or "").strip():
+            return True
+    return False
+
+
+def _type_matches_excluded_set(product_type: str) -> bool:
+    raw = (product_type or "").strip()
+    if not raw:
+        return False
+    if raw in config.DELTA_EXCLUDED_TYPES:
+        return True
+    for prefix in _TYPE_PREFIXES:
+        if raw.startswith(prefix):
+            suffix = raw[len(prefix) :].strip()
+            if suffix in config.DELTA_EXCLUDED_TYPES:
+                return True
+    return False
+
+
+def _online_store_exclusion_reason(product: dict) -> str | None:
+    product_type = (product.get("product_type") or "").strip()
+    if not product_type:
+        return "geen_type"
+    if _type_matches_excluded_set(product_type):
+        return f"type:{product_type}"
+    if not _product_has_shopify_image(product):
+        return "geen_afbeelding"
+    return None
+
+
+def _row_from_product(p: dict, *, status_by_sku: dict[str, str] | None = None) -> dict:
+    variants = p.get("variants") or []
+    skus = [normalize_sku_key(v.get("sku")) for v in variants if v.get("sku")]
+    statuses: list[str] = []
+    if status_by_sku is not None:
+        statuses = [
+            lookup_in_str_index(status_by_sku, s).strip()
+            for s in skus
+        ]
+        statuses = [s for s in statuses if s]
+    return {
+        "product_id": str(p.get("id") or ""),
+        "handle": (p.get("handle") or "").strip(),
+        "title": (p.get("title") or "").strip()[:120],
+        "product_type": (p.get("product_type") or "").strip(),
+        "skus": ",".join(skus[:5]) + ("..." if len(skus) > 5 else ""),
+        "article_statuses": ",".join(sorted(set(statuses))),
+        "variant_count": len(variants),
+    }
+
+
 def _collect_candidates_rest(
     sess: requests.Session,
     status_by_sku: dict[str, str],
@@ -156,10 +217,12 @@ def _collect_candidates_rest(
     headers = {"X-Shopify-Access-Token": TOKEN}
     url = (
         f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
-        f"?limit=250&status=active&fields=id,handle,title,status,published_at,variants"
+        f"?limit=250&status=active"
+        f"&fields=id,handle,title,status,published_at,product_type,images,variants"
     )
     scanned = 0
     candidates: list[dict] = []
+    skipped: list[dict] = []
 
     while url:
         r = sess.get(
@@ -183,33 +246,80 @@ def _collect_candidates_rest(
             variants = p.get("variants") or []
             if not _product_is_sellable_per_csv(variants, status_by_sku):
                 continue
-            skus = [normalize_sku_key(v.get("sku")) for v in variants if v.get("sku")]
-            statuses = [
-                lookup_in_str_index(status_by_sku, s).strip()
-                for s in skus
-            ]
-            statuses = [s for s in statuses if s]
-            candidates.append(
-                {
-                    "product_id": str(p.get("id") or ""),
-                    "handle": (p.get("handle") or "").strip(),
-                    "title": (p.get("title") or "").strip()[:120],
-                    "skus": ",".join(skus[:5]) + ("..." if len(skus) > 5 else ""),
-                    "article_statuses": ",".join(sorted(set(statuses))),
-                    "variant_count": len(variants),
-                }
-            )
+            row = _row_from_product(p, status_by_sku=status_by_sku)
+            reason = _online_store_exclusion_reason(p)
+            if reason:
+                skipped.append({**row, "exclusion_reason": reason})
+                continue
+            candidates.append(row)
 
         if scanned % 5000 == 0 and scanned:
             print(
-                f"  ... {scanned} ACTIVE gescand, kandidaten {len(candidates)}",
+                f"  ... {scanned} ACTIVE gescand, kandidaten {len(candidates)}, "
+                f"overgeslagen {len(skipped)}",
                 flush=True,
             )
         url = _next_url_from_link_header(r.headers.get("Link"))
         time.sleep(0.2)
 
-    print(f"ACTIVE gescand: {scanned}", flush=True)
-    return candidates
+    print(
+        f"ACTIVE gescand: {scanned}; publish-kandidaten {len(candidates)}, "
+        f"uitgesloten (zelfde scan) {len(skipped)}",
+        flush=True,
+    )
+    return candidates, skipped
+
+
+def _collect_unpublish_rest(sess: requests.Session) -> list[dict]:
+    """ACTIVE + op webshop + moet UIT (type/afbeelding)."""
+    headers = {"X-Shopify-Access-Token": TOKEN}
+    url = (
+        f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
+        f"?limit=250&status=active"
+        f"&fields=id,handle,title,status,published_at,product_type,images,variants"
+    )
+    scanned = 0
+    to_unpublish: list[dict] = []
+
+    while url:
+        r = sess.get(
+            url,
+            headers=headers,
+            timeout=_REQUEST_TIMEOUT,
+            proxies={"http": None, "https": None},
+        )
+        if r.status_code == 429:
+            time.sleep(2)
+            continue
+        if r.status_code >= 500:
+            time.sleep(3)
+            continue
+        r.raise_for_status()
+
+        for p in r.json().get("products", []):
+            scanned += 1
+            if not (p.get("published_at") or "").strip():
+                continue
+            reason = _online_store_exclusion_reason(p)
+            if not reason:
+                continue
+            to_unpublish.append(
+                {**_row_from_product(p), "exclusion_reason": reason}
+            )
+
+        if scanned % 5000 == 0 and scanned:
+            print(
+                f"  ... unpublish-scan {scanned} ACTIVE, te depubliceren {len(to_unpublish)}",
+                flush=True,
+            )
+        url = _next_url_from_link_header(r.headers.get("Link"))
+        time.sleep(0.2)
+
+    print(
+        f"Unpublish-scan: {scanned} ACTIVE; te depubliceren {len(to_unpublish)}",
+        flush=True,
+    )
+    return to_unpublish
 
 
 def _load_candidates_from_csv(path: Path) -> list[dict]:
@@ -225,6 +335,7 @@ def _load_candidates_from_csv(path: Path) -> list[dict]:
                     "product_id": pid,
                     "handle": (row.get("handle") or "").strip(),
                     "title": (row.get("title") or "").strip()[:120],
+                    "product_type": (row.get("product_type") or "").strip(),
                     "skus": (row.get("skus") or "").strip(),
                     "article_statuses": (row.get("article_statuses") or "").strip(),
                     "variant_count": (row.get("variant_count") or "").strip(),
@@ -233,7 +344,67 @@ def _load_candidates_from_csv(path: Path) -> list[dict]:
     return rows
 
 
-def _publish_product(sess: requests.Session, product_id: str) -> tuple[bool, str, str | None]:
+def _fetch_products_by_ids(
+    sess: requests.Session,
+    product_ids: list[str],
+) -> dict[str, dict]:
+    headers = {"X-Shopify-Access-Token": TOKEN}
+    out: dict[str, dict] = {}
+    ids = [pid for pid in product_ids if str(pid).isdigit()]
+    fields = "id,handle,title,status,published_at,product_type,images,variants"
+    for i in range(0, len(ids), 250):
+        chunk = ids[i : i + 250]
+        url = (
+            f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
+            f"?ids={','.join(chunk)}&fields={fields}"
+        )
+        r = sess.get(
+            url,
+            headers=headers,
+            timeout=_REQUEST_TIMEOUT,
+            proxies={"http": None, "https": None},
+        )
+        r.raise_for_status()
+        for p in r.json().get("products", []):
+            out[str(p.get("id") or "")] = p
+        time.sleep(0.15)
+    return out
+
+
+def _apply_online_store_rules(
+    sess: requests.Session,
+    rows: list[dict],
+    *,
+    status_by_sku: dict[str, str] | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Filter kandidaten op type/afbeelding (haalt actuele Shopify-productdata op)."""
+    if not rows:
+        return [], []
+    products = _fetch_products_by_ids(sess, [r["product_id"] for r in rows])
+    candidates: list[dict] = []
+    skipped: list[dict] = []
+    for row in rows:
+        p = products.get(row["product_id"])
+        if not p:
+            skipped.append({**row, "exclusion_reason": "niet_gevonden"})
+            continue
+        merged = _row_from_product(p, status_by_sku=status_by_sku)
+        if row.get("article_statuses"):
+            merged["article_statuses"] = row["article_statuses"]
+        reason = _online_store_exclusion_reason(p)
+        if reason:
+            skipped.append({**merged, "exclusion_reason": reason})
+        else:
+            candidates.append(merged)
+    return candidates, skipped
+
+
+def _set_product_published(
+    sess: requests.Session,
+    product_id: str,
+    *,
+    published: bool,
+) -> tuple[bool, str, str | None]:
     gid = f"gid://shopify/Product/{product_id}"
     body = _graphql_post(
         sess,
@@ -242,7 +413,7 @@ def _publish_product(sess: requests.Session, product_id: str) -> tuple[bool, str
             "input": {
                 "id": gid,
                 "status": "ACTIVE",
-                "published": True,
+                "published": published,
             }
         },
     )
@@ -255,9 +426,20 @@ def _publish_product(sess: requests.Session, product_id: str) -> tuple[bool, str
         return False, json.dumps(user_errors)[:500], None
     product = upd.get("product") or {}
     pub = product.get("publishedAt")
-    if not pub:
+    if published and not pub:
         return False, "publishedAt nog steeds leeg na productUpdate", None
-    return True, "", str(pub)
+    if not published and pub:
+        return False, "publishedAt nog gevuld na depublicatie", None
+    return True, "", str(pub) if pub else None
+
+
+def _publish_product(sess: requests.Session, product_id: str) -> tuple[bool, str, str | None]:
+    return _set_product_published(sess, product_id, published=True)
+
+
+def _unpublish_product(sess: requests.Session, product_id: str) -> tuple[bool, str]:
+    ok, err, _ = _set_product_published(sess, product_id, published=False)
+    return ok, err
 
 
 def _supabase_headers() -> dict[str, str] | None:
@@ -310,6 +492,46 @@ def _flush_mirror_published(
         if r.status_code >= 400:
             print(
                 f"Mirror-update waarschuwing (HTTP {r.status_code}): {r.text[:300]}",
+                flush=True,
+            )
+
+
+def _flush_mirror_unpublished(
+    sess: requests.Session,
+    product_ids: list[str],
+) -> None:
+    headers = _supabase_headers()
+    base = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+    if not headers or not base or not product_ids:
+        return
+    ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    chunk = 200
+    for i in range(0, len(product_ids), chunk):
+        part = [pid for pid in product_ids[i : i + chunk] if str(pid).isdigit()]
+        if not part:
+            continue
+        rows = [
+            {
+                "shopify_product_id": int(pid),
+                "status": "active",
+                "published_at": None,
+                "synced_at": ts,
+            }
+            for pid in part
+        ]
+        url = f"{base}/rest/v1/shopify_products"
+        params = {"on_conflict": "shopify_product_id"}
+        r = sess.post(
+            url,
+            headers={**headers, "Prefer": "resolution=merge-duplicates,return=minimal"},
+            params=params,
+            json=rows,
+            timeout=_REQUEST_TIMEOUT,
+            proxies={"http": None, "https": None},
+        )
+        if r.status_code >= 400:
+            print(
+                f"Mirror-unpublish waarschuwing (HTTP {r.status_code}): {r.text[:300]}",
                 flush=True,
             )
 
@@ -370,6 +592,35 @@ def main() -> int:
         help="Rapport na --apply met mislukte publicaties",
     )
     ap.add_argument(
+        "--skipped-csv",
+        type=Path,
+        default=Path("output/publish_sellable_active_skipped.csv"),
+        help="Verkoopbare ACTIVE zonder webshop, maar uitgesloten (type/afbeelding)",
+    )
+    ap.add_argument(
+        "--unpublish-csv",
+        type=Path,
+        default=Path("output/publish_sellable_active_unpublish.csv"),
+        help="ACTIVE op webshop die UIT moeten (type/afbeelding)",
+    )
+    ap.add_argument(
+        "--unpublished-csv",
+        type=Path,
+        default=Path("output/publish_sellable_active_unpublished.csv"),
+        help="Rapport na --apply met geslaagde depublicaties",
+    )
+    ap.add_argument(
+        "--unpublish-errors-csv",
+        type=Path,
+        default=Path("output/publish_sellable_active_unpublish_errors.csv"),
+        help="Rapport na --apply met mislukte depublicaties",
+    )
+    ap.add_argument(
+        "--skip-unpublish",
+        action="store_true",
+        help="Geen depublicatie-scan/-mutaties (alleen publiceren)",
+    )
+    ap.add_argument(
         "--require-status-index",
         action="store_true",
         help="Faal als er geen ArticleStatus-index uit CSV geladen kan worden",
@@ -415,41 +666,116 @@ def main() -> int:
             return 2
         csv_source = args.output_csv
 
+    report_fields = [
+        "product_id",
+        "handle",
+        "title",
+        "product_type",
+        "skus",
+        "article_statuses",
+        "variant_count",
+    ]
+    skipped_fields = [*report_fields, "exclusion_reason"]
+
+    skipped: list[dict] = []
     if csv_source is not None:
         print(f"Kandidaten uit CSV (geen catalogusscan): {csv_source}", flush=True)
-        candidates = _load_candidates_from_csv(csv_source)
+        raw_rows = _load_candidates_from_csv(csv_source)
+        candidates, skipped = _apply_online_store_rules(
+            sess, raw_rows, status_by_sku=status_by_sku
+        )
     else:
-        print("Catalogusscan: ACTIVE + published_at leeg + ERP verkoopbaar...", flush=True)
-        candidates = _collect_candidates_rest(sess, status_by_sku)
+        print(
+            "Catalogusscan: ACTIVE + published_at leeg + ERP verkoopbaar "
+            "+ type/afbeelding OK...",
+            flush=True,
+        )
+        candidates, skipped = _collect_candidates_rest(sess, status_by_sku)
+
+    to_unpublish: list[dict] = []
+    if not args.skip_unpublish:
+        print(
+            "Unpublish-scan: ACTIVE op webshop met uitgesloten type/geen afbeelding...",
+            flush=True,
+        )
+        to_unpublish = _collect_unpublish_rest(sess)
 
     candidates.sort(key=lambda r: (r.get("handle") or "").lower())
-    _write_report(
-        args.output_csv,
-        candidates,
-        ["product_id", "handle", "title", "skus", "article_statuses", "variant_count"],
-    )
-    print(f"Kandidaten: {len(candidates)} → {args.output_csv}", flush=True)
+    skipped.sort(key=lambda r: (r.get("handle") or "").lower())
+    to_unpublish.sort(key=lambda r: (r.get("handle") or "").lower())
+
+    _write_report(args.output_csv, candidates, report_fields)
+    print(f"Publish-kandidaten: {len(candidates)} → {args.output_csv}", flush=True)
+    if skipped:
+        _write_report(args.skipped_csv, skipped, skipped_fields)
+        print(f"Overgeslagen (publish): {len(skipped)} → {args.skipped_csv}", flush=True)
+    if to_unpublish:
+        _write_report(args.unpublish_csv, to_unpublish, skipped_fields)
+        print(f"Te depubliceren: {len(to_unpublish)} → {args.unpublish_csv}", flush=True)
 
     if not args.apply:
-        print("Dry-run: geen publicaties in Shopify.", flush=True)
-        for row in candidates[:15]:
+        print("Dry-run: geen wijzigingen in Shopify.", flush=True)
+        for row in candidates[:10]:
             print(
-                f"  {row['handle']}: {row['title'][:50]} | {row['skus']} | ERP {row['article_statuses']}",
+                f"  publish {row['handle']}: {row['title'][:45]} | "
+                f"{row.get('product_type', '')} | ERP {row['article_statuses']}",
                 flush=True,
             )
-        if len(candidates) > 15:
-            print(f"  ... +{len(candidates) - 15} meer in CSV", flush=True)
+        if len(candidates) > 10:
+            print(f"  ... +{len(candidates) - 10} publish-kandidaten in CSV", flush=True)
+        for row in to_unpublish[:5]:
+            print(
+                f"  unpublish {row['handle']}: {row.get('exclusion_reason')} | "
+                f"type {row.get('product_type', '')}",
+                flush=True,
+            )
+        if len(to_unpublish) > 5:
+            print(f"  ... +{len(to_unpublish) - 5} te depubliceren in CSV", flush=True)
         return 0
-
-    to_publish = candidates
-    if args.limit > 0:
-        to_publish = candidates[: args.limit]
-        print(f"--limit {args.limit}: alleen eerste {len(to_publish)} producten.", flush=True)
 
     sleep_sec = float(
         (os.environ.get("SHOPIFY_PUBLISH_SLEEP_SEC") or "").strip() or "0.25"
     )
     progress_every = max(50, int(os.environ.get("SHOPIFY_PUBLISH_PROGRESS_EVERY", "100")))
+
+    unpublish_err_count = 0
+    if to_unpublish and not args.skip_unpublish:
+        unpublish_ok: list[dict] = []
+        unpublish_err: list[dict] = []
+        mirror_unpub: list[str] = []
+        print(f"Depubliceren Online Store: {len(to_unpublish)} producten...", flush=True)
+        for idx, row in enumerate(to_unpublish, start=1):
+            pid = row["product_id"]
+            ok, err = _unpublish_product(sess, pid)
+            if ok:
+                unpublish_ok.append(row)
+                mirror_unpub.append(pid)
+            else:
+                unpublish_err.append({**row, "error": err})
+            if idx == 1 or idx == len(to_unpublish) or idx % progress_every == 0:
+                print(
+                    f"  unpublish {idx}/{len(to_unpublish)} "
+                    f"ok={len(unpublish_ok)} fout={len(unpublish_err)}",
+                    flush=True,
+                )
+            if len(mirror_unpub) >= 200:
+                _flush_mirror_unpublished(sess, mirror_unpub)
+                mirror_unpub.clear()
+            if sleep_sec > 0:
+                time.sleep(sleep_sec)
+        _flush_mirror_unpublished(sess, mirror_unpub)
+        unpublish_err_count = len(unpublish_err)
+        _write_report(args.unpublished_csv, unpublish_ok, skipped_fields)
+        _write_report(args.unpublish_errors_csv, unpublish_err, [*skipped_fields, "error"])
+        print(
+            f"Depublicatie klaar: {len(unpublish_ok)} ok, {unpublish_err_count} fouten.",
+            flush=True,
+        )
+
+    to_publish = candidates
+    if args.limit > 0:
+        to_publish = candidates[: args.limit]
+        print(f"--limit {args.limit}: alleen eerste {len(to_publish)} producten.", flush=True)
 
     published_rows: list[dict] = []
     error_rows: list[dict] = []
@@ -482,22 +808,22 @@ def main() -> int:
     _write_report(
         args.published_csv,
         published_rows,
-        ["product_id", "handle", "title", "skus", "article_statuses", "variant_count", "published_at"],
+        [*report_fields, "published_at"],
     )
     _write_report(
         args.errors_csv,
         error_rows,
-        ["product_id", "handle", "title", "skus", "article_statuses", "variant_count", "error"],
+        [*report_fields, "error"],
     )
 
     print(
-        f"Klaar: gepubliceerd {len(published_rows)}, fouten {len(error_rows)}.",
+        f"Klaar: gepubliceerd {len(published_rows)}, publish-fouten {len(error_rows)}.",
         flush=True,
     )
     print(f"  Succes: {args.published_csv}", flush=True)
     if error_rows:
-        print(f"  Fouten: {args.errors_csv}", flush=True)
-    return 1 if error_rows else 0
+        print(f"  Publish-fouten: {args.errors_csv}", flush=True)
+    return 1 if error_rows or unpublish_err_count else 0
 
 
 if __name__ == "__main__":

@@ -139,4 +139,15 @@ apply_brand(os.environ.get("BRAND", DEFAULT_BRAND_ID))
 CULTURE = "EN-GB"
 VAT_MULTIPLIER = 1.21
 
-DELTA_EXCLUDED_TYPES = frozenset({"Bikes", "Pricelists", "Archiv", "Archive", "Arhive"})
+DELTA_EXCLUDED_TYPES = frozenset(
+    {
+        "Bikes",
+        "Pricelists",
+        "Archiv",
+        "Archive",
+        "Arhive",
+        "Additional",
+        "Motorcycles",
+        "Software enhancements",
+    }
+)
