@@ -1,0 +1,126 @@
+name: shopify_publish_sellable_active_products
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = publiceer op Webshop, false = alleen scan/rapport"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      limit:
+        description: "Max producten (0 = geen limiet; handig voor test)"
+        required: false
+        default: "0"
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: shopify-write-lock
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch prijsbestanden (FTP/SFTP/FTPS)
+        env:
+          KTM_TRANSFER_PROTOCOL: ${{ secrets.KTM_TRANSFER_PROTOCOL }}
+          KTM_SFTP_HOST: ${{ secrets.KTM_SFTP_HOST }}
+          KTM_SFTP_PORT: ${{ secrets.KTM_SFTP_PORT }}
+          KTM_SFTP_USER: ${{ secrets.KTM_SFTP_USER }}
+          KTM_SFTP_PASSWORD: ${{ secrets.KTM_SFTP_PASSWORD }}
+          KTM_SFTP_REMOTE_DIR: ${{ secrets.KTM_SFTP_REMOTE_DIR }}
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+          KTM_SFTP_PATTERN: ${{ secrets.KTM_SFTP_PATTERN }}
+          KTM_FTP_TIMEOUT_SEC: ${{ secrets.KTM_FTP_TIMEOUT_SEC }}
+          KTM_FTP_RETRIES: ${{ secrets.KTM_FTP_RETRIES }}
+          KTM_FTP_RETRY_SLEEP_SEC: ${{ secrets.KTM_FTP_RETRY_SLEEP_SEC }}
+          KTM_FTP_BLOCKSIZE: ${{ secrets.KTM_FTP_BLOCKSIZE }}
+        run: python scripts/fetch_input_sftp.py
+
+      - name: Verwijder oude prijs-CSV's uit input (stale guard)
+        run: |
+          rm -f input/0150_35_Z1_EUR_EN_csv.csv
+          rm -f input/hsq/1100_35_Z1_EUR_EN_csv.csv
+          rm -f input/hsq/0140_35_Z1_EUR_EN_csv.csv
+          rm -f input/wp/0910_35_Z1_EUR_EN_csv.csv
+          rm -f input/1100_35_Z1_EUR_EN_csv.csv
+          rm -f input/0910_35_Z1_EUR_EN_csv.csv
+          rm -f input/0140_35_Z1_EUR_EN_csv.csv
+
+      - name: Staging → input/
+        env:
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+          KTM_PREPARE_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+        run: python scripts/prepare_input_from_ftp.py
+
+      - name: Valideer complete prijs-CSV set (1100/0910/0150/0140)
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          root = Path.cwd()
+          sys.path.insert(0, str(root))
+          from modules.brand_config import missing_pricelist_csv_paths, resolve_pricelist_csv_path
+          from modules.brand_config import PRICELIST_CSV_MERGE_ORDER
+
+          missing = missing_pricelist_csv_paths(root)
+          for name in PRICELIST_CSV_MERGE_ORDER:
+              p = resolve_pricelist_csv_path(root, name)
+              if p is not None:
+                  print(p)
+          if missing:
+              print("Onvolledige CSV-set; stop.")
+              for rel in missing:
+                  print(f"Ontbreekt of leeg: {rel}")
+              raise SystemExit(1)
+          PY
+
+      - name: Publiceer verkoopbare ACTIVE producten op Webshop
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOPIFY_PUBLISH_SLEEP_SEC: "0.25"
+        run: |
+          EXTRA=()
+          if [ "${{ github.event.inputs.limit }}" != "" ] && [ "${{ github.event.inputs.limit }}" != "0" ]; then
+            EXTRA+=(--limit "${{ github.event.inputs.limit }}")
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.apply }}" != "true" ]; then
+            python scripts/shopify_publish_sellable_active_products.py --require-status-index "${EXTRA[@]}"
+          else
+            python scripts/shopify_publish_sellable_active_products.py --apply --require-status-index "${EXTRA[@]}"
+          fi
+
+      - name: Upload rapporten
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: publish-sellable-active-products-report
+          path: |
+            output/publish_sellable_active_candidates.csv
+            output/publish_sellable_active_published.csv
+            output/publish_sellable_active_errors.csv
+          if-no-files-found: ignore
