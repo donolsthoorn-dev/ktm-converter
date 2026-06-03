@@ -1,6 +1,13 @@
+# Publiceer ACTIVE + ERP-verkoopbare producten op Webshop (published_at leeg).
+# Triggers: GitHub schedule (~04:30 NL winter) of workflow_dispatch / Supabase dispatch (032).
+# Zie docs/supabase-scheduler.md voor NL-planning via Supabase-cron.
+
 name: shopify_publish_sellable_active_products
 
 on:
+  schedule:
+    # 03:30 UTC ≈ 04:30 CET (winter); ≈ 05:30 CEST (zomer). Na auto_deactivate (~04:00 NL).
+    - cron: "30 3 * * *"
   workflow_dispatch:
     inputs:
       apply:
