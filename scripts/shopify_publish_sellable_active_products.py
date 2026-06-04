@@ -7,12 +7,13 @@ Criteria per product (publiceren):
   - status ACTIVE
   - published_at leeg
   - minstens één variant-SKU met ArticleStatus in CSV, en niet overal 80
+  - niet volledig uitverkocht in Shopify en niet overal ERP StockAvailable=0
   - product_type niet leeg en niet in config.DELTA_EXCLUDED_TYPES (o.a. Archive, Archiv,
     Additional, Motorcycles, Software enhancements)
   - minstens één productafbeelding in Shopify
 
 Niet op Online Store (overslaan bij publiceren; bij --apply expliciet unpublish):
-  - uitgesloten type, leeg type, of geen afbeelding
+  - uitgesloten type, leeg type, geen afbeelding, uitverkocht, of ERP StockAvailable=0
 
 Mutatie: GraphQL productUpdate met status ACTIVE + published: true/false
 (werkt met bestaande product-scopes; geen read/write_publications nodig).
@@ -57,8 +58,13 @@ if str(ROOT) not in sys.path:
 import config  # noqa: E402
 from modules.pricing_loader import (  # noqa: E402
     load_article_status_from_35_z1_csv_files,
+    load_stock_available_from_35_z1_csv_files,
     lookup_in_str_index,
     normalize_sku_key,
+)
+from modules.shopify_product_availability import (  # noqa: E402
+    product_unavailable_for_webshop,
+    unavailable_reason_label,
 )
 
 SHOP = config.SHOPIFY_SHOP_DOMAIN
@@ -150,11 +156,20 @@ def _variant_article_statuses(
     return out
 
 
-def _product_is_sellable_per_csv(variants: list[dict], status_by_sku: dict[str, str]) -> bool:
+def _product_is_sellable_per_csv(
+    variants: list[dict],
+    status_by_sku: dict[str, str],
+    *,
+    stock_by_sku: dict[str, int] | None = None,
+) -> bool:
     statuses = _variant_article_statuses(variants, status_by_sku)
     if not statuses:
         return False
-    return any(st != "80" for st in statuses)
+    if not any(st != "80" for st in statuses):
+        return False
+    if product_unavailable_for_webshop(variants, stock_by_sku=stock_by_sku):
+        return False
+    return True
 
 
 def _product_has_shopify_image(product: dict) -> bool:
@@ -178,7 +193,11 @@ def _type_matches_excluded_set(product_type: str) -> bool:
     return False
 
 
-def _online_store_exclusion_reason(product: dict) -> str | None:
+def _online_store_exclusion_reason(
+    product: dict,
+    *,
+    stock_by_sku: dict[str, int] | None = None,
+) -> str | None:
     product_type = (product.get("product_type") or "").strip()
     if not product_type:
         return "geen_type"
@@ -186,6 +205,10 @@ def _online_store_exclusion_reason(product: dict) -> str | None:
         return f"type:{product_type}"
     if not _product_has_shopify_image(product):
         return "geen_afbeelding"
+    variants = product.get("variants") or []
+    unavail = unavailable_reason_label(variants, stock_by_sku=stock_by_sku)
+    if unavail:
+        return unavail
     return None
 
 
@@ -213,7 +236,8 @@ def _row_from_product(p: dict, *, status_by_sku: dict[str, str] | None = None) -
 def _collect_candidates_rest(
     sess: requests.Session,
     status_by_sku: dict[str, str],
-) -> list[dict]:
+    stock_by_sku: dict[str, int],
+) -> tuple[list[dict], list[dict]]:
     headers = {"X-Shopify-Access-Token": TOKEN}
     url = (
         f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
@@ -244,10 +268,12 @@ def _collect_candidates_rest(
             if (p.get("published_at") or "").strip():
                 continue
             variants = p.get("variants") or []
-            if not _product_is_sellable_per_csv(variants, status_by_sku):
+            if not _product_is_sellable_per_csv(
+                variants, status_by_sku, stock_by_sku=stock_by_sku
+            ):
                 continue
             row = _row_from_product(p, status_by_sku=status_by_sku)
-            reason = _online_store_exclusion_reason(p)
+            reason = _online_store_exclusion_reason(p, stock_by_sku=stock_by_sku)
             if reason:
                 skipped.append({**row, "exclusion_reason": reason})
                 continue
@@ -270,8 +296,12 @@ def _collect_candidates_rest(
     return candidates, skipped
 
 
-def _collect_unpublish_rest(sess: requests.Session) -> list[dict]:
-    """ACTIVE + op webshop + moet UIT (type/afbeelding)."""
+def _collect_unpublish_rest(
+    sess: requests.Session,
+    status_by_sku: dict[str, str],
+    stock_by_sku: dict[str, int],
+) -> list[dict]:
+    """ACTIVE + op webshop + moet UIT (type/afbeelding/uitverkocht/ERP stock 0)."""
     headers = {"X-Shopify-Access-Token": TOKEN}
     url = (
         f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
@@ -300,11 +330,11 @@ def _collect_unpublish_rest(sess: requests.Session) -> list[dict]:
             scanned += 1
             if not (p.get("published_at") or "").strip():
                 continue
-            reason = _online_store_exclusion_reason(p)
+            reason = _online_store_exclusion_reason(p, stock_by_sku=stock_by_sku)
             if not reason:
                 continue
             to_unpublish.append(
-                {**_row_from_product(p), "exclusion_reason": reason}
+                {**_row_from_product(p, status_by_sku=status_by_sku), "exclusion_reason": reason}
             )
 
         if scanned % 5000 == 0 and scanned:
@@ -376,6 +406,7 @@ def _apply_online_store_rules(
     rows: list[dict],
     *,
     status_by_sku: dict[str, str] | None = None,
+    stock_by_sku: dict[str, int] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Filter kandidaten op type/afbeelding (haalt actuele Shopify-productdata op)."""
     if not rows:
@@ -391,7 +422,7 @@ def _apply_online_store_rules(
         merged = _row_from_product(p, status_by_sku=status_by_sku)
         if row.get("article_statuses"):
             merged["article_statuses"] = row["article_statuses"]
-        reason = _online_store_exclusion_reason(p)
+        reason = _online_store_exclusion_reason(p, stock_by_sku=stock_by_sku)
         if reason:
             skipped.append({**merged, "exclusion_reason": reason})
         else:
@@ -635,6 +666,7 @@ def main() -> int:
         return 2
 
     status_by_sku = load_article_status_from_35_z1_csv_files(config.INPUT_DIR)
+    stock_by_sku = load_stock_available_from_35_z1_csv_files(config.INPUT_DIR)
     if status_by_sku:
         print(f"CSV ArticleStatus-index: {len(status_by_sku)} SKU's.", flush=True)
     elif args.require_status_index:
@@ -647,6 +679,13 @@ def main() -> int:
     else:
         print(
             "Waarschuwing: geen ArticleStatus-index; er worden geen kandidaten gevonden.",
+            flush=True,
+        )
+    if stock_by_sku:
+        print(f"CSV StockAvailable-index: {len(stock_by_sku)} SKU's.", flush=True)
+    else:
+        print(
+            "Waarschuwing: geen StockAvailable-index; alleen Shopify-voorraad telt voor uitverkocht.",
             flush=True,
         )
 
@@ -682,7 +721,10 @@ def main() -> int:
         print(f"Kandidaten uit CSV (geen catalogusscan): {csv_source}", flush=True)
         raw_rows = _load_candidates_from_csv(csv_source)
         candidates, skipped = _apply_online_store_rules(
-            sess, raw_rows, status_by_sku=status_by_sku
+            sess,
+            raw_rows,
+            status_by_sku=status_by_sku,
+            stock_by_sku=stock_by_sku,
         )
     else:
         print(
@@ -690,15 +732,17 @@ def main() -> int:
             "+ type/afbeelding OK...",
             flush=True,
         )
-        candidates, skipped = _collect_candidates_rest(sess, status_by_sku)
+        candidates, skipped = _collect_candidates_rest(
+            sess, status_by_sku, stock_by_sku
+        )
 
     to_unpublish: list[dict] = []
     if not args.skip_unpublish:
         print(
-            "Unpublish-scan: ACTIVE op webshop met uitgesloten type/geen afbeelding...",
+            "Unpublish-scan: ACTIVE op webshop met type/afbeelding/uitverkocht/ERP stock 0...",
             flush=True,
         )
-        to_unpublish = _collect_unpublish_rest(sess)
+        to_unpublish = _collect_unpublish_rest(sess, status_by_sku, stock_by_sku)
 
     candidates.sort(key=lambda r: (r.get("handle") or "").lower())
     skipped.sort(key=lambda r: (r.get("handle") or "").lower())

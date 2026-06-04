@@ -20,6 +20,7 @@ StockAvailable, …):
                      Product-draft gebeurt in een apart script.
   - Variant policy  → hybride regel: `DENY` bij `ArticleStatus=80` of `StockAvailable=0`;
                      anders `CONTINUE` bij `StockAvailable=1/2` of niet-80 status
+  - Productstatus   → `DRAFT` bij status 80 of `StockAvailable=0`; `ACTIVE` bij andere status + stock 1/2
 
 Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; geen live variant-fetch per run):
   python3 scripts/shopify_refresh_variant_cache.py
@@ -272,6 +273,9 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                     if st == "80":
                         product_status: str | None = "DRAFT"
                         published: bool | None = False
+                    elif st and stock_code == 0:
+                        product_status = "DRAFT"
+                        published = False
                     elif st:
                         product_status = "ACTIVE"
                         published = True
@@ -1017,25 +1021,32 @@ def resolve_desired_product_status_by_product_id(
     sku_to_vp: dict[str, list[tuple[str, str | None]]],
 ) -> dict[str, str]:
     """
-    Productstatus in deze flow:
-    - ACTIVE zodra minimaal één variant expliciet niet-80 is
-    - geen update als alle varianten 80 zijn (draft gebeurt in apart script)
-    - geen update als ArticleStatus leeg/onbekend is
+    Productstatus per Shopify-product-id:
+    - ACTIVE zodra minimaal één gekoppelde SKU ACTIVE voorstelt (niet-80, voorraad 1/2)
+    - DRAFT wanneer alle gekoppelde SKU's DRAFT voorstellen (status 80 of StockAvailable=0)
+    - geen entry = geen productstatus-mutatie via deze resolver
     """
-    seen_active_by_pid: dict[str, bool] = {}
+    active_by_pid: dict[str, bool] = {}
+    draft_by_pid: dict[str, bool] = {}
     for sku, desired in desired_by_sku.items():
-        pairs = variant_pairs_for_pricelist_sku(sku_to_vp, sku)
         desired_ps = str(desired.get("product_status") or "").upper()
-        if desired_ps != "ACTIVE":
+        if desired_ps not in ("ACTIVE", "DRAFT"):
             continue
-        is_active = True
-        for _vid, pid in pairs:
+        for _vid, pid in variant_pairs_for_pricelist_sku(sku_to_vp, sku):
             if not pid:
                 continue
             spid = str(pid)
-            if is_active:
-                seen_active_by_pid[spid] = True
-    return {pid: "ACTIVE" for pid, is_active in seen_active_by_pid.items() if is_active}
+            if desired_ps == "ACTIVE":
+                active_by_pid[spid] = True
+            else:
+                draft_by_pid[spid] = True
+    out: dict[str, str] = {}
+    for spid in set(active_by_pid) | set(draft_by_pid):
+        if active_by_pid.get(spid):
+            out[spid] = "ACTIVE"
+        elif draft_by_pid.get(spid):
+            out[spid] = "DRAFT"
+    return out
 
 
 def _merge_state(state: dict, sku: str, updates: dict) -> None:

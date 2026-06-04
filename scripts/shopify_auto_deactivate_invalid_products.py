@@ -5,9 +5,12 @@ Periodieke publicatiecheck op productniveau (Shopify):
 - Zet product op DRAFT als:
   1) minstens één variant geen geldige prijs heeft (> 0), of
   2) alle varianten uitverkocht zijn (inventoryPolicy=DENY en quantity<=0), of
-  3) strict-regel: alle Shopify-varianten hebben CSV-match, overal ArticleStatus=80 en geen voorraad.
+  3) strict-regel: alle Shopify-varianten hebben CSV-match, overal ArticleStatus=80 en geen voorraad, of
+  4) ERP StockAvailable=0 op alle varianten én ook geen voorraad in Shopify (qty<=0).
+  Niet deactiveren wanneer minstens één variant voorraad > 0 heeft in Shopify.
 - Zet product terug op ACTIVE als:
-  - product nu DRAFT staat, alle varianten CSV-match hebben, en strict-regel niet meer geldt.
+  - product nu DRAFT staat, alle varianten CSV-match hebben, strict-regel niet meer geldt,
+    en het product niet volledig uitverkocht is en niet overal ERP StockAvailable=0 heeft.
 
 Standaard is dry-run (alleen rapporteren). Voeg --apply toe om echt te wijzigen.
 
@@ -44,8 +47,15 @@ if str(ROOT) not in sys.path:
 import config  # noqa: E402
 from modules.pricing_loader import (  # noqa: E402
     load_article_status_from_35_z1_csv_files,
+    load_stock_available_from_35_z1_csv_files,
     lookup_in_str_index,
     normalize_sku_key,
+)
+from modules.shopify_product_availability import (  # noqa: E402
+    product_all_variants_erp_stock_zero,
+    product_all_variants_shopify_no_stock,
+    product_all_variants_sold_out,
+    product_unavailable_for_webshop,
 )
 
 SHOP = config.SHOPIFY_SHOP_DOMAIN
@@ -190,29 +200,6 @@ def _gid_numeric(gid: str) -> str:
     return gid.rsplit("/", 1)[-1]
 
 
-def _variant_is_sold_out(v: dict) -> bool:
-    policy = (v.get("inventoryPolicy") or "").strip().upper()
-    if policy != "DENY":
-        return False
-    qty = v.get("inventoryQuantity")
-    if qty is None:
-        return False
-    try:
-        return int(qty) <= 0
-    except (TypeError, ValueError):
-        return False
-
-
-def _variant_qty_no_stock(v: dict) -> bool:
-    qty = v.get("inventoryQuantity")
-    if qty is None:
-        return False
-    try:
-        return int(qty) <= 0
-    except (TypeError, ValueError):
-        return False
-
-
 def _product_relevant_for_status_rules(p: dict) -> bool:
     st = (p.get("status") or "").strip().upper()
     return st in ("ACTIVE", "DRAFT")
@@ -222,11 +209,17 @@ def _evaluate_product(
     product: dict,
     variants: list[dict],
     article_status_by_sku: dict[str, str],
+    stock_by_sku: dict[str, int],
 ) -> dict:
     current_status = (product.get("status") or "").strip().upper()
     has_bad_price = any(_variant_price_bad(v.get("price")) for v in variants)
-    all_sold_out = bool(variants) and all(_variant_is_sold_out(v) for v in variants)
-    all_no_stock = bool(variants) and all(_variant_qty_no_stock(v) for v in variants)
+    all_sold_out = product_all_variants_sold_out(variants)
+    all_no_stock = product_all_variants_shopify_no_stock(variants)
+    erp_all_stock_zero = product_all_variants_erp_stock_zero(variants, stock_by_sku)
+    erp_stock_zero_no_shopify_stock = erp_all_stock_zero and all_no_stock
+    unavailable = product_unavailable_for_webshop(
+        variants, stock_by_sku=stock_by_sku or None
+    )
 
     status_values: list[str] = []
     all_variants_have_csv_status = bool(variants)
@@ -249,11 +242,15 @@ def _evaluate_product(
         current_status == "DRAFT"
         and all_variants_have_csv_status
         and not status80_no_stock_strict
+        and not unavailable
     )
 
     action = "noop"
     if current_status == "ACTIVE" and (
-        has_bad_price or all_sold_out or status80_no_stock_strict
+        has_bad_price
+        or all_sold_out
+        or status80_no_stock_strict
+        or erp_stock_zero_no_shopify_stock
     ):
         action = "set_draft"
     elif reactivate_candidate:
@@ -269,6 +266,7 @@ def _evaluate_product(
         "variant_count": len(variants),
         "reason_bad_price": has_bad_price,
         "reason_sold_out": all_sold_out,
+        "reason_erp_stock_zero": erp_stock_zero_no_shopify_stock,
         "reason_status80_no_stock_strict": status80_no_stock_strict,
         "all_variants_have_csv_status": all_variants_have_csv_status,
         "all_variants_status80": all_variants_status80,
@@ -277,7 +275,11 @@ def _evaluate_product(
     }
 
 
-def _run_bulk(sess: requests.Session, article_status_by_sku: dict[str, str]) -> list[dict]:
+def _run_bulk(
+    sess: requests.Session,
+    article_status_by_sku: dict[str, str],
+    stock_by_sku: dict[str, int],
+) -> list[dict]:
     q = _GQL_BULK_START.replace("BULK_QUERY_PLACEHOLDER", json.dumps(_BULK_QUERY))
     body = _graphql_post(sess, q)
     gerrs = body.get("errors")
@@ -327,7 +329,9 @@ def _run_bulk(sess: requests.Session, article_status_by_sku: dict[str, str]) -> 
             if not url:
                 print("\nGeen resultaat-URL (lege shop?).", flush=True)
                 return []
-            return _download_and_scan_jsonl(sess, url, article_status_by_sku)
+            return _download_and_scan_jsonl(
+                sess, url, article_status_by_sku, stock_by_sku
+            )
 
         if status in ("FAILED", "CANCELED"):
             err = node.get("errorCode")
@@ -345,6 +349,7 @@ def _download_and_scan_jsonl(
     sess: requests.Session,
     url: str,
     article_status_by_sku: dict[str, str],
+    stock_by_sku: dict[str, int],
 ) -> list[dict]:
     print("JSONL downloaden en regel voor regel verwerken...", flush=True)
     products: dict[str, dict] = {}
@@ -383,7 +388,9 @@ def _download_and_scan_jsonl(
                 product = products[prev_product_gid]
                 variants = variants_by_product.get(prev_product_gid, [])
                 evaluated.append(
-                    _evaluate_product(product, variants, article_status_by_sku)
+                    _evaluate_product(
+                        product, variants, article_status_by_sku, stock_by_sku
+                    )
                 )
                 del products[prev_product_gid]
                 variants_by_product.pop(prev_product_gid, None)
@@ -395,7 +402,9 @@ def _download_and_scan_jsonl(
     if prev_product_gid and prev_product_gid in products:
         product = products[prev_product_gid]
         variants = variants_by_product.get(prev_product_gid, [])
-        evaluated.append(_evaluate_product(product, variants, article_status_by_sku))
+        evaluated.append(
+            _evaluate_product(product, variants, article_status_by_sku, stock_by_sku)
+        )
 
     return evaluated
 
@@ -406,6 +415,8 @@ def _reason_label(item: dict) -> str:
         reasons.append("bad_price")
     if item.get("reason_sold_out"):
         reasons.append("sold_out")
+    if item.get("reason_erp_stock_zero"):
+        reasons.append("erp_stock_zero")
     if item.get("reason_status80_no_stock_strict"):
         reasons.append("status80_no_stock_strict")
     if (
@@ -429,6 +440,7 @@ def _write_csv(rows: list[dict], out_path: Path) -> None:
                 "title",
                 "reason_bad_price",
                 "reason_sold_out",
+                "reason_erp_stock_zero",
                 "reason_status80_no_stock_strict",
                 "current_status",
                 "all_variants_have_csv_status",
@@ -448,6 +460,7 @@ def _write_csv(rows: list[dict], out_path: Path) -> None:
                     row["title"],
                     "1" if row["reason_bad_price"] else "0",
                     "1" if row["reason_sold_out"] else "0",
+                    "1" if row["reason_erp_stock_zero"] else "0",
                     "1" if row["reason_status80_no_stock_strict"] else "0",
                     row["current_status"],
                     "1" if row["all_variants_have_csv_status"] else "0",
@@ -544,8 +557,20 @@ def main() -> int:
             flush=True,
         )
 
+    stock_by_sku = load_stock_available_from_35_z1_csv_files(config.INPUT_DIR)
+    if stock_by_sku:
+        print(
+            f"CSV StockAvailable-index geladen: {len(stock_by_sku)} SKU's.",
+            flush=True,
+        )
+    else:
+        print(
+            "Waarschuwing: geen StockAvailable-index; ERP-voorraad-0-regel doet niets.",
+            flush=True,
+        )
+
     sess = _http_session()
-    rows = _run_bulk(sess, article_status_by_sku)
+    rows = _run_bulk(sess, article_status_by_sku, stock_by_sku)
 
     rows_sorted = sorted(
         rows,
@@ -557,6 +582,7 @@ def main() -> int:
         if (
             r.get("reason_bad_price")
             or r.get("reason_sold_out")
+            or r.get("reason_erp_stock_zero")
             or r.get("reason_status80_no_stock_strict")
             or r.get("action") != "noop"
         )
@@ -575,6 +601,8 @@ def main() -> int:
             reason_counter["bad_price"] += 1
         if r.get("reason_sold_out"):
             reason_counter["sold_out"] += 1
+        if r.get("reason_erp_stock_zero"):
+            reason_counter["erp_stock_zero"] += 1
         if r.get("reason_status80_no_stock_strict"):
             reason_counter["status80_no_stock_strict"] += 1
 
@@ -586,6 +614,7 @@ def main() -> int:
         f"noop={action_counter.get('noop', 0)}; "
         f"redenen: bad_price={reason_counter.get('bad_price', 0)}, "
         f"sold_out={reason_counter.get('sold_out', 0)}, "
+        f"erp_stock_zero={reason_counter.get('erp_stock_zero', 0)}, "
         f"status80_no_stock_strict={reason_counter.get('status80_no_stock_strict', 0)}.",
         flush=True,
     )

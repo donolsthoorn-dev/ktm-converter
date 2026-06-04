@@ -152,6 +152,72 @@ def parse_csv_images(path: str) -> dict[str, list[str]]:
     return out
 
 
+def parse_csv_images_split(
+    path: str,
+) -> dict[str, tuple[list[str], list[str]]]:
+    """
+    Handle (genormaliseerd) -> (echte Image Src-URL's, fallback-URL's), beide geordend en uniek.
+    """
+    by_pos: dict[str, list[tuple[int, str, bool]]] = defaultdict(list)
+    with open(path, encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames:
+            return {}
+        if "Handle" not in reader.fieldnames or "Image Src" not in reader.fieldnames:
+            raise SystemExit(
+                f"CSV mist verplichte kolommen Handle / Image Src: {path!r}"
+            )
+        for row in reader:
+            h = normalize_shopify_product_handle(row.get("Handle") or "")
+            if not h:
+                continue
+            src = (row.get("Image Src") or "").strip()
+            if not src:
+                continue
+            raw_pos = (row.get("Image Position") or "").strip()
+            try:
+                ipos = int(raw_pos) if raw_pos else 9999
+            except ValueError:
+                ipos = 9999
+            by_pos[h].append((ipos, src, is_fallback_image_url(src)))
+
+    out: dict[str, tuple[list[str], list[str]]] = {}
+    for h, pairs in by_pos.items():
+        pairs.sort(key=lambda x: (x[0], x[1]))
+        seen_real: set[str] = set()
+        seen_fb: set[str] = set()
+        real: list[str] = []
+        fallback: list[str] = []
+        for _, url, is_fb in pairs:
+            n = norm_src(url)
+            if not n:
+                continue
+            u = url.strip()
+            if is_fb:
+                if n in seen_fb:
+                    continue
+                seen_fb.add(n)
+                fallback.append(u)
+            else:
+                if n in seen_real:
+                    continue
+                seen_real.add(n)
+                real.append(u)
+        if real or fallback:
+            out[h] = (real, fallback)
+    return out
+
+
+def live_norms_are_fallback_only(norms: set[str]) -> bool:
+    """True als er live media is en elk item de placeholder-fallback is."""
+    if not norms:
+        return False
+    for n in norms:
+        if not _FALLBACK_IMAGE_BASENAME_RE.match(n):
+            return False
+    return True
+
+
 def session_for_thread() -> requests.Session:
     s = requests.Session()
     s.trust_env = False

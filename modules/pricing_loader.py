@@ -116,6 +116,14 @@ def lookup_in_str_index(index: dict[str, str], sku: str | None) -> str:
     return ""
 
 
+def lookup_stock_code_in_index(index: dict[str, int], sku: str | None) -> int | None:
+    """Eerste treffer in StockAvailable-index (0/1/2) via pricelist_lookup_keys."""
+    for k in pricelist_lookup_keys(sku):
+        if k in index:
+            return index[k]
+    return None
+
+
 def erp_sku_keys_for_active_brand() -> set[str] | None:
     """
     WP: ArticleNumber-set uit prijs-CSV voor XML→ERP SKU-normalisatie (T05049-00 → T05049).
@@ -190,16 +198,19 @@ def _header_index_ci(header: list[str], names: tuple[str, ...], default: int) ->
     return default
 
 
-def _resolve_0150_column_indices(header: list[str]) -> tuple[int, int, int, int | None]:
+def _resolve_0150_column_indices(
+    header: list[str],
+) -> tuple[int, int, int, int, int | None]:
     """
     Kolommen op naam (zelfde idee als shopify_sync_from_pricelist_csv.read_pricelist_csv_desired).
-    Fallback: vaste indices uit oudere vaste-layout export (B,E,K,X).
+    Fallback: vaste indices uit oudere vaste-layout export (B,E,K,V,X).
     """
     h = [x.strip() for x in header]
 
     sku_col = _header_index_ci(h, ("ArticleNumber",), 1)
     price_col = _header_index_ci(h, ("SalesPrice",), 4)
     status_col = _header_index_ci(h, ("ArticleStatus",), 10)
+    stock_col = _header_index_ci(h, ("StockAvailable",), 21)
 
     gtin_col: int | None = None
     for nm in ("GTIN", "GTIN13", "EAN", "GlobalTradeItemNumber", "Barcode"):
@@ -210,7 +221,7 @@ def _resolve_0150_column_indices(header: list[str]) -> tuple[int, int, int, int 
     if gtin_col is None or gtin_col < 0:
         gtin_col = 23 if len(h) > 23 else None
 
-    return sku_col, price_col, status_col, gtin_col
+    return sku_col, price_col, status_col, stock_col, gtin_col
 
 
 def _read_article_status_from_single_0150_style_csv(path: str) -> dict[str, str]:
@@ -228,8 +239,8 @@ def _read_article_status_from_single_0150_style_csv(path: str) -> dict[str, str]
                 if not header:
                     continue
                 header_len = len(header)
-                sku_col, _price_col, status_col, _gtin_col = _resolve_0150_column_indices(
-                    header
+                sku_col, _price_col, status_col, _stock_col, _gtin_col = (
+                    _resolve_0150_column_indices(header)
                 )
                 min_len = max(sku_col, status_col) + 1
                 for row in reader:
@@ -247,6 +258,66 @@ def _read_article_status_from_single_0150_style_csv(path: str) -> dict[str, str]
         except OSError:
             return out
     return out
+
+
+def _read_stock_available_from_single_0150_style_csv(path: str) -> dict[str, int]:
+    """Lees één KTM-export-CSV; return ArticleNumber (upper) -> StockAvailable (0/1/2)."""
+    out: dict[str, int] = {}
+    encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
+    for enc in encodings:
+        try:
+            with open(path, newline="", encoding=enc) as f:
+                first = f.readline()
+                f.seek(0)
+                delim = detect_0150_csv_delimiter(first)
+                reader = csv.reader(f, delimiter=delim)
+                header = next(reader, None)
+                if not header:
+                    continue
+                header_len = len(header)
+                sku_col, _price_col, _status_col, stock_col, _gtin_col = (
+                    _resolve_0150_column_indices(header)
+                )
+                min_len = max(sku_col, stock_col) + 1
+                for row in reader:
+                    if len(row) < header_len:
+                        row = list(row) + [""] * (header_len - len(row))
+                    if len(row) < min_len:
+                        continue
+                    sku_raw = row[sku_col].strip()
+                    if not sku_raw:
+                        continue
+                    raw = (row[stock_col] or "").strip()
+                    if not raw:
+                        continue
+                    try:
+                        code = int(float(raw.replace(",", ".")))
+                    except ValueError:
+                        continue
+                    if code in (0, 1, 2):
+                        out[sku_raw.upper()] = code
+            return out
+        except UnicodeDecodeError:
+            continue
+        except OSError:
+            return out
+    return out
+
+
+def load_stock_available_from_35_z1_csv_files(
+    input_dir: str | None = None,
+) -> dict[str, int]:
+    """
+    Alle *35_Z1_EUR_EN_csv.csv onder input_dir: ArticleNumber → StockAvailable (0/1/2).
+    Bij dubbele SKU wint de laatst verwerkte file (alfabetisch op pad).
+    """
+    base = os.path.normpath(input_dir or config.INPUT_DIR)
+    pattern = os.path.join(base, "*35_Z1_EUR_EN_csv.csv")
+    paths = sorted(glob.glob(pattern))
+    merged: dict[str, int] = {}
+    for path in paths:
+        merged.update(_read_stock_available_from_single_0150_style_csv(path))
+    return merged
 
 
 def load_article_status_from_35_z1_csv_files(input_dir: str | None = None) -> dict[str, str]:
@@ -322,7 +393,9 @@ def _load_single_price_csv(path: str) -> tuple[dict[str, str], dict[str, str], d
                     continue
 
                 header_len = len(header)
-                sku_col, price_col, status_col, gtin_col = _resolve_0150_column_indices(header)
+                sku_col, price_col, status_col, _stock_col, gtin_col = (
+                    _resolve_0150_column_indices(header)
+                )
 
                 for row in reader:
                     _merge_price_row(
