@@ -151,3 +151,11 @@ DELTA_EXCLUDED_TYPES = frozenset(
         "Software enhancements",
     }
 )
+
+# Serviceproducten die bewust prijs 0 hebben en ACTIVE moeten blijven (auto-deactivate overslaan).
+ZERO_PRICE_ACTIVE_ALLOWED_SKUS = frozenset(
+    {
+        "WIJ VERZENDEN U KOSTELOOS EEN PAKKET",
+        "NALEVERING-DEALER",
+    }
+)

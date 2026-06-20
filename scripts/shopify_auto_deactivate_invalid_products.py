@@ -3,7 +3,8 @@
 Periodieke publicatiecheck op productniveau (Shopify):
 
 - Zet product op DRAFT als:
-  1) minstens één variant geen geldige prijs heeft (> 0), of
+  1) minstens één variant geen geldige prijs heeft (> 0), behalve service-SKU's in
+     config.ZERO_PRICE_ACTIVE_ALLOWED_SKUS (prijs 0 is daar bewust), of
   2) alle varianten uitverkocht zijn (inventoryPolicy=DENY en quantity<=0), of
   3) strict-regel: alle Shopify-varianten hebben CSV-match, overal ArticleStatus=80 en geen voorraad, of
   4) ERP StockAvailable=0 op alle varianten én ook geen voorraad in Shopify (qty<=0).
@@ -205,6 +206,15 @@ def _product_relevant_for_status_rules(p: dict) -> bool:
     return st in ("ACTIVE", "DRAFT")
 
 
+def _product_exempt_from_auto_deactivate(variants: list[dict]) -> bool:
+    """Serviceproducten met bewust prijs 0 — niet deactiveren door dit script."""
+    for v in variants:
+        sku = normalize_sku_key(v.get("sku"))
+        if sku in config.ZERO_PRICE_ACTIVE_ALLOWED_SKUS:
+            return True
+    return False
+
+
 def _evaluate_product(
     product: dict,
     variants: list[dict],
@@ -245,12 +255,18 @@ def _evaluate_product(
         and not unavailable
     )
 
+    exempt = _product_exempt_from_auto_deactivate(variants)
+
     action = "noop"
-    if current_status == "ACTIVE" and (
-        has_bad_price
-        or all_sold_out
-        or status80_no_stock_strict
-        or erp_stock_zero_no_shopify_stock
+    if (
+        current_status == "ACTIVE"
+        and not exempt
+        and (
+            has_bad_price
+            or all_sold_out
+            or status80_no_stock_strict
+            or erp_stock_zero_no_shopify_stock
+        )
     ):
         action = "set_draft"
     elif reactivate_candidate:
