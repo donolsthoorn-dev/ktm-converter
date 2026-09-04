@@ -2,6 +2,7 @@ import csv
 import glob
 import io
 import os
+from pathlib import Path
 
 import config
 from config import VAT_MULTIPLIER
@@ -304,30 +305,64 @@ def _read_stock_available_from_single_0150_style_csv(path: str) -> dict[str, int
     return out
 
 
-def load_stock_available_from_35_z1_csv_files(
+def _resolve_35_z1_csv_paths_multi_brand(
     input_dir: str | None = None,
-) -> dict[str, int]:
+    *,
+    project_root: str | None = None,
+) -> list[str]:
     """
-    Alle *35_Z1_EUR_EN_csv.csv onder input_dir: ArticleNumber → StockAvailable (0/1/2).
-    Bij dubbele SKU wint de laatst verwerkte file (alfabetisch op pad).
+    Paden naar alle merk-prijs-CSV's (KTM 0150, HSQ 1100/0140, WP 0910).
+
+    Standaard: PRICELIST_CSV_MERGE_ORDER t.o.v. projectroot (cwd of project_root).
+    input_dir blijft als legacy-fallback: als er geen multi-brand bestanden zijn,
+    glob *35_Z1_EUR_EN_csv.csv in die map (tests / lokale single-dir setups).
     """
+    from modules.brand_config import resolve_pricelist_csv_paths
+
+    root = Path(project_root) if project_root else Path.cwd()
+    paths = resolve_pricelist_csv_paths(root)
+    if paths:
+        return [str(p) for p in paths]
+
     base = os.path.normpath(input_dir or config.INPUT_DIR)
     pattern = os.path.join(base, "*35_Z1_EUR_EN_csv.csv")
-    paths = sorted(glob.glob(pattern))
+    return sorted(glob.glob(pattern))
+
+
+def load_stock_available_from_35_z1_csv_files(
+    input_dir: str | None = None,
+    *,
+    project_root: str | None = None,
+) -> dict[str, int]:
+    """
+    ArticleNumber → StockAvailable (0/1/2) uit alle merk-prijs-CSV's (KTM+HSQ+WP).
+
+    Merge-volgorde: PRICELIST_CSV_MERGE_ORDER (later bestand wint bij dubbele SKU).
+    input_dir: alleen legacy-fallback als multi-brand paden ontbreken.
+    """
+    paths = _resolve_35_z1_csv_paths_multi_brand(
+        input_dir, project_root=project_root
+    )
     merged: dict[str, int] = {}
     for path in paths:
         merged.update(_read_stock_available_from_single_0150_style_csv(path))
     return merged
 
 
-def load_article_status_from_35_z1_csv_files(input_dir: str | None = None) -> dict[str, str]:
+def load_article_status_from_35_z1_csv_files(
+    input_dir: str | None = None,
+    *,
+    project_root: str | None = None,
+) -> dict[str, str]:
     """
-    Alle *35_Z1_EUR_EN_csv.csv onder input_dir (default INPUT_DIR): ArticleNumber → ArticleStatus.
-    Bij dezelfde SKU in meerdere bestanden wint de laatst verwerkte file (alfabetisch op pad).
+    ArticleNumber → ArticleStatus uit alle merk-prijs-CSV's (KTM+HSQ+WP).
+
+    Merge-volgorde: PRICELIST_CSV_MERGE_ORDER (later bestand wint bij dubbele SKU).
+    input_dir: alleen legacy-fallback als multi-brand paden ontbreken.
     """
-    base = os.path.normpath(input_dir or config.INPUT_DIR)
-    pattern = os.path.join(base, "*35_Z1_EUR_EN_csv.csv")
-    paths = sorted(glob.glob(pattern))
+    paths = _resolve_35_z1_csv_paths_multi_brand(
+        input_dir, project_root=project_root
+    )
     merged: dict[str, str] = {}
     for path in paths:
         merged.update(_read_article_status_from_single_0150_style_csv(path))
