@@ -29,7 +29,7 @@ Voorbeelden:
   python3 scripts/shopify_publish_sellable_active_products.py --input-csv output/active_not_on_webshop.csv
 
 Vereist: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
-Optioneel: ArticleStatus uit input/*35_Z1_EUR_EN_csv.csv (zelfde als andere sync-scripts)
+Optioneel: ArticleStatus/StockAvailable uit alle merk-prijs-CSV's (KTM+HSQ+WP)
 Optioneel: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (mirror published_at bijwerken na succes)
 """
 
@@ -665,10 +665,13 @@ def main() -> int:
         )
         return 2
 
-    status_by_sku = load_article_status_from_35_z1_csv_files(config.INPUT_DIR)
-    stock_by_sku = load_stock_available_from_35_z1_csv_files(config.INPUT_DIR)
+    status_by_sku = load_article_status_from_35_z1_csv_files()
+    stock_by_sku = load_stock_available_from_35_z1_csv_files()
     if status_by_sku:
-        print(f"CSV ArticleStatus-index: {len(status_by_sku)} SKU's.", flush=True)
+        print(
+            f"CSV ArticleStatus-index (KTM+HSQ+WP): {len(status_by_sku)} SKU's.",
+            flush=True,
+        )
     elif args.require_status_index:
         print(
             "FOUT: geen ArticleStatus-index uit CSV — stop.",
@@ -682,7 +685,10 @@ def main() -> int:
             flush=True,
         )
     if stock_by_sku:
-        print(f"CSV StockAvailable-index: {len(stock_by_sku)} SKU's.", flush=True)
+        print(
+            f"CSV StockAvailable-index (KTM+HSQ+WP): {len(stock_by_sku)} SKU's.",
+            flush=True,
+        )
     else:
         print(
             "Waarschuwing: geen StockAvailable-index; alleen Shopify-voorraad telt voor uitverkocht.",

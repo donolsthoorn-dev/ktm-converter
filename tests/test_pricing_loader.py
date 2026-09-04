@@ -128,3 +128,82 @@ def test_canonical_erp_sku_from_xml_strips_when_base_in_csv() -> None:
 
 def test_canonical_erp_sku_from_xml_no_keys_unchanged() -> None:
     assert pricing_loader.canonical_erp_sku_from_xml("T05049-00", erp_sku_keys=None) == "T05049-00"
+
+
+def _minimal_35_z1_csv(sku: str, status: str, stock: str) -> str:
+    header = ";".join(
+        [
+            "PricelistTable",
+            "ArticleNumber",
+            "ArticleName",
+            "Currency",
+            "SalesPrice",
+            "PurchasePrice",
+            "DiscountGroup",
+            "MeasureUnit",
+            "PriceQuantity",
+            "PackageSize",
+            "ArticleStatus",
+            "ProductHierarchy",
+            "ProductHierarchyL1",
+            "ProductHierarchyL2",
+            "ProductHierarchyL3",
+            "ProductHierarchyL4",
+            "ProductHierarchyL5",
+            "ProductHierarchyL6",
+            "ProductHierarchyL7",
+            "PurposeOfUse",
+            "PriceValidFrom",
+            "StockAvailable",
+            "hqETADate",
+            "GTIN",
+        ]
+    )
+    row = [""] * 24
+    row[1] = sku
+    row[4] = "10,00"
+    row[10] = status
+    row[21] = stock
+    return header + "\n" + ";".join(row) + "\n"
+
+
+def test_load_article_status_merges_ktm_hsq_wp(tmp_path, monkeypatch) -> None:
+    """Status/stock-index laadt alle merken (niet alleen input/)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "input").mkdir()
+    (tmp_path / "input" / "hsq").mkdir()
+    (tmp_path / "input" / "wp").mkdir()
+    (tmp_path / "input" / "0150_35_Z1_EUR_EN_csv.csv").write_text(
+        _minimal_35_z1_csv("KTM-SKU", "20", "1"), encoding="utf-8"
+    )
+    (tmp_path / "input" / "hsq" / "0140_35_Z1_EUR_EN_csv.csv").write_text(
+        _minimal_35_z1_csv("3HS240018603", "50", "1"), encoding="utf-8"
+    )
+    (tmp_path / "input" / "wp" / "0910_35_Z1_EUR_EN_csv.csv").write_text(
+        _minimal_35_z1_csv("T05049", "40", "2"), encoding="utf-8"
+    )
+
+    status = pricing_loader.load_article_status_from_35_z1_csv_files()
+    stock = pricing_loader.load_stock_available_from_35_z1_csv_files()
+
+    assert status["KTM-SKU"] == "20"
+    assert status["3HS240018603"] == "50"
+    assert status["T05049"] == "40"
+    assert stock["KTM-SKU"] == 1
+    assert stock["3HS240018603"] == 1
+    assert stock["T05049"] == 2
+
+
+def test_load_article_status_legacy_input_dir_fallback(tmp_path, monkeypatch) -> None:
+    """Zonder multi-brand layout: single-dir glob blijft werken."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    only = tmp_path / "only"
+    only.mkdir()
+    (only / "0150_35_Z1_EUR_EN_csv.csv").write_text(
+        _minimal_35_z1_csv("LEGACY-1", "30", "0"), encoding="utf-8"
+    )
+
+    status = pricing_loader.load_article_status_from_35_z1_csv_files(str(only))
+    assert status["LEGACY-1"] == "30"
