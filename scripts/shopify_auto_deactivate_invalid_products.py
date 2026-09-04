@@ -554,10 +554,10 @@ def main() -> int:
         )
         return 2
 
-    article_status_by_sku = load_article_status_from_35_z1_csv_files(config.INPUT_DIR)
+    article_status_by_sku = load_article_status_from_35_z1_csv_files()
     if article_status_by_sku:
         print(
-            f"CSV ArticleStatus-index geladen: {len(article_status_by_sku)} SKU's.",
+            f"CSV ArticleStatus-index geladen (KTM+HSQ+WP): {len(article_status_by_sku)} SKU's.",
             flush=True,
         )
     else:
@@ -573,10 +573,10 @@ def main() -> int:
             flush=True,
         )
 
-    stock_by_sku = load_stock_available_from_35_z1_csv_files(config.INPUT_DIR)
+    stock_by_sku = load_stock_available_from_35_z1_csv_files()
     if stock_by_sku:
         print(
-            f"CSV StockAvailable-index geladen: {len(stock_by_sku)} SKU's.",
+            f"CSV StockAvailable-index geladen (KTM+HSQ+WP): {len(stock_by_sku)} SKU's.",
             flush=True,
         )
     else:

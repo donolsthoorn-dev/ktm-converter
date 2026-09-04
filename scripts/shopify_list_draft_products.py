@@ -4,8 +4,8 @@ Lijst alle Shopify-producten met status **DRAFT** als CSV (inclusief producttype
 
 GraphQL met zoekfilter `status:draft` — alleen concept-producten, geen volledige catalogus.
 
-Extra kolom **article_status**: KTM **ArticleStatus** uit alle `*35_Z1_EUR_EN_csv.csv` onder
-`input/` (match op variant-SKU ↔ ArticleNumber), zie `modules.pricing_loader`.
+Extra kolom **article_status**: **ArticleStatus** uit alle merk-prijs-CSV's
+(KTM+HSQ+WP via PRICELIST_CSV_MERGE_ORDER), match op variant-SKU ↔ ArticleNumber.
 
   python3 scripts/shopify_list_draft_products.py > output/draft_products.csv
   python3 scripts/shopify_list_draft_products.py -o output/draft_products.csv
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import glob
 import json
 import os
 import sys
@@ -218,7 +217,10 @@ def main() -> int:
         type=Path,
         metavar="MAP",
         default=None,
-        help=f"Map met *35_Z1_EUR_EN_csv.csv (default: {INPUT_DIR})",
+        help=(
+            "Legacy-fallback: map met *35_Z1_EUR_EN_csv.csv als multi-brand "
+            f"bestanden ontbreken (default: {INPUT_DIR})"
+        ),
     )
     args = ap.parse_args()
 
@@ -229,20 +231,17 @@ def main() -> int:
         )
         return 2
 
-    in_base = os.path.normpath(str(args.input_dir or INPUT_DIR))
-    pattern = os.path.join(in_base, "*35_Z1_EUR_EN_csv.csv")
-    matched = sorted(glob.glob(pattern))
-    status_by_article = load_article_status_from_35_z1_csv_files(in_base)
-    if matched:
+    legacy_dir = str(args.input_dir.resolve()) if args.input_dir else None
+    status_by_article = load_article_status_from_35_z1_csv_files(legacy_dir)
+    if status_by_article:
         print(
-            f"KTM ArticleStatus: {len(matched)} bestand(en) ({in_base}/*35_Z1_EUR_EN_csv.csv), "
-            f"{len(status_by_article)} SKU's in index.",
+            f"ArticleStatus-index (KTM+HSQ+WP): {len(status_by_article)} SKU's.",
             file=sys.stderr,
             flush=True,
         )
     else:
         print(
-            f"Geen *35_Z1_EUR_EN_csv.csv gevonden onder {in_base!r} — kolom article_status blijft leeg.",
+            "Geen merk-prijs-CSV's gevonden — kolom article_status blijft leeg.",
             file=sys.stderr,
             flush=True,
         )
