@@ -870,12 +870,12 @@ def rest_product_status(
     product_id: str,
     status: str,
     sess: requests.Session | None = None,
-) -> bool:
-    """status: 'active' of 'draft'."""
+) -> tuple[bool, str]:
+    """status: 'active' of 'draft'. Returns (ok, error_text)."""
     try:
         pid_int = int(product_id)
     except ValueError:
-        return False
+        return False, f"ongeldig product_id: {product_id!r}"
     st = status.lower()
     if st not in ("active", "draft"):
         st = "active"
@@ -890,7 +890,7 @@ def rest_product_status(
     )
     if not ok:
         print(f"  Product status-fout {product_id}: {err}", flush=True)
-    return ok
+    return ok, err
 
 
 def needs_update(
@@ -1502,7 +1502,7 @@ def main() -> int:
         elif pidx == n_prod or pidx % progress_every == 0:
             print(f"  Product status {pidx}/{n_prod} (product {pid}) — verzoek…", flush=True)
         t0 = time.time()
-        ok = rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess)
+        ok, err = rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess)
         elapsed = time.time() - t0
         if pidx == 1 or elapsed > 15.0:
             print(
@@ -1521,6 +1521,11 @@ def main() -> int:
                             "product_status_by_product": {str(pid): ps},
                         },
                     )
+        elif "not found" in (err or "").lower():
+            print(
+                f"  Product {pid} niet meer in Shopify; status-update overgeslagen.",
+                flush=True,
+            )
         else:
             errors += 1
         if pidx % progress_every == 0 or pidx == n_prod:

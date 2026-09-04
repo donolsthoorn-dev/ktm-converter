@@ -78,6 +78,15 @@ def _is_benign_owner_missing_error(err: dict[str, Any]) -> bool:
     return "owner does not exist" in msg or "owner not found" in msg
 
 
+def _is_benign_product_not_found_error(err: str) -> bool:
+    """
+    Mirror/staging kan product-ids bevatten die intussen uit Shopify verwijderd zijn.
+    REST PUT product status geeft dan {"errors":"Not Found"}; dat mag de run niet rood maken.
+    """
+    low = (err or "").lower()
+    return "not found" in low
+
+
 def _load_sync_module():
     path = ROOT / "scripts" / "shopify_sync_from_pricelist_csv.py"
     spec = importlib.util.spec_from_file_location("shopify_sync_from_pricelist_csv", path)
@@ -447,6 +456,76 @@ query($ids: [ID!]!) {
     return out
 
 
+def _existing_shopify_product_ids(
+    sync: Any,
+    shop: str,
+    token: str,
+    api_ver: str,
+    product_ids: list[str],
+) -> set[str]:
+    """Bepaal welke product-ids nog in Shopify bestaan."""
+    out: set[str] = set()
+    uniq_ids = sorted({str(p).strip() for p in product_ids if str(p).strip()})
+    if not uniq_ids:
+        return out
+    q = """
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on Product {
+      id
+    }
+  }
+}
+"""
+    batch_size = 150
+    for i in range(0, len(uniq_ids), batch_size):
+        chunk = uniq_ids[i : i + batch_size]
+        gids = [f"gid://shopify/Product/{pid}" for pid in chunk]
+        data = sync.graphql_post(shop, token, api_ver, q, {"ids": gids})
+        nodes = (data or {}).get("nodes") or []
+        for node in nodes:
+            if not node:
+                continue
+            gid = str(node.get("id") or "")
+            if not gid or "/" not in gid:
+                continue
+            out.add(gid.rsplit("/", 1)[-1])
+    return out
+
+
+def _delete_stale_products_from_mirror(
+    sess: requests.Session,
+    base: str,
+    headers: dict[str, str],
+    product_ids: set[str],
+) -> None:
+    """Verwijder stale producten (en gekoppelde varianten) uit de Supabase-mirror."""
+    for pid in sorted(product_ids):
+        if not str(pid).isdigit():
+            continue
+        try:
+            _supabase_request_with_retry(
+                sess,
+                "DELETE",
+                f"{base}/shopify_variants",
+                headers=headers,
+                params={"shopify_product_id": f"eq.{pid}"},
+            )
+            _supabase_request_with_retry(
+                sess,
+                "DELETE",
+                f"{base}/shopify_products",
+                headers=headers,
+                params={"shopify_product_id": f"eq.{pid}"},
+            )
+        except requests.RequestException as e:
+            print(
+                f"Mirror cleanup voor stale product {pid} mislukt: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+
 def _graphql_inventory_item_update_customs(
     sync: Any,
     shop: str,
@@ -772,6 +851,24 @@ def main() -> int:
                 f"(uniek missing variants: {len(missing_variant_ids)}).",
                 flush=True,
             )
+
+    if run_policy and product_ops_by_pid:
+        existing_product_ids = _existing_shopify_product_ids(
+            sync, shop, token, api_ver, list(product_ops_by_pid)
+        )
+        missing_product_ids = set(product_ops_by_pid) - existing_product_ids
+        if missing_product_ids:
+            for pid in missing_product_ids:
+                product_ops_by_pid.pop(pid, None)
+            print(
+                "Producten niet meer aanwezig in Shopify; product_status overgeslagen: "
+                f"{len(missing_product_ids)} "
+                f"(ids: {', '.join(sorted(missing_product_ids)[:10])}"
+                f"{'…' if len(missing_product_ids) > 10 else ''}).",
+                flush=True,
+            )
+            _delete_stale_products_from_mirror(sess, base, headers, missing_product_ids)
+
     print(
         f"Effectieve apply-set: prijs {len(price_ops)}, eta_set {len(eta_set)}, eta_clear {len(eta_clear)}, "
         f"variant_policy {len(policy_ops)}, customs {len(customs_ops_by_item)}, "
@@ -782,6 +879,7 @@ def main() -> int:
     errors = 0
     benign = 0
     benign_owner_missing = 0
+    benign_product_not_found = 0
     progress_every = 250
     eta_success: list[tuple[str, str | None]] = []
     price_success: list[tuple[str, str]] = []
@@ -1090,8 +1188,15 @@ def main() -> int:
             )
         for idx, (pid, ps) in enumerate(deduped, start=1):
             st_rest = "draft" if ps == "DRAFT" else "active"
-            if not sync.rest_product_status(shop, token, api_ver, pid, st_rest, sess=product_sess):
-                errors += 1
+            ok, err = sync.rest_product_status(
+                shop, token, api_ver, pid, st_rest, sess=product_sess
+            )
+            if not ok:
+                if _is_benign_product_not_found_error(err):
+                    benign_product_not_found += 1
+                    _delete_stale_products_from_mirror(sess, base, headers, {pid})
+                else:
+                    errors += 1
             else:
                 product_success.append((pid, st_rest.upper()))
                 product_success_count += 1
@@ -1168,6 +1273,12 @@ def main() -> int:
             f"Opmerking: {benign_owner_missing} ETA-owner-missing melding(en) genegeerd (stale varianten).",
             flush=True,
         )
+    if benign_product_not_found:
+        print(
+            f"Opmerking: {benign_product_not_found} product-Not-Found melding(en) genegeerd "
+            "(stale producten; mirror opgeschoond).",
+            flush=True,
+        )
     total_eta_ops = len(eta_set) + len(eta_clear)
     total_price_ops = len(price_ops)
     total_policy_ops = len(policy_ops)
@@ -1198,6 +1309,7 @@ def main() -> int:
         "product_status_scope_enabled": run_policy,
         "errors": errors,
         "benign_eta_clear_ignored": benign,
+        "benign_product_not_found_ignored": benign_product_not_found,
     }
     try:
         _workflow_dispatch_log_patch(
