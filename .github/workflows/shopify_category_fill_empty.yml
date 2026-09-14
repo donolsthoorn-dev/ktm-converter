@@ -49,25 +49,48 @@ jobs:
       max-parallel: 1
       matrix:
         shop: [ktm, motox]
-    if: >
-      github.event_name == 'schedule' ||
-      github.event.inputs.shop == 'both' ||
-      github.event.inputs.shop == matrix.shop
     env:
       PYTHONUNBUFFERED: "1"
       APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'true' }}
       LIMIT: ${{ github.event.inputs.limit || '0' }}
+      WANT_SHOP: ${{ github.event.inputs.shop || 'both' }}
     steps:
+      - name: Decide if this matrix shop should run
+        id: gate
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "schedule" || "${WANT_SHOP}" == "both" || "${WANT_SHOP}" == "${{ matrix.shop }}" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skip ${{ matrix.shop }} (WANT_SHOP=${WANT_SHOP})"
+          fi
+
       - uses: actions/checkout@v6
+        if: steps.gate.outputs.run == 'true'
 
       - uses: actions/setup-python@v6
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: "3.12"
 
       - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
         run: pip install -r requirements.txt
 
+      - name: Check Motox secrets
+        if: steps.gate.outputs.run == 'true' && matrix.shop == 'motox'
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+        run: |
+          if [[ -z "${SHOPIFY_MOTOX_ACCESS_TOKEN}" || -z "${SHOPIFY_MOTOX_SHOP_DOMAIN}" ]]; then
+            echo "::error::Motox secrets ontbreken. Zet SHOPIFY_MOTOX_ACCESS_TOKEN en SHOPIFY_MOTOX_SHOP_DOMAIN in repo Secrets."
+            exit 1
+          fi
+
       - name: Fill empty Shopify categories (${{ matrix.shop }})
+        if: steps.gate.outputs.run == 'true'
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
@@ -87,7 +110,7 @@ jobs:
           python3 scripts/shopify_category_apply.py --shop "${{ matrix.shop }}" --sleep 0.1 "${EXTRA[@]}"
 
       - name: Upload apply report
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: shopify-category-apply-${{ matrix.shop }}-${{ github.run_id }}
