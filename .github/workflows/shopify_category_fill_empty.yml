@@ -1,0 +1,96 @@
+# Vult lege Shopify Category (taxonomie) op ktm-shop.nl én Motox.
+# Alleen producten zónder category; nachtruns blijven daarna klein.
+#
+# Secrets KTM (bestaand): SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN,
+#   optioneel SHOPIFY_ADMIN_API_VERSION
+# Secrets Motox (toevoegen in repo Settings → Secrets):
+#   SHOPIFY_MOTOX_ACCESS_TOKEN = token voor ktm-shop-nederland
+#   SHOPIFY_MOTOX_SHOP_DOMAIN  = ktm-shop-nederland.myshopify.com
+#   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
+#
+# Schedule 03:45 UTC ≈ 05:45 NL (zomer) / 04:45 (winter).
+
+name: shopify_category_fill_empty
+
+on:
+  schedule:
+    - cron: "45 3 * * *"
+  workflow_dispatch:
+    inputs:
+      shop:
+        description: "Welke shop(s)"
+        type: choice
+        options:
+          - both
+          - ktm
+          - motox
+        default: both
+      apply:
+        description: "true = schrijven, false = alleen dry-run"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      limit:
+        description: "Max lege producten per shop (0 = alle)"
+        required: false
+        default: "0"
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: shopify-write-lock
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        shop: [ktm, motox]
+    if: >
+      github.event_name == 'schedule' ||
+      github.event.inputs.shop == 'both' ||
+      github.event.inputs.shop == matrix.shop
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'true' }}
+      LIMIT: ${{ github.event.inputs.limit || '0' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fill empty Shopify categories (${{ matrix.shop }})
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ "${APPLY}" == "true" ]]; then
+            EXTRA+=(--yes)
+          fi
+          if [[ "${LIMIT}" != "0" && -n "${LIMIT}" ]]; then
+            EXTRA+=(--limit "${LIMIT}")
+          fi
+          python3 scripts/shopify_category_apply.py --shop "${{ matrix.shop }}" --sleep 0.1 "${EXTRA[@]}"
+
+      - name: Upload apply report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-category-apply-${{ matrix.shop }}-${{ github.run_id }}
+          path: output/shopify_category_apply_${{ matrix.shop }}_*.csv
+          if-no-files-found: ignore
+          retention-days: 14
