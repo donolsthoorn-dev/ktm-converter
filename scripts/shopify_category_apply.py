@@ -38,6 +38,7 @@ os.chdir(ROOT)
 
 from modules.category_mapper import (  # noqa: E402
     DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    is_missing_shopify_category,
     resolve_shopify_product_category,
 )
 
@@ -227,7 +228,7 @@ def iter_empty_products(sess, shop, token, api, limit: int):
         for p in conn["nodes"]:
             scanned += 1
             cat = (p.get("category") or {}).get("fullName") if p.get("category") else None
-            if cat:
+            if not is_missing_shopify_category(cat):
                 continue
             yield p
             if limit and scanned >= limit:
@@ -246,7 +247,7 @@ def products_from_csv(path: Path, limit: int):
     n = 0
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            if row.get("current_category"):
+            if not is_missing_shopify_category(row.get("current_category")):
                 continue
             n += 1
             yield {

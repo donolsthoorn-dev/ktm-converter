@@ -2,10 +2,13 @@
 Shopify standaard-Category (taxonomie) afleiden uit Type, tags, titel en body.
 
 Prioriteit (hoog → laag):
-  1. Exacte / prefix product Type-mapping
-  2. Bekende tags (PowerWear, PowerParts, …)
-  3. Zoekwoorden in titel + omschrijving
-  4. Default: Motor Vehicle Parts
+  1. Specifiek product Type (exact of prefix) — géén generieke bakken
+  2. Zoekwoorden in titel + omschrijving → specifieke taxonomie-tak
+  3. Specifieke tags (PowerWear, Casual, …)
+  4. Default: Motor Vehicle Parts (alleen als niets matcht)
+
+Generieke types (Partstream, Archive, PowerParts, …) forceren géén parent-category;
+die gaan door naar titel/keywords.
 
 Zie canvas `shopify-category-mapping` voor het overzicht.
 """
@@ -19,12 +22,38 @@ DEFAULT_CATEGORY = "Motor Vehicle Parts"
 
 # Shopify admin "Category" = standard product taxonomy (full breadcrumb with " > ").
 # See https://shopify.github.io/product-taxonomy/
-DEFAULT_SHOPIFY_PRODUCT_CATEGORY = (
-    "Vehicles & Parts > Vehicle Parts & Accessories > Motor Vehicle Parts"
-)
+_MVP = "Vehicles & Parts > Vehicle Parts & Accessories > Motor Vehicle Parts"
+DEFAULT_SHOPIFY_PRODUCT_CATEGORY = _MVP
+
+# --- Motor Vehicle Parts children (specifiek) ---
+BRAKING = f"{_MVP} > Motor Vehicle Braking"
+UPHOLSTERY = f"{_MVP} > Motor Vehicle Carpet & Upholstery"
+CLIMATE = f"{_MVP} > Motor Vehicle Climate Control"
+CONTROLS = f"{_MVP} > Motor Vehicle Controls"
+OIL_CIRC = f"{_MVP} > Motor Vehicle Engine Oil Circulation"
+ENGINE_PARTS = f"{_MVP} > Motor Vehicle Engine Parts"
+ENGINES = f"{_MVP} > Motor Vehicle Engines"
+EXHAUST = f"{_MVP} > Motor Vehicle Exhaust"
+FRAME_BODY = f"{_MVP} > Motor Vehicle Frame & Body Parts"
+FUEL = f"{_MVP} > Motor Vehicle Fuel Systems"
+INTERIOR = f"{_MVP} > Motor Vehicle Interior Fittings"
+LIGHTING = f"{_MVP} > Motor Vehicle Lighting"
+MIRRORS = f"{_MVP} > Motor Vehicle Mirrors"
+ELECTRICAL = f"{_MVP} > Motor Vehicle Power & Electrical Systems"
+SEATING = f"{_MVP} > Motor Vehicle Seating"
+SENSORS = f"{_MVP} > Motor Vehicle Sensors & Gauges"
+SUSPENSION = f"{_MVP} > Motor Vehicle Suspension Parts"
+TOWING = f"{_MVP} > Motor Vehicle Towing"
+DRIVETRAIN = f"{_MVP} > Motor Vehicle Transmission & Drivetrain Parts"
+WHEELS = f"{_MVP} > Motor Vehicle Wheel Systems"
+WINDOW = f"{_MVP} > Motor Vehicle Window Parts & Accessories"
+COOLING = f"{_MVP} > Motor Vehicle Cooling Systems"
+AIR_INTAKE = f"{_MVP} > Motor Vehicle Air Intake"
+
+VEHICLE_PARTS = DEFAULT_SHOPIFY_PRODUCT_CATEGORY
+VEHICLE_WINDOW_PARTS = WINDOW
 
 CLOTHING = "Apparel & Accessories > Clothing"
-VEHICLE_PARTS = DEFAULT_SHOPIFY_PRODUCT_CATEGORY
 TOOLS = "Hardware > Tools"
 BAGS = "Luggage & Bags > Backpacks"
 SPORT_BAGS = BAGS
@@ -36,7 +65,6 @@ GLOVES = (
     "Vehicles & Parts > Vehicle Parts & Accessories > "
     "Vehicle Safety & Security > Motorcycle Protective Gear > Motorcycle Gloves"
 )
-# Geen aparte "Motorcycle Boots" in huidige Shopify-taxonomie → schoenen.
 BOOTS = "Apparel & Accessories > Shoes"
 GOGGLES = (
     "Vehicles & Parts > Vehicle Parts & Accessories > "
@@ -48,10 +76,10 @@ BIKES_E = (
 BIKE_PARTS = (
     "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Parts & Accessories"
 )
-BIKE_CLOTHING = "Apparel & Accessories > Clothing"
+BIKE_CLOTHING = CLOTHING
 GIFTCARD = "Arts & Entertainment > Party & Celebration > Gift Giving > Gift Cards"
-# Geen betrouwbare "Motor Vehicle Fluids"-node → parent parts.
-OILS = VEHICLE_PARTS
+OILS = OIL_CIRC  # dichtstbijzijnde taxonomie voor olie/vloeistoffen
+DECALS = "Toys & Games > Toys > Art & Drawing Toys > Stickers & Sticker Machines"
 
 # Values aligned with Shopify's English taxonomy (same keys as map_category() outcomes).
 _SHOPIFY_PRODUCT_CATEGORY_BY_GOOGLE = {
@@ -86,65 +114,176 @@ CATEGORY_MAP = {
     "Electric Balance Bikes": "Bicycles",
 }
 
-# Exact Shopify product_type → taxonomy path (case-insensitive match on stripped type).
+# Types die te generiek zijn → géén type-hit; laat tekst/keywords beslissen.
+GENERIC_TYPES: set[str] = {
+    "partstream",
+    "powerparts",
+    "spareparts",
+    "spare parts",
+    "spareparts functional",
+    "archive",
+    "archiv",
+    "hsq - archive",
+    "wp - archiv",
+    "wp - spare parts",
+    "wp - sale",
+    "sale",
+    "additional",
+    "images",
+    "hsq - images",
+    "functional",
+    "offroad",
+    "street",
+    "gravel",
+    "road",
+    "lifestyle",
+    "fan gear",
+    "merchandising material",
+    "event material",
+    "wp - merchandising material",
+    "wp - event material",
+    "pos",
+    "software enhancements",
+    "motorcycles",
+}
+
+# Exact Shopify product_type → taxonomy path (case-insensitive).
 TYPE_EXACT: dict[str, str] = {
-    # Apparel / PowerWear types
+    # Apparel / PowerWear
     "t-shirts and polos": CLOTHING,
     "hoodies, sweatshirts and sweat jackets": CLOTHING,
     "jackets": CLOTHING,
     "trousers and shorts": CLOTHING,
     "functional underwear": CLOTHING,
     "shoes and socks": BOOTS,
+    "boots": BOOTS,
     "caps and beanies": CLOTHING,
     "casual": CLOTHING,
     "casual and accessories": CLOTHING,
+    "casual & accessories": CLOTHING,
     "powerwear": CLOTHING,
     "gloves": GLOVES,
     "helmets": HELMETS,
+    "hsq - helmets": HELMETS,
     "goggles": GOGGLES,
     "accessoires": CLOTHING,
-    # Parts families
-    "powerparts": VEHICLE_PARTS,
-    "partstream": VEHICLE_PARTS,
-    "batteries lithium": VEHICLE_PARTS,
-    "functional": VEHICLE_PARTS,
-    "engine": VEHICLE_PARTS,
-    "brakes": VEHICLE_PARTS,
-    "cooling": VEHICLE_PARTS,
-    "suspension": VEHICLE_PARTS,
-    "wheels": VEHICLE_PARTS,
-    "seats": VEHICLE_PARTS,
-    "protection": VEHICLE_PARTS,
-    "carbon": VEHICLE_PARTS,
-    "exhaust systems": VEHICLE_PARTS,
-    "chains/sprockets": VEHICLE_PARTS,
-    "trim parts/decals": VEHICLE_PARTS,
-    "original spare part kits": VEHICLE_PARTS,
-    "handlebars/instruments/electrics": VEHICLE_PARTS,
-    "air filter box": VEHICLE_PARTS,
-    "air filter cover": VEHICLE_PARTS,
-    "air filter pre-oiled ktm": VEHICLE_PARTS,
-    "air filter standaard ktm": VEHICLE_PARTS,
-    "alarm system": VEHICLE_PARTS,
-    "additional": VEHICLE_PARTS,
-    "2-stroke offroad": VEHICLE_PARTS,
-    "4-stroke offroad": VEHICLE_PARTS,
-    # Tools / luggage
+    "jerseys": CLOTHING,
+    "shirts": CLOTHING,
+    # Seating / covers
+    "seat cover": SEATING,
+    "seats": SEATING,
+    "hsq - seatcover offroad": SEATING,
+    # Engine
+    "engine": ENGINE_PARTS,
+    "engine parts, 4-stroke": ENGINE_PARTS,
+    "engine parts, 2-stroke": ENGINE_PARTS,
+    "engine protection": FRAME_BODY,
+    "engine sale": ENGINE_PARTS,
+    "piston kit": ENGINE_PARTS,
+    "hsq - piston kit": ENGINE_PARTS,
+    "engine fixing arm": ENGINE_PARTS,
+    # Brakes / controls / drivetrain
+    "brakes": BRAKING,
+    "brake discs": BRAKING,
+    "clutch / brake lever": CONTROLS,
+    "levers": CONTROLS,
+    # Cooling / intake / fuel / oil
+    "cooling": COOLING,
+    "consumables / liquids": OIL_CIRC,
+    "oil products": OIL_CIRC,
+    "batteries lithium": ELECTRICAL,
+    # Suspension / chassis
+    "suspension": SUSPENSION,
+    "suspension component": SUSPENSION,
+    "steering damper": SUSPENSION,
+    "triple clamps": SUSPENSION,
+    "wp - shock absorber": SUSPENSION,
+    "wp - fork": SUSPENSION,
+    "wp - cartridge": SUSPENSION,
+    # Exhaust / body / trim
+    "exhaust systems": EXHAUST,
+    "exhaust street": EXHAUST,
+    "trim parts": FRAME_BODY,
+    "trim parts/decals": FRAME_BODY,
+    "decals": DECALS,
+    "decals / sticker protection": DECALS,
+    "startnumber backgrounds": DECALS,
+    "carbon": FRAME_BODY,
+    "plastic parts set": FRAME_BODY,
+    "panels & accessories": FRAME_BODY,
+    "protectors": FRAME_BODY,
+    "hand guards": FRAME_BODY,
+    "protection": FRAME_BODY,
+    "bracket": FRAME_BODY,
+    "tanks": FUEL,
+    # Wheels / windows / mirrors / electrics
+    "wheels": WHEELS,
+    "windshields": WINDOW,
+    "windscreens": WINDOW,
+    "fly screens": WINDOW,
+    "instruments/electrics": ELECTRICAL,
+    "electrical system / diagnosis": ELECTRICAL,
+    "handlebars/instruments/electrics": CONTROLS,
+    # Luggage
+    "luggage cases": BAGS,
+    "luggage carrier": FRAME_BODY,
+    "backpacks / bags": BAGS,
+    # Tools
     "special tools": TOOLS,
     "tool/transport": TOOLS,
-    "backpacks / bags": SPORT_BAGS,
-    "bags and luggage": SPORT_BAGS,
+    "fork tool": TOOLS,
+    "support tool": TOOLS,
+    "suspension tool": TOOLS,
+    "measuring tool & setting gauge": TOOLS,
+    "pressing tool": TOOLS,
+    "extractor tool": TOOLS,
+    "crankshaft pressing tool": TOOLS,
+    "other tools": TOOLS,
+    "shock absorber tool": TOOLS,
+    "valve and timing tool": TOOLS,
+    "bleeder tool": TOOLS,
+    "hsq - bleeder tool": TOOLS,
+    "hsq - tools": TOOLS,
+    "bike stand / lift": TOOLS,
+    "hv tool": TOOLS,
+    "wp - mounting tool": TOOLS,
+    "wp - clamping stand": TOOLS,
+    "wp - socket": TOOLS,
+    "wp - wrench": TOOLS,
+    "wp - toolboard": TOOLS,
     # Bikes / balance
     "electric balance bikes": BIKES_E,
     "bicycle": BIKE_PARTS,
+    "e mtb fully": BIKES_E,
+    "e mtb ht": BIKES_E,
+    "mtb hardtail": BIKE_PARTS,
+    "e tronroad": BIKES_E,
+    "xc_2": BIKE_PARTS,
     # Other
     "gift card": GIFTCARD,
     "gift cards": GIFTCARD,
-    "archive": VEHICLE_PARTS,
-    "archiv": VEHICLE_PARTS,
+    "drivetrain kit": DRIVETRAIN,
+    "alarm system": ELECTRICAL,
+    "navigation": ELECTRICAL,
+    "smartphone case": CLOTHING,
+    "footpegs": CONTROLS,
+    "side bag": BAGS,
+    "rear bag": BAGS,
+    "inner bag": BAGS,
+    "luggage accessoires": BAGS,
+    "chasis street": FRAME_BODY,
+    "chassis street": FRAME_BODY,
+    "hsq - electrical system / diagnosis": ELECTRICAL,
+    "hsq - boots": BOOTS,
+    "wp - jackets": CLOTHING,
+    "wp - adaptor": TOOLS,
+    "mannequin": CLOTHING,
+    "chassis/triple clamp": SUSPENSION,
+    "chains/sprockets": DRIVETRAIN,
+    "original spare part kits": ENGINE_PARTS,
 }
 
-# Prefix rules: product_type.startswith(prefix) → category (checked after exact).
+# Prefix rules after exact match (longest prefixes first).
 TYPE_PREFIX: list[tuple[str, str]] = [
     ("bicycle first layer", BIKE_CLOTHING),
     ("bicycle gloves", BIKE_CLOTHING),
@@ -157,32 +296,45 @@ TYPE_PREFIX: list[tuple[str, str]] = [
     ("bicycle helmets", HELMETS),
     ("bicycle heads and scarfs", CLOTHING),
     ("bicycle sunglasses", GOGGLES),
-    ("bicycle backpacks", SPORT_BAGS),
-    ("bicycle bags", SPORT_BAGS),
+    ("bicycle backpacks", BAGS),
+    ("bicycle bags", BAGS),
+    ("bicycle e-bike, bicycle batter", ELECTRICAL),  # batteries / covers
     ("bicycle ", BIKE_PARTS),
-    ("hsq -", VEHICLE_PARTS),
-    ("wp ", VEHICLE_PARTS),
+    ("hsq - seatcover", SEATING),
+    ("hsq - piston", ENGINE_PARTS),
+    ("hsq - helmet", HELMETS),
+    ("hsq - tool", TOOLS),
+    ("hsq - bleed", TOOLS),
+    ("wp - shock", SUSPENSION),
+    ("wp - fork", SUSPENSION),
+    ("wp - cartridge", SUSPENSION),
+    ("wp - tool", TOOLS),
+    ("wp - wrench", TOOLS),
+    ("wp - socket", TOOLS),
+    ("wp - clamp", TOOLS),
+    ("wp - mount", TOOLS),
 ]
 
-# Tag → category (first matching tag wins; order = priority).
+# Alleen apparel/lifestyle tags — géén PowerParts → generic MVP.
 TAG_RULES: list[tuple[str, str]] = [
     ("powerwear", CLOTHING),
     ("casual", CLOTHING),
     ("electric balance bikes", BIKES_E),
     ("special tools", TOOLS),
     ("tool/transport", TOOLS),
-    ("powerparts", VEHICLE_PARTS),
-    ("partstream", VEHICLE_PARTS),
-    ("functional", VEHICLE_PARTS),
 ]
 
-# (label, compiled regex on title+body lowercase, category) — first match wins.
+# (label, regex on title+body lowercase, category) — first match wins.
+# Specifieker dan parent Motor Vehicle Parts.
 _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ("text:gift card", re.compile(r"\bgift\s*card\b|cadeaubon"), GIFTCARD),
     ("text:helmet", re.compile(r"\bhelmets?\b|\bhelm\b"), HELMETS),
     ("text:gloves", re.compile(r"\bgloves?\b|\bhandschoen"), GLOVES),
-    # Alleen echte schoenen/boots — niet "boot" in technische zinnen.
-    ("text:boots", re.compile(r"\b(mx\s+boots?|motocross\s+boots?|riding\s+boots?|laarzen)\b"), BOOTS),
+    (
+        "text:boots",
+        re.compile(r"\b(mx\s+boots?|motocross\s+boots?|riding\s+boots?|laarzen)\b"),
+        BOOTS,
+    ),
     ("text:goggles", re.compile(r"\bgoggles?\b"), GOGGLES),
     (
         "text:apparel",
@@ -192,22 +344,47 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         ),
         CLOTHING,
     ),
-    ("text:tools", re.compile(r"\b(special tool|torque wrench|tool kit|gereedschap)\b"), TOOLS),
-    # Motorex/olie → parts (geen aparte fluids-node); geen losse "olie" in NL-HTML.
-    ("text:oil", re.compile(r"\b(engine oil|fork oil|brake fluid|motorex)\b"), OILS),
+    ("text:seat", re.compile(r"\b(seat\s*cover|zadel|saddle\s*cover|\bseat\b)\b"), SEATING),
+    ("text:window", re.compile(r"\b(fly\s*screen|windshield|windscreen|wind\s*screen)\b"), WINDOW),
+    ("text:mirror", re.compile(r"\bmirrors?\b"), MIRRORS),
+    ("text:exhaust", re.compile(r"\b(exhaust|silencer|muffler|uitlaat|header)\b"), EXHAUST),
+    ("text:brake", re.compile(r"\b(brake|braking|remmen|\brem\b|disc\s*brake|brake\s*pad|brake\s*disc)\b"), BRAKING),
+    ("text:clutch", re.compile(r"\bclutch\b"), DRIVETRAIN),
+    ("text:chain", re.compile(r"\b(chain|sprocket|ketting|tandwiel)\b"), DRIVETRAIN),
+    ("text:suspension", re.compile(r"\b(fork|shock|suspension|triple\s*clamp|swing\s*arm|swingarm|pds|damping)\b"), SUSPENSION),
+    ("text:cooling", re.compile(r"\b(radiator|coolant|cooling|water\s*pump)\b"), COOLING),
+    ("text:air", re.compile(r"\b(air\s*filter|airbox|intake)\b"), AIR_INTAKE),
+    ("text:fuel", re.compile(r"\b(fuel\s*tank|fuel\s*pump|throttle\s*body|injector|\btank\b|jet\b)\b"), FUEL),
+    ("text:oil", re.compile(r"\b(engine\s*oil|fork\s*oil|brake\s*fluid|motorex|oil\s*filter|scottoil|\bolie\b)\b"), OIL_CIRC),
+    ("text:electrical", re.compile(r"\b(battery|ecu|wiring|harness|ignition|stator|regulator|relay|sensor|cable)\b"), ELECTRICAL),
+    ("text:lighting", re.compile(r"\b(headlight|taillight|turn\s*signal|led\s*light|\blamp\b|knipper)\b"), LIGHTING),
+    (
+        "text:engine-hw",
+        re.compile(
+            r"\b(piston|gasket|cylinder|crankshaft|camshaft|valve|engine|cilinder|"
+            r"o-?ring|seal|bushing|bearing|shim|spring|shaft|needle)\b"
+        ),
+        ENGINE_PARTS,
+    ),
+    ("text:wheel", re.compile(r"\b(wheel|rim|tire|tyre|spoke|\bnaaf\b)\b"), WHEELS),
+    (
+        "text:body",
+        re.compile(
+            r"\b(fairing|fender|guard|protector|cover|panel|plastic|frame|handguard|"
+            r"crash\s*bar|crash\s*bung|side\s*stand|centre\s*stand|center\s*stand|"
+            r"carrier|mounting\s*kit|luggage|spoiler|bracket|clamp|footpeg|footrest|"
+            r"screw|bolt|nut|washer|collar)\b"
+        ),
+        FRAME_BODY,
+    ),
+    ("text:decal", re.compile(r"\b(decal|sticker|start\s*number|number\s*plate)\b"), DECALS),
+    ("text:tools", re.compile(r"\b(special\s*tool|torque\s*wrench|tool\s*kit|gereedschap|socket|wrench)\b"), TOOLS),
     (
         "text:bike",
-        re.compile(r"\b(electric balance|e-?bike|bicycle|fiets)\b"),
+        re.compile(r"\b(electric\s*balance|e-?bike|bicycle|fiets|stacyc)\b"),
         BIKES_E,
     ),
-    (
-        "text:parts",
-        re.compile(
-            r"\b(filter|brake|clutch|sprocket|chain|piston|gasket|bearing|"
-            r"exhaust|radiator|fork|shock|bolt|nut|washer|oil seal|o-?ring)\b"
-        ),
-        VEHICLE_PARTS,
-    ),
+    ("text:controls", re.compile(r"\b(handlebar|grip|lever|throttle|stuur)\b"), CONTROLS),
 ]
 
 
@@ -233,6 +410,7 @@ def map_shopify_product_category(ktm_category: str | None) -> str:
 
 
 def _bucket_for_path(path: str) -> str:
+    leaf = path.split(" > ")[-1]
     if path == CLOTHING or path == BIKE_CLOTHING:
         return "Clothing"
     if path == TOOLS:
@@ -247,12 +425,25 @@ def _bucket_for_path(path: str) -> str:
         return "Boots"
     if path == GOGGLES:
         return "Goggles"
-    if path == SPORT_BAGS or path == BAGS:
+    if path in (SPORT_BAGS, BAGS):
         return "Bags"
     if path == GIFTCARD:
         return "Gift cards"
-    # OILS deelt pad met VEHICLE_PARTS → niet apart labelen
-    return "Motor Vehicle Parts"
+    if path == DECALS:
+        return "Decals / stickers"
+    if path.startswith(_MVP + " > "):
+        return leaf.replace("Motor Vehicle ", "")
+    if path == VEHICLE_PARTS:
+        return "Motor Vehicle Parts (generic)"
+    return leaf
+
+
+def is_missing_shopify_category(full_name: str | None) -> bool:
+    """True als Category leeg is of de placeholder Uncategorized."""
+    name = (full_name or "").strip()
+    if not name:
+        return True
+    return name.casefold() in {"uncategorized", "na"}
 
 
 def resolve_shopify_product_category(
@@ -266,23 +457,29 @@ def resolve_shopify_product_category(
     """
     Bepaal Shopify Category-pad + bron.
 
-    Volgorde: Type → tags → titel/body → XML-categorie → default.
+    Volgorde: specifiek Type → titel/body → tags → XML → default.
     """
     ptype = (product_type or "").strip()
-    if ptype:
-        key = ptype.lower()
-        if key in TYPE_EXACT:
-            path = TYPE_EXACT[key]
+    ptype_key = ptype.lower()
+
+    if ptype and ptype_key not in GENERIC_TYPES:
+        if ptype_key in TYPE_EXACT:
+            path = TYPE_EXACT[ptype_key]
             return CategoryDecision(path, f"type:{ptype}", _bucket_for_path(path))
         for prefix, path in TYPE_PREFIX:
-            if key.startswith(prefix):
+            if ptype_key.startswith(prefix):
                 return CategoryDecision(
                     path, f"type-prefix:{prefix.strip()}", _bucket_for_path(path)
                 )
 
-    tag_list: list[str]
+    blob = f"{title or ''}\n{body_html or ''}".lower()
+    blob = re.sub(r"<[^>]+>", " ", blob)
+    for label, pattern, path in _TEXT_PATTERNS:
+        if pattern.search(blob):
+            return CategoryDecision(path, label, _bucket_for_path(path))
+
     if tags is None:
-        tag_list = []
+        tag_list: list[str] = []
     elif isinstance(tags, str):
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     else:
@@ -292,13 +489,6 @@ def resolve_shopify_product_category(
     for tag_key, path in TAG_RULES:
         if tag_key in tag_lower:
             return CategoryDecision(path, f"tag:{tag_key}", _bucket_for_path(path))
-
-    blob = f"{title or ''}\n{body_html or ''}".lower()
-    # Strip simple HTML tags for keyword scan
-    blob = re.sub(r"<[^>]+>", " ", blob)
-    for label, pattern, path in _TEXT_PATTERNS:
-        if pattern.search(blob):
-            return CategoryDecision(path, label, _bucket_for_path(path))
 
     if xml_category and xml_category.strip():
         path = map_shopify_product_category(xml_category)

@@ -33,7 +33,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-from modules.category_mapper import resolve_shopify_product_category  # noqa: E402
+from modules.category_mapper import (  # noqa: E402
+    is_missing_shopify_category,
+    resolve_shopify_product_category,
+)
 
 _REQUEST_TIMEOUT = (15, 120)
 
@@ -136,7 +139,7 @@ def main() -> None:
         for p in conn["nodes"]:
             scanned += 1
             cat = (p.get("category") or {}).get("fullName") if p.get("category") else None
-            if only_empty and cat:
+            if only_empty and not is_missing_shopify_category(cat):
                 continue
             if only_empty:
                 empty += 1
