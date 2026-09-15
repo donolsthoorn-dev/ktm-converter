@@ -13,6 +13,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
 | `ktm_shopify_auto_deactivate_after_policy` | `shopify_auto_deactivate_invalid_products.yml` (apply) | Dagelijks **04:00** |
 | `ktm_shopify_publish_sellable_active` | `shopify_publish_sellable_active_products.yml` (apply) | Dagelijks **04:30** |
 | `ktm_customs_missing_fill_nightly` | `customs_missing_fill.yml` (missende HS/COO aanvullen) | Dagelijks **05:00** |
+| `ktm_shopify_gtin_fill` | `shopify_gtin_fill.yml` (lege barcodes/GTIN uit prijs-CSV) | Dagelijks **05:30** |
 | `ktm_price_eta_apply_hourly_0700_2300` | `price_eta_status_sync.yml` apply, `apply_scope=price_eta` | **07:00** t/m **23:00**, elk heel uur (**:00**) |
 | `ktm_price_eta_policy_nightly` | `price_eta_status_sync.yml` apply, `apply_scope=policy` | **00:15**, **07:15**, **12:15**, **18:15** |
 
@@ -50,6 +51,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/025_github_dispatch_bounded_wait.sql` (verplicht na 024; voorkomt SQL-hang)
    - `converter/supabase/migrations/027_github_dispatch_fire_and_forget.sql` (verplicht na 025/026; pg_net + cron-compatibel)
    - `converter/supabase/migrations/032_publish_sellable_active_after_deactivate.sql` (Webshop-publish 04:30 NL)
+   - `converter/supabase/migrations/033_gtin_fill_nightly_and_staging.sql` (GTIN-fill 05:30 NL + staging `proposed_barcode`)
 2. Create vault secret for GitHub API token (required):
 
 ```sql

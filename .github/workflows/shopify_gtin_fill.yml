@@ -1,0 +1,117 @@
+# Eerste inhaal + nachtelijke fill-if-empty voor variant-GTIN (barcode) uit prijs-CSV.
+# Na de inhaal vult price_eta_status_sync dezelfde GTINs mee op de prijs/ETA-delta.
+# Trigger: Supabase 05:30 NL (migratie 033) en/of GitHub schedule.
+
+name: shopify_gtin_fill
+
+on:
+  schedule:
+    # 03:30 UTC ≈ 05:30 CEST (zomer) / 04:30 CET (winter). DST-vast via Supabase 033.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = schrijven, false = alleen dry-run"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      limit:
+        description: "Max te vullen varianten (0 = alle)"
+        required: false
+        default: "0"
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: shopify-write-lock
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'true' }}
+      LIMIT: ${{ github.event.inputs.limit || '0' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch prijsbestanden (FTP/SFTP/FTPS)
+        env:
+          KTM_TRANSFER_PROTOCOL: ${{ secrets.KTM_TRANSFER_PROTOCOL }}
+          KTM_SFTP_HOST: ${{ secrets.KTM_SFTP_HOST }}
+          KTM_SFTP_PORT: ${{ secrets.KTM_SFTP_PORT }}
+          KTM_SFTP_USER: ${{ secrets.KTM_SFTP_USER }}
+          KTM_SFTP_PASSWORD: ${{ secrets.KTM_SFTP_PASSWORD }}
+          KTM_SFTP_REMOTE_DIR: ${{ secrets.KTM_SFTP_REMOTE_DIR }}
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+          KTM_SFTP_PATTERN: ${{ secrets.KTM_SFTP_PATTERN }}
+          KTM_FTP_TIMEOUT_SEC: ${{ secrets.KTM_FTP_TIMEOUT_SEC }}
+          KTM_FTP_RETRIES: ${{ secrets.KTM_FTP_RETRIES }}
+          KTM_FTP_RETRY_SLEEP_SEC: ${{ secrets.KTM_FTP_RETRY_SLEEP_SEC }}
+          KTM_FTP_BLOCKSIZE: ${{ secrets.KTM_FTP_BLOCKSIZE }}
+        run: python scripts/fetch_input_sftp.py
+
+      - name: Verwijder oude prijs-CSV's uit input (stale guard)
+        run: |
+          rm -f input/0150_35_Z1_EUR_EN_csv.csv
+          rm -f input/hsq/1100_35_Z1_EUR_EN_csv.csv
+          rm -f input/hsq/0140_35_Z1_EUR_EN_csv.csv
+          rm -f input/wp/0910_35_Z1_EUR_EN_csv.csv
+          rm -f input/1100_35_Z1_EUR_EN_csv.csv
+          rm -f input/0910_35_Z1_EUR_EN_csv.csv
+          rm -f input/0140_35_Z1_EUR_EN_csv.csv
+
+      - name: Staging → input/
+        env:
+          KTM_SFTP_LOCAL_DIR: downloads/ftp
+          KTM_SFTP_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+          KTM_PREPARE_FILES: 1100_35_Z1_EUR_EN_csv.csv,0910_35_Z1_EUR_EN_csv.csv,0150_35_Z1_EUR_EN_csv.csv,0140_35_Z1_EUR_EN_csv.csv
+        run: python scripts/prepare_input_from_ftp.py
+
+      - name: Valideer KTM 0150 aanwezig
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("input/0150_35_Z1_EUR_EN_csv.csv")
+          if not p.is_file() or p.stat().st_size < 100:
+              raise SystemExit("0150_35_Z1_EUR_EN_csv.csv ontbreekt of is leeg.")
+          print(p, p.stat().st_size)
+          PY
+
+      - name: GTIN fill-if-empty
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ "${APPLY}" == "true" ]]; then
+            EXTRA+=(--yes)
+          fi
+          if [[ "${LIMIT}" != "0" && -n "${LIMIT}" ]]; then
+            EXTRA+=(--limit "${LIMIT}")
+          fi
+          python3 scripts/shopify_gtin_fill.py --sleep 0.15 "${EXTRA[@]}"
+
+      - name: Upload rapport
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: shopify-gtin-fill-${{ github.run_id }}
+          path: output/shopify_gtin_fill_*.csv
+          if-no-files-found: ignore
+          retention-days: 14

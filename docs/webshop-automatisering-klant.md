@@ -25,6 +25,7 @@ Daarnaast wordt ’s nachts een **kopie van de Shopify-catalogus** opgeslagen in
 | **04:00** | Producten die niet (meer) op de webshop horen → **van de webshop** |
 | **04:30** | Producten die wél op de webshop horen maar nog niet zichtbaar zijn → **zichtbaar maken** |
 | **05:00** | Ontbrekende douanegegevens (HS-code / land van herkomst) aanvullen |
+| **05:30** | Ontbrekende GTIN/barcodes aanvullen (eerste nacht lang; daarna klein) |
 | **07:00–23:00** (elk heel uur) | Prijzen en levertijden bijwerken |
 | **07:15, 12:15, 18:15, 00:15** | Voorraadregels en productstatus (actief / concept) bijwerken |
 
@@ -78,6 +79,14 @@ Omgekeerd: producten die **wel online staan** maar dat niet meer mogen (verkeerd
 Voor artikelen waar **HS-code** of **land van herkomst** nog ontbreekt, probeert het systeem die gegevens aan te vullen.
 
 **Doel:** completere productdata voor verzending en compliance.
+
+---
+
+### 4b. Om 05:30 — GTIN / barcode
+
+Voor varianten waar de **barcode nog leeg** is, wordt de GTIN uit het KTM-prijsbestand gezet (niet overschrijven als er al een code staat). De eerste keer kan dit lang duren. Daarna vult de **prijs/ETA-update** (vanaf 07:00) dezelfde code mee op artikelen die toch al in die delta zitten.
+
+**Doel:** Google Shopping / artikelidentificatie.
 
 ---
 

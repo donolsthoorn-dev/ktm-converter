@@ -76,6 +76,7 @@ from modules.brand_config import (  # noqa: E402
 )
 from modules.pricing_loader import (  # noqa: E402
     detect_0150_csv_delimiter,
+    normalize_gtin,
     shopify_variant_lookup_keys,
     variant_pairs_for_pricelist_sku,
 )
@@ -249,6 +250,20 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                     stock_col = header.index("StockAvailable")
                 except ValueError:
                     eta_col, sku_col, price_col, status_col, stock_col = 22, 1, 4, 10, 21
+                gtin_col: int | None = None
+                header_norm = [x.strip() for x in header]
+                for nm in ("GTIN", "GTIN13", "EAN", "GlobalTradeItemNumber", "Barcode"):
+                    try:
+                        gtin_col = next(
+                            i
+                            for i, x in enumerate(header_norm)
+                            if x.lower() == nm.lower()
+                        )
+                        break
+                    except StopIteration:
+                        continue
+                if gtin_col is None and len(header) > 23:
+                    gtin_col = 23
                 for row in reader:
                     need = max(eta_col, sku_col, price_col, status_col, stock_col) + 1
                     if len(row) < need:
@@ -284,6 +299,9 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                         # Inventory policy kan nog steeds uit StockAvailable komen.
                         product_status = None
                         published = None
+                    gtin_val = ""
+                    if gtin_col is not None and gtin_col < len(row):
+                        gtin_val = normalize_gtin(row[gtin_col])
                     out[sku] = {
                         "eta_iso": eta_iso,
                         "price_incl": price_incl,
@@ -292,6 +310,7 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                         "stock_available_code": stock_code,
                         "published": published,
                         "inventory_policy": inventory_policy,
+                        "gtin": gtin_val or None,
                     }
             return out
         except UnicodeDecodeError:
@@ -545,6 +564,45 @@ mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsB
     variants = [
         {"id": f"gid://shopify/ProductVariant/{vid}", "price": price}
         for vid, price in variant_id_prices
+    ]
+    data = graphql_post(
+        shop,
+        token,
+        api_version,
+        q,
+        {"productId": pid_gid, "variants": variants},
+        sess=sess,
+    )
+    payload = (data or {}).get("productVariantsBulkUpdate") or {}
+    uerr = payload.get("userErrors") or []
+    if uerr:
+        return False, str(uerr)
+    return True, ""
+
+
+def graphql_product_variants_bulk_barcode(
+    shop: str,
+    token: str,
+    api_version: str,
+    product_id_numeric: str,
+    variant_id_barcodes: list[tuple[str, str]],
+    sess: requests.Session | None = None,
+) -> tuple[bool, str]:
+    """Zet barcode/GTIN voor meerdere varianten van één product."""
+    if not variant_id_barcodes:
+        return True, ""
+    q = """
+mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+    productVariants { id }
+    userErrors { field message }
+  }
+}
+"""
+    pid_gid = f"gid://shopify/Product/{product_id_numeric}"
+    variants = [
+        {"id": f"gid://shopify/ProductVariant/{vid}", "barcode": barcode}
+        for vid, barcode in variant_id_barcodes
     ]
     data = graphql_post(
         shop,

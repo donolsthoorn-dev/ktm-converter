@@ -530,6 +530,7 @@ def main() -> int:
             prop_sell_when_out_of_stock = prop_inventory_policy == "CONTINUE"
         prop_hs = normalize_hs_code(d.get("hs_code"), allowed_hs_lengths)
         prop_country = normalize_country_code(d.get("country_of_origin"))
+        prop_gtin = str(d.get("gtin") or "").strip() or None
         customs_source = str(d.get("customs_source") or "").strip() or None
         customs_confidence = str(d.get("customs_confidence") or "").strip() or None
 
@@ -583,6 +584,7 @@ def main() -> int:
                 "proposed_country_of_origin": prop_country,
                 "customs_source": customs_source,
                 "customs_confidence": customs_confidence,
+                "proposed_barcode": prop_gtin,
                 "mirror_inventory_policy": _canonical_inventory_policy(str(mirror_policy) if mirror_policy is not None else None) or None,
                 "proposed_inventory_policy": prop_inventory_policy,
                 "proposed_sell_when_out_of_stock": prop_sell_when_out_of_stock,

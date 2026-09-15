@@ -5,6 +5,7 @@ Pas Shopify mutaties toe op basis van public.pricelist_sync_staging.
 Deze flow leest de reeds berekende delta uit Supabase staging en voert alleen die mutaties uit:
   - variantprijs (price_changed)
   - ETA metafield set/clear (eta_changed; bij Shopify inventoryQuantity > 0 wordt set -> clear)
+  - barcode/GTIN (meeliften op price_eta-delta: proposed_barcode uit 0150, alleen op rijen die al in staging staan)
   - variant inventory_policy (inventory_policy_changed)
   - inventory item customs (customs_changed; HS code + land van herkomst)
   - productstatus (status_changed; in huidige flow vooral re-activatie naar ACTIVE)
@@ -690,20 +691,36 @@ def main() -> int:
         where["batch_id"] = f"eq.{args.batch_id.strip()}"
         print(f"Batch filter: {args.batch_id.strip()}", flush=True)
 
-    rows = _fetch_paginated(
-        sess,
-        base,
-        headers,
-        "pricelist_sync_staging",
-        (
-            "id,sku,shopify_variant_id,shopify_product_id,"
-            "proposed_price,proposed_eta_date,proposed_product_status,proposed_inventory_policy,"
-            "mirror_inventory_item_id,proposed_hs_code,proposed_country_of_origin,"
-            "price_updated_at,eta_updated_at,policy_updated_at,customs_updated_at,"
-            "price_changed,eta_changed,status_changed,inventory_policy_changed,customs_changed"
-        ),
-        where=where,
+    staging_select = (
+        "id,sku,shopify_variant_id,shopify_product_id,"
+        "proposed_price,proposed_eta_date,proposed_product_status,proposed_inventory_policy,"
+        "mirror_inventory_item_id,proposed_hs_code,proposed_country_of_origin,"
+        "proposed_barcode,"
+        "price_updated_at,eta_updated_at,policy_updated_at,customs_updated_at,"
+        "price_changed,eta_changed,status_changed,inventory_policy_changed,customs_changed"
     )
+    try:
+        rows = _fetch_paginated(
+            sess,
+            base,
+            headers,
+            "pricelist_sync_staging",
+            staging_select,
+            where=where,
+        )
+    except requests.HTTPError:
+        print(
+            "Staging zonder proposed_barcode (migratie 033 ontbreekt); GTIN-meeliften uit.",
+            flush=True,
+        )
+        rows = _fetch_paginated(
+            sess,
+            base,
+            headers,
+            "pricelist_sync_staging",
+            staging_select.replace("proposed_barcode,", ""),
+            where=where,
+        )
     if not rows:
         print("Geen staging-rijen gevonden om toe te passen.", flush=True)
         return 0
@@ -713,6 +730,7 @@ def main() -> int:
     eta_clear: list[tuple[str, str]] = []
     policy_ops: list[tuple[str, str, str]] = []
     customs_ops_by_item: dict[str, tuple[str, str, str | None, str | None, str]] = {}
+    barcode_ops: list[tuple[str, str, str]] = []
     product_ops_by_pid: dict[str, tuple[str, str]] = {}
     variant_to_product_id: dict[str, str] = {}
     variant_to_staging_row_id: dict[str, str] = {}
@@ -762,6 +780,10 @@ def main() -> int:
             ps = str(r.get("proposed_product_status") or "").strip().upper() or "ACTIVE"
             product_ops_by_pid[pid] = (sku, ps)
 
+        bc = str(r.get("proposed_barcode") or "").strip()
+        if bc and vid:
+            barcode_ops.append((sku, vid, bc))
+
         if r.get("customs_changed") and vid:
             customs_done = r.get("customs_updated_at") is not None
             if args.scope == "customs" and customs_done:
@@ -778,6 +800,7 @@ def main() -> int:
 
     print(
         f"Staging delta: prijs {len(price_ops)}, eta_set {len(eta_set)}, eta_clear {len(eta_clear)}, "
+        f"gtin {len(barcode_ops)}, "
         f"variant_policy {len(policy_ops)}, customs {len(customs_ops_by_item)}, "
         f"product_status {len(product_ops_by_pid)}",
         flush=True,
@@ -817,6 +840,7 @@ def main() -> int:
         variant_ids_to_check.update(vid for _sku, vid, _price in price_ops)
         variant_ids_to_check.update(vid for _sku, vid, _eta in eta_set)
         variant_ids_to_check.update(vid for _sku, vid in eta_clear)
+        variant_ids_to_check.update(vid for _sku, vid, _bc in barcode_ops)
     if run_policy:
         variant_ids_to_check.update(vid for _sku, vid, _pol in policy_ops)
     if run_customs:
@@ -830,11 +854,13 @@ def main() -> int:
             old_price = len(price_ops)
             old_eta_set = len(eta_set)
             old_eta_clear = len(eta_clear)
+            old_barcode = len(barcode_ops)
             old_policy = len(policy_ops)
             old_customs = len(customs_ops_by_item)
             price_ops = [op for op in price_ops if op[1] in existing_variant_ids]
             eta_set = [op for op in eta_set if op[1] in existing_variant_ids]
             eta_clear = [op for op in eta_clear if op[1] in existing_variant_ids]
+            barcode_ops = [op for op in barcode_ops if op[1] in existing_variant_ids]
             policy_ops = [op for op in policy_ops if op[1] in existing_variant_ids]
             customs_ops_by_item = {
                 item_id: op
@@ -846,6 +872,7 @@ def main() -> int:
                 f"prijs {old_price - len(price_ops)}, "
                 f"eta_set {old_eta_set - len(eta_set)}, "
                 f"eta_clear {old_eta_clear - len(eta_clear)}, "
+                f"gtin {old_barcode - len(barcode_ops)}, "
                 f"policy {old_policy - len(policy_ops)}, "
                 f"customs {old_customs - len(customs_ops_by_item)} "
                 f"(uniek missing variants: {len(missing_variant_ids)}).",
@@ -888,6 +915,7 @@ def main() -> int:
     product_success: list[tuple[str, str]] = []
     price_success_count = 0
     eta_success_count = 0
+    barcode_success_count = 0
     policy_success_count = 0
     customs_success_count = 0
     product_success_count = 0
@@ -1096,6 +1124,47 @@ def main() -> int:
             print(f"Prijs afgerond: {price_success_count}/{n_price} geslaagd.", flush=True)
         else:
             print("Geen open prijs-mutaties (alles al price_updated_at of geen delta).", flush=True)
+
+        n_barcode = len(barcode_ops)
+        barcode_success_count = 0
+        if n_barcode:
+            by_pid_bc: dict[str, list[tuple[str, str]]] = defaultdict(list)
+            no_pid_bc = 0
+            for _sku, vid, bc in barcode_ops:
+                pid = variant_to_product_id.get(vid)
+                if pid:
+                    by_pid_bc[pid].append((vid, bc))
+                else:
+                    no_pid_bc += 1
+            print(
+                f"Start GTIN-updates (meeliften op price_eta-delta): {n_barcode} varianten "
+                f"in {len(by_pid_bc)} producten…",
+                flush=True,
+            )
+            bc_sess = sync._http_session()
+            for pid, items in by_pid_bc.items():
+                for start in range(0, len(items), 100):
+                    chunk = items[start : start + 100]
+                    ok, err_msg = sync.graphql_product_variants_bulk_barcode(
+                        shop, token, api_ver, pid, chunk, sess=bc_sess
+                    )
+                    if ok:
+                        barcode_success_count += len(chunk)
+                    else:
+                        errors += 1
+                        if errors <= 20:
+                            print(f"GTIN bulk-fout product {pid}: {err_msg[:350]}", flush=True)
+            if no_pid_bc:
+                print(
+                    f"GTIN overgeslagen voor {no_pid_bc} variant(en) zonder product_id.",
+                    flush=True,
+                )
+            print(
+                f"GTIN afgerond: {barcode_success_count}/{n_barcode} geslaagd.",
+                flush=True,
+            )
+        else:
+            print("Geen GTIN in deze price_eta-delta.", flush=True)
     else:
         print("Skip prijs (scope zonder price_eta).", flush=True)
 
@@ -1287,6 +1356,7 @@ def main() -> int:
         f"scope={args.scope}; "
         f"price {price_success_count}/{total_price_ops}; "
         f"eta {eta_success_count}/{total_eta_ops}; "
+        f"gtin {barcode_success_count}/{len(barcode_ops)}; "
         f"policy {policy_success_count}/{total_policy_ops}; "
         f"customs {customs_success_count}/{total_customs_ops}; "
         f"product_status {product_success_count}/{len(product_ops_by_pid)}; "
@@ -1298,6 +1368,8 @@ def main() -> int:
         "price_success": price_success_count,
         "eta_total": total_eta_ops,
         "eta_success": eta_success_count,
+        "gtin_total": len(barcode_ops),
+        "gtin_success": barcode_success_count,
         "policy_total": total_policy_ops,
         "policy_success": policy_success_count,
         "policy_scope_enabled": run_policy,

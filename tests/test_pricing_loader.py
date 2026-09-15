@@ -207,3 +207,10 @@ def test_load_article_status_legacy_input_dir_fallback(tmp_path, monkeypatch) ->
 
     status = pricing_loader.load_article_status_from_35_z1_csv_files(str(only))
     assert status["LEGACY-1"] == "30"
+
+
+def test_normalize_gtin_accepts_ean13_and_strips_noise() -> None:
+    assert pricing_loader.normalize_gtin("8712345678901") == "8712345678901"
+    assert pricing_loader.normalize_gtin("871-2345-678901") == "8712345678901"
+    assert pricing_loader.normalize_gtin("123") == ""
+    assert pricing_loader.normalize_gtin("") == ""

@@ -2,6 +2,7 @@ import csv
 import glob
 import io
 import os
+import re
 from pathlib import Path
 
 import config
@@ -106,6 +107,14 @@ def shopify_variant_lookup_keys(pricelist_sku: str | None) -> list[str]:
     if xml_style not in keys:
         keys.append(xml_style)
     return keys
+
+
+def normalize_gtin(raw: str | None) -> str:
+    """Alleen cijfers; toegestane lengtes 8/12/13/14 (EAN-8/UPC/EAN-13/GTIN-14)."""
+    digits = re.sub(r"\D+", "", str(raw or ""))
+    if len(digits) in (8, 12, 13, 14):
+        return digits
+    return ""
 
 
 def lookup_in_str_index(index: dict[str, str], sku: str | None) -> str:
@@ -349,6 +358,26 @@ def load_stock_available_from_35_z1_csv_files(
     return merged
 
 
+def load_barcode_index_from_35_z1_csv_files(
+    input_dir: str | None = None,
+    *,
+    project_root: str | None = None,
+) -> dict[str, str]:
+    """
+    ArticleNumber → GTIN uit alle merk-prijs-CSV's (KTM+HSQ+WP).
+
+    Merge-volgorde: PRICELIST_CSV_MERGE_ORDER (later bestand wint bij dubbele SKU).
+    """
+    paths = _resolve_35_z1_csv_paths_multi_brand(
+        input_dir, project_root=project_root
+    )
+    merged: dict[str, str] = {}
+    for path in paths:
+        _price, barcodes, _status = _load_single_price_csv(path)
+        merged.update(barcodes)
+    return merged
+
+
 def load_article_status_from_35_z1_csv_files(
     input_dir: str | None = None,
     *,
@@ -404,8 +433,9 @@ def _merge_price_row(
         except ValueError:
             pass
 
-    if gtin and gtin.isdigit():
-        barcode_index[sku] = gtin
+    gtin_n = normalize_gtin(gtin)
+    if gtin_n:
+        barcode_index[sku] = gtin_n
 
     status_index[sku] = article_status
 
