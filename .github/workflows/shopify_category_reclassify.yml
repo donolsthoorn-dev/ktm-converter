@@ -1,0 +1,150 @@
+# Volledige Category-herclassificatie: staging dry-run → apply changes.
+# Gebruikt de type-first mapper; overschrijft bestaande (verkeerde) categories.
+#
+# Secrets KTM: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN,
+#   optioneel SHOPIFY_ADMIN_API_VERSION
+# Secrets Motox (optioneel): SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
+#
+# Handmatig starten (Actions → shopify_category_reclassify → Run workflow).
+# Duurt vaak 1–3 uur per shop; sleep=0.5s om Admin-druk te beperken.
+
+name: shopify_category_reclassify
+
+on:
+  workflow_dispatch:
+    inputs:
+      shop:
+        description: "Welke shop"
+        type: choice
+        options:
+          - ktm
+          - motox
+          - both
+        default: ktm
+      apply:
+        description: "true = schrijven naar Shopify, false = alleen staging"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      sleep:
+        description: "Pauze tussen updates (seconden)"
+        required: false
+        default: "0.5"
+      limit:
+        description: "Max changes bij apply (0 = alle)"
+        required: false
+        default: "0"
+
+jobs:
+  reclassify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: shopify-write-lock
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        shop: [ktm, motox]
+    env:
+      PYTHONUNBUFFERED: "1"
+      WANT_SHOP: ${{ github.event.inputs.shop || 'ktm' }}
+      APPLY: ${{ github.event.inputs.apply || 'true' }}
+      SLEEP: ${{ github.event.inputs.sleep || '0.5' }}
+      LIMIT: ${{ github.event.inputs.limit || '0' }}
+    steps:
+      - name: Decide if this matrix shop should run
+        id: gate
+        run: |
+          set -euo pipefail
+          if [[ "${WANT_SHOP}" == "both" || "${WANT_SHOP}" == "${{ matrix.shop }}" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skip ${{ matrix.shop }} (WANT_SHOP=${WANT_SHOP})"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/setup-python@v6
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Check Motox secrets
+        if: steps.gate.outputs.run == 'true' && matrix.shop == 'motox'
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+        run: |
+          if [[ -z "${SHOPIFY_MOTOX_ACCESS_TOKEN}" || -z "${SHOPIFY_MOTOX_SHOP_DOMAIN}" ]]; then
+            echo "::error::Motox secrets ontbreken."
+            exit 1
+          fi
+
+      - name: Staging reclassify dry-run (${{ matrix.shop }})
+        if: steps.gate.outputs.run == 'true'
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          python3 scripts/shopify_category_reclassify_staging.py --shop "${{ matrix.shop }}"
+          CHANGES=$(ls -t output/shopify_category_reclassify_changes_${{ matrix.shop }}_*.csv | head -1)
+          echo "CHANGES_CSV=${CHANGES}" >> "$GITHUB_ENV"
+          echo "Staging changes CSV: ${CHANGES}"
+          wc -l "${CHANGES}"
+
+      - name: Upload staging CSVs
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-category-reclassify-staging-${{ matrix.shop }}-${{ github.run_id }}
+          path: |
+            output/shopify_category_reclassify_staging_${{ matrix.shop }}_*.csv
+            output/shopify_category_reclassify_changes_${{ matrix.shop }}_*.csv
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Apply reclassify (${{ matrix.shop }})
+        if: steps.gate.outputs.run == 'true' && env.APPLY == 'true'
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          CHANGES="${CHANGES_CSV:-}"
+          if [[ -z "${CHANGES}" || ! -f "${CHANGES}" ]]; then
+            CHANGES=$(ls -t output/shopify_category_reclassify_changes_${{ matrix.shop }}_*.csv | head -1)
+          fi
+          EXTRA=(--reclassify --yes --from-csv "${CHANGES}" --sleep "${SLEEP}")
+          if [[ "${LIMIT}" != "0" && -n "${LIMIT}" ]]; then
+            EXTRA+=(--limit "${LIMIT}")
+          fi
+          echo "Apply from ${CHANGES} sleep=${SLEEP}"
+          python3 scripts/shopify_category_apply.py --shop "${{ matrix.shop }}" "${EXTRA[@]}"
+
+      - name: Upload apply report
+        if: always() && steps.gate.outputs.run == 'true' && env.APPLY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-category-reclassify-apply-${{ matrix.shop }}-${{ github.run_id }}
+          path: output/shopify_category_reclassify_${{ matrix.shop }}_*.csv
+          if-no-files-found: ignore
+          retention-days: 14

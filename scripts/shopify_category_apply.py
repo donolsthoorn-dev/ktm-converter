@@ -212,13 +212,8 @@ def resolve_taxonomy_gid(
                 if n.get("name") == leaf or fn.endswith(" > " + leaf) or fn == leaf:
                     cache[path] = n["id"]
                     return n["id"]
-    # Fallback: Motor Vehicle Parts parent
-    if path != DEFAULT_SHOPIFY_PRODUCT_CATEGORY:
-        gid = resolve_taxonomy_gid(
-            sess, shop, token, api, DEFAULT_SHOPIFY_PRODUCT_CATEGORY, cache
-        )
-        cache[path] = gid
-        return gid
+    # Fallback: géén stille degrade naar Motor Vehicle Parts (dat maakte
+    # fietsbatterijen/helmen etc. kapot). Liever fail dan verkeerde category.
     cache[path] = None
     return None
 

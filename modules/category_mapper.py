@@ -57,6 +57,9 @@ CLOTHING = "Apparel & Accessories > Clothing"
 TOOLS = "Hardware > Tools"
 BAGS = "Luggage & Bags > Backpacks"
 SPORT_BAGS = BAGS
+MOTO_BAGS = (
+    "Vehicles & Parts > Vehicle Parts & Accessories > Motorcycle Bags & Panniers"
+)
 HELMETS = (
     "Vehicles & Parts > Vehicle Parts & Accessories > "
     "Vehicle Safety & Security > Motorcycle Protective Gear > Motorcycle Helmets"
@@ -64,6 +67,13 @@ HELMETS = (
 GLOVES = (
     "Vehicles & Parts > Vehicle Parts & Accessories > "
     "Vehicle Safety & Security > Motorcycle Protective Gear > Motorcycle Gloves"
+)
+RACING_SUITS = (
+    "Vehicles & Parts > Vehicle Parts & Accessories > "
+    "Vehicle Safety & Security > Motorsports Protective Gear > Racing Suits"
+)
+MOTORCYCLE_OUTERWEAR = (
+    "Apparel & Accessories > Clothing > Outerwear > Motorcycle Outerwear"
 )
 BOOTS = "Apparel & Accessories > Shoes > Boots"
 SHOES = "Apparel & Accessories > Shoes"
@@ -76,8 +86,11 @@ BIKES_E = (
     "Sporting Goods > Outdoor Recreation > Cycling > Bicycles > Electric Bikes"
 )
 BIKES = "Sporting Goods > Outdoor Recreation > Cycling > Bicycles"
-BIKE_PARTS = (
-    "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Parts & Accessories"
+# Let op: Shopify heeft "Bicycle Parts", géén "Bicycle Parts & Accessories"
+# (verkeerd pad → apply viel stil terug op Motor Vehicle Parts).
+BIKE_PARTS = "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Parts"
+BIKE_ACCESSORIES = (
+    "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Accessories"
 )
 BIKE_HELMETS = (
     "Sporting Goods > Outdoor Recreation > Cycling > "
@@ -87,7 +100,63 @@ BIKE_DISPLAYS = (
     "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Accessories > "
     "Bicycle Computer Accessories > Bicycle Computer Displays"
 )
-BIKE_CLOTHING = CLOTHING
+BIKE_BAGS = (
+    "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Accessories > "
+    "Bicycle Bags & Panniers > Bicycle Bags"
+)
+BIKE_BASKETS = (
+    "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Accessories > "
+    "Bicycle Baskets"
+)
+BIKE_LIGHTS = f"{BIKE_ACCESSORIES} > Bicycle Lights"
+BIKE_LOCKS = f"{BIKE_ACCESSORIES} > Bicycle Locks"
+BIKE_MIRRORS = f"{BIKE_ACCESSORIES} > Bicycle Mirrors"
+BIKE_PUMPS = f"{BIKE_ACCESSORIES} > Bicycle Pumps"
+BIKE_CAGES = f"{BIKE_ACCESSORIES} > Bicycle Cages"
+BIKE_BOTTLE_CAGES = f"{BIKE_CAGES} > Bicycle Bottle Cages"
+BIKE_BELLS = f"{BIKE_ACCESSORIES} > Bicycle Bells & Horns"
+BIKE_FENDERS = f"{BIKE_ACCESSORIES} > Bicycle Fenders"
+BIKE_COMPUTERS = f"{BIKE_ACCESSORIES} > Bicycle Computers"
+BIKE_TOOLS = f"{BIKE_ACCESSORIES} > Bicycle Tools"
+BIKE_TRAILERS = f"{BIKE_ACCESSORIES} > Bicycle Trailers"
+BIKE_TRAINERS = f"{BIKE_ACCESSORIES} > Bicycle Trainers"
+BIKE_TRAINING_WHEELS = f"{BIKE_ACCESSORIES} > Bicycle Training Wheels"
+BIKE_CHILD_SEATS = f"{BIKE_ACCESSORIES} > Bicycle Child Seats"
+BIKE_RACKS = f"{BIKE_ACCESSORIES} > Bicycle Front & Rear Racks"
+BIKE_STANDS = f"{BIKE_ACCESSORIES} > Bicycle Stands & Storage"
+BIKE_GRIPS = f"{BIKE_ACCESSORIES} > Bicycle Handlebar Grips & Decor"
+BIKE_WATER_BOTTLES = (
+    "Home & Garden > Kitchen & Dining > Food & Beverage Carriers > Water Bottles"
+)
+# Specifieke onderdelen-leaves
+BIKE_WHEELS = f"{BIKE_PARTS} > Bicycle Wheels"
+BIKE_TIRES = f"{BIKE_PARTS} > Bicycle Tires"
+BIKE_TUBES = f"{BIKE_PARTS} > Bicycle Tubes"
+BIKE_FORKS = f"{BIKE_PARTS} > Bicycle Forks"
+BIKE_FRAMES = f"{BIKE_PARTS} > Bicycle Frames"
+BIKE_HANDLEBARS = f"{BIKE_PARTS} > Bicycle Handlebars"
+BIKE_HEADSETS = f"{BIKE_PARTS} > Bicycle Headsets"
+BIKE_SADDLES = f"{BIKE_PARTS} > Bicycle Saddles"
+BIKE_SEATPOSTS = f"{BIKE_PARTS} > Bicycle Seatposts"
+BIKE_STEMS = f"{BIKE_PARTS} > Bicycle Stems"
+BIKE_KICKSTANDS = f"{BIKE_PARTS} > Bicycle Kickstands"
+BIKE_BRAKE_PARTS = f"{BIKE_PARTS} > Bicycle Brake Parts"
+BIKE_DRIVETRAIN = f"{BIKE_PARTS} > Bicycle Drivetrain Parts"
+BIKE_CHAINS = f"{BIKE_DRIVETRAIN} > Bicycle Chains"
+BIKE_PEDALS = f"{BIKE_DRIVETRAIN} > Bicycle Pedals"
+BIKE_CRANKS = f"{BIKE_DRIVETRAIN} > Bicycle Cranks"
+BIKE_CASSETTES = f"{BIKE_DRIVETRAIN} > Bicycle Cassettes & Freewheels"
+BIKE_BOTTOMS = f"{BIKE_DRIVETRAIN} > Bicycle Bottom Brackets"
+BIKE_CHAINRINGS = f"{BIKE_DRIVETRAIN} > Bicycle Chainrings"
+CYCLING_APPAREL = (
+    "Sporting Goods > Outdoor Recreation > Cycling > Cycling Apparel & Accessories"
+)
+BIKE_SHOES = f"{CYCLING_APPAREL} > Cycling Shoes"
+BIKE_JERSEYS = f"{CYCLING_APPAREL} > Cycling Jerseys"
+BIKE_SHORTS = f"{CYCLING_APPAREL} > Cycling Shorts & Bib Shorts"
+BIKE_JACKETS = f"{CYCLING_APPAREL} > Cycling Jackets & Vests"
+BIKE_HEADWEAR = f"{CYCLING_APPAREL} > Cycling Caps & Headwear"
+BIKE_CLOTHING = CYCLING_APPAREL
 PHONE_CASES = (
     "Electronics > Communications > Telephony > "
     "Mobile & Smart Phone Accessories > Mobile Phone Cases"
@@ -165,6 +234,13 @@ GENERIC_TYPES: set[str] = {
     "pos",
     "software enhancements",
     "motorcycles",
+    # Te vaag / catalogus-bakken zonder zinvolle leaf
+    "new",
+    "other",
+    "kids",
+    "flash",
+    "best deal",
+    "hsq -",
 }
 
 # Exact Shopify product_type → taxonomy path (case-insensitive).
@@ -205,7 +281,12 @@ TYPE_EXACT: dict[str, str] = {
     "racetrack and camping": EVENT_MATERIAL,
     "jerseys": CLOTHING,
     "shirts": CLOTHING,
-    "backpacks": BAGS,
+    # "backpacks" bewust niet exact: KTM-fietstassen staan soms als Backpacks;
+    # laat text:bike-bag / text:bag beslissen.
+    "bicycle bags": BIKE_BAGS,
+    "bicycle baskets": BIKE_BASKETS,
+    "bicycle workwear": CYCLING_APPAREL,
+    "bicycle work wear": CYCLING_APPAREL,
     # Event / merchandising — alleen als tekst geen specifiekere hit heeft
     # (zie TEXT_FIRST_TYPES in resolve).
     "event material": EVENT_MATERIAL,
@@ -258,6 +339,9 @@ TYPE_EXACT: dict[str, str] = {
     "trim parts/decals": FRAME_BODY,
     "decals": DECALS,
     "decals / sticker protection": DECALS,
+    "graphics & stickers": DECALS,
+    "graphics and stickers": DECALS,
+    "exhaust stickers": DECALS,
     "startnumber backgrounds": DECALS,
     "carbon": FRAME_BODY,
     "plastic parts set": FRAME_BODY,
@@ -269,14 +353,14 @@ TYPE_EXACT: dict[str, str] = {
     "tanks": FUEL,
     "hsq - tanks": FUEL,
     "tank protection": FRAME_BODY,
-    "tank bag": BAGS,
-    "side bag": BAGS,
-    "rear bag": BAGS,
-    "inner bag": BAGS,
-    "luggage bag": BAGS,
-    "bags and luggage": BAGS,
-    "hsq - bags and luggage": BAGS,
-    "wp - bags and luggage": BAGS,
+    "tank bag": MOTO_BAGS,
+    "side bag": MOTO_BAGS,
+    "rear bag": MOTO_BAGS,
+    "inner bag": MOTO_BAGS,
+    "luggage bag": MOTO_BAGS,
+    "bags and luggage": MOTO_BAGS,
+    "hsq - bags and luggage": MOTO_BAGS,
+    "wp - bags and luggage": MOTO_BAGS,
     # Wheels / windows / mirrors / electrics
     "wheels": WHEELS,
     "windshields": WINDOW,
@@ -286,7 +370,7 @@ TYPE_EXACT: dict[str, str] = {
     "electrical system / diagnosis": ELECTRICAL,
     "handlebars/instruments/electrics": CONTROLS,
     # Luggage
-    "luggage cases": BAGS,
+    "luggage cases": MOTO_BAGS,
     "luggage carrier": FRAME_BODY,
     "backpacks / bags": BAGS,
     # Tools
@@ -346,7 +430,7 @@ TYPE_EXACT: dict[str, str] = {
     "side bag": BAGS,
     "rear bag": BAGS,
     "inner bag": BAGS,
-    "luggage accessoires": BAGS,
+    "luggage accessoires": MOTO_BAGS,
     "chasis street": FRAME_BODY,
     "chassis street": FRAME_BODY,
     "hsq - electrical system / diagnosis": ELECTRICAL,
@@ -357,34 +441,230 @@ TYPE_EXACT: dict[str, str] = {
     "chassis/triple clamp": SUSPENSION,
     "chains/sprockets": DRIVETRAIN,
     "original spare part kits": ENGINE_PARTS,
+    # --- Bulk unmapped types (type-map CSV 20260915) ---
+    # Apparel / lifestyle
+    "underwear": CLOTHING,
+    "leather suits": RACING_SUITS,
+    "leathersuits": RACING_SUITS,
+    "cadeaubonnen": GIFTCARD,
+    # Brakes
+    "brake pads": BRAKING,
+    "brake parts": BRAKING,
+    "brake calipers": BRAKING,
+    "brake cylinders": BRAKING,
+    "brake protection": BRAKING,
+    # Drivetrain / controls
+    "sprockets": DRIVETRAIN,
+    "chains": DRIVETRAIN,
+    "clutch kit": DRIVETRAIN,
+    "chainguides and sliders": DRIVETRAIN,
+    "chain protection": DRIVETRAIN,
+    "grips": CONTROLS,
+    "grip set": CONTROLS,
+    "handlebars": CONTROLS,
+    "handlebar supports": CONTROLS,
+    "xtrig bar mounts": CONTROLS,
+    # Engine
+    "valve kit": ENGINE_PARTS,
+    "cylinder seal set": ENGINE_PARTS,
+    "cnc engine": ENGINE_PARTS,
+    "shim kit": ENGINE_PARTS,
+    "carburetor jet kit": FUEL,
+    "oil filter kit": OIL_CIRC,
+    "fork oil": OIL_CIRC,
+    "shock absorber oil": OIL_CIRC,
+    "grease": OIL_CIRC,
+    "loctite": OIL_CIRC,
+    "consumables": OIL_CIRC,
+    # Exhaust / intake / cooling
+    "exhaust parts kit": EXHAUST,
+    "noise reduction": EXHAUST,
+    "air filter standaard ktm": AIR_INTAKE,
+    "air filter standaard": AIR_INTAKE,
+    "air filter pre-oiled ktm": AIR_INTAKE,
+    "pre-oiled air filter": AIR_INTAKE,
+    "air filter cover": AIR_INTAKE,
+    "radiator": COOLING,
+    "radiator fan": COOLING,
+    "radiator fans": COOLING,
+    "radiator protection": COOLING,
+    "hoses": COOLING,
+    # Suspension / chassis / frame
+    "spring": SUSPENSION,
+    "lowering kit": SUSPENSION,
+    "preload adjuster": SUSPENSION,
+    "triple clamp": SUSPENSION,
+    "xtrig triple clamps": SUSPENSION,
+    "steering dampers": SUSPENSION,
+    "fork/shock protection": SUSPENSION,
+    "reducing ring": SUSPENSION,
+    "chassis": FRAME_BODY,
+    "chassis offroad": FRAME_BODY,
+    "chasis offroad": FRAME_BODY,
+    "cnc chassis": FRAME_BODY,
+    "plastic kits": FRAME_BODY,
+    "plastic parts kit": FRAME_BODY,
+    "carbon parts street": FRAME_BODY,
+    "carbon parts offroad": FRAME_BODY,
+    "carbon protection": FRAME_BODY,
+    "frame protection": FRAME_BODY,
+    "heat protection": FRAME_BODY,
+    "hand protection": FRAME_BODY,
+    "crash bar kits": FRAME_BODY,
+    "engine guard, street": FRAME_BODY,
+    "engine guard, 2-stroke offroad": FRAME_BODY,
+    "skid plate, 4-stroke offroad": FRAME_BODY,
+    "skid plate, 2-stroke offroad": FRAME_BODY,
+    "skid plate, street": FRAME_BODY,
+    "swingarm protection": FRAME_BODY,
+    "protecting sleeves & protection caps": FRAME_BODY,
+    "headlight protection": LIGHTING,
+    # Wheels
+    "wheels haan rear": WHEELS,
+    "wheels haan front": WHEELS,
+    "wheels accessoires": WHEELS,
+    "wheels graphic": WHEELS,
+    "wheel repair kit": WHEELS,
+    "wheel sliders": WHEELS,
+    "wheel bearing protection": WHEELS,
+    "wheel set": WHEELS,
+    "special parts wheels": WHEELS,
+    # Electrics / ECU
+    "tuning/ecu": ELECTRICAL,
+    # Luggage / bags
+    "luggage": MOTO_BAGS,
+    "backpacks": BAGS,
+    # Stickers / merch / POS
+    "stickers": DECALS,
+    "off-road stickerset": DECALS,
+    "poster": EVENT_MATERIAL,
+    "folder": EVENT_MATERIAL,
+    "pricelists": EVENT_MATERIAL,
+    "hangers": EVENT_MATERIAL,
+    "model bike": EVENT_MATERIAL,
+    "transport": EVENT_MATERIAL,
+    "transportation": EVENT_MATERIAL,
+    # Tools / stands
+    "piston tool": TOOLS,
+    "transmission tool": TOOLS,
+    "groove nut wrench": TOOLS,
+    "pliers": TOOLS,
+    "spark plug wrench": TOOLS,
+    "mounting tool": TOOLS,
+    "measuring tool": TOOLS,
+    "filling tool": TOOLS,
+    "adjuster tool": TOOLS,
+    "vacuum pump": TOOLS,
+    "air pump": TOOLS,
+    "flow meter": TOOLS,
+    "socket": TOOLS,
+    "screwdriver": TOOLS,
+    "needle": TOOLS,
+    "lift and work stand": TOOLS,
+    "factory start": TOOLS,
+    "drift": TOOLS,
+    # Bikes (incl. NBSP-varianten worden genormaliseerd)
+    "mtb fully": BIKES,
+    "trekking onroad": BIKES,
+    "trekking offroad": BIKES,
+    "e troffroad": BIKES_E,
+    "sl e gravel": BIKES_E,
+    "sl e mtb fully": BIKES_E,
+    "sl e road": BIKES_E,
+    "stacyc electric balance bikes": BIKES_E,
+    # Vage onderdelen-bakken → generieke motor parts (bewust)
+    # 2-/4-stroke Offroad: zie SOFT_TYPE_FALLBACKS (tekst eerst, default Exhaust).
+    "husaberg": DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    "special parts": DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    "spare parts functional": DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    "functional spareparts": DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    'spareparts 20"': DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    'spareparts 12&16"': DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+    "powersale": DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
 }
 
 # Prefix rules after exact match (longest / most specific first).
 TYPE_PREFIX: list[tuple[str, str]] = [
-    ("bicycle first layer", BIKE_CLOTHING),
-    ("bicycle gloves", BIKE_CLOTHING),
-    ("bicycle jackets", BIKE_CLOTHING),
-    ("bicycle jerseys", BIKE_CLOTHING),
-    ("bicycle pants", BIKE_CLOTHING),
-    ("bicycle shorts", BIKE_CLOTHING),
-    ("bicycle socks", BIKE_CLOTHING),
-    ("bicycle shoes", BIKE_CLOTHING),
+    ("bicycle first layer", CYCLING_APPAREL),
+    ("bicycle gloves", CYCLING_APPAREL),
+    ("bicycle jackets", BIKE_JACKETS),
+    ("bicycle jerseys", BIKE_JERSEYS),
+    ("bicycle pants", BIKE_SHORTS),
+    ("bicycle shorts", BIKE_SHORTS),
+    ("bicycle socks", CYCLING_APPAREL),
+    ("bicycle shoes", BIKE_SHOES),
     ("bicycle helmets", BIKE_HELMETS),
     ("bicycle helmet", BIKE_HELMETS),
-    ("bicycle heads and scarfs", CLOTHING),
+    ("bicycle heads and scarfs", BIKE_HEADWEAR),
+    ("bicycle workwear", CYCLING_APPAREL),
+    ("bicycle work wear", CYCLING_APPAREL),
+    ("bicycle innerpants", CYCLING_APPAREL),
+    ("bicycle warmer", CYCLING_APPAREL),
+    ("bicycle insole", BIKE_SHOES),
     ("bicycle sunglasses", SUNGLASSES),
-    ("bicycle backpacks", BAGS),
-    ("bicycle bags", BAGS),
+    ("bicycle backpacks", BIKE_BAGS),
+    ("bicycle bags", BIKE_BAGS),
+    ("bicycle baskets", BIKE_BASKETS),
+    # Accessoires met eigen leaf
+    ("bicycle lights", BIKE_LIGHTS),
+    ("bicycle light", BIKE_LIGHTS),
+    ("bicycle locks", BIKE_LOCKS),
+    ("bicycle lock", BIKE_LOCKS),
+    ("bicycle mirrors", BIKE_MIRRORS),
+    ("bicycle mirror", BIKE_MIRRORS),
+    ("bicycle pumps", BIKE_PUMPS),
+    ("bicycle pump", BIKE_PUMPS),
+    ("bicycle bottle cages", BIKE_BOTTLE_CAGES),
+    ("bicycle bottle cage", BIKE_BOTTLE_CAGES),
+    ("bicycle bottlecages", BIKE_BOTTLE_CAGES),
+    ("bicycle bottles", BIKE_WATER_BOTTLES),
+    ("bicycle bottle", BIKE_WATER_BOTTLES),
+    ("bicycle cages", BIKE_CAGES),
+    ("bicycle bells", BIKE_BELLS),
+    ("bicycle fenders", BIKE_FENDERS),
+    ("bicycle computers", BIKE_COMPUTERS),
+    ("bicycle computer", BIKE_COMPUTERS),
+    ("bicycle tools", BIKE_TOOLS),
+    ("bicycle tool", BIKE_TOOLS),
+    ("bicycle bike trailers", BIKE_TRAILERS),
+    ("bicycle trailers", BIKE_TRAILERS),
+    ("bicycle hometrainers", BIKE_TRAINERS),
+    ("bicycle trainers", BIKE_TRAINERS),
+    ("bicycle kids training wheels", BIKE_TRAINING_WHEELS),
+    ("bicycle training wheels", BIKE_TRAINING_WHEELS),
+    ("bicycle children seat", BIKE_CHILD_SEATS),
+    ("bicycle child seat", BIKE_CHILD_SEATS),
+    ("bicycle carriers", BIKE_RACKS),
+    ("bicycle carrier", BIKE_RACKS),
+    ("bicycle kickstands", BIKE_KICKSTANDS),
+    ("bicycle kickstand", BIKE_KICKSTANDS),
+    ("bicycle storage", BIKE_STANDS),
+    ("bicycle grips", BIKE_GRIPS),
+    ("bicycle grip", BIKE_GRIPS),
+    ("bicycle youngster", BIKES),
+    ("bicycle bike care", BIKE_ACCESSORIES),
+    ("bicycle safety", BIKE_ACCESSORIES),
+    ("bicycle chains", BIKE_CHAINS),
+    ("bicycle chain", BIKE_CHAINS),
+    ("bicycle pedals", BIKE_PEDALS),
+    ("bicycle pedal", BIKE_PEDALS),
+    ("bicycle cassettes", BIKE_CASSETTES),
+    ("bicycle bottom brackets", BIKE_BOTTOMS),
+    ("bicycle chainguards", BIKE_PARTS),
+    ("bicycle chainguides", BIKE_PARTS),
     # E-bike subsystem types — altijd fiets, nooit Motor Vehicle Electrical.
     ("bicycle e-bike, bicycle remotes and displays", BIKE_DISPLAYS),
     ("bicycle e-bike, bicycle cables and displays", BIKE_PARTS),
     ("bicycle e-bike, bicycle batteries", BIKE_PARTS),
     ("bicycle e-bike, bicycle battery", BIKE_PARTS),
     ("bicycle e-bike, bicycle chargers", BIKE_PARTS),
+    ("bicycle e-bike, bicycle chainrings", BIKE_CHAINRINGS),
+    ("bicycle e-bike, bicycle cranks", BIKE_CRANKS),
     ("bicycle e-bike, biccycle smartphone case", PHONE_CASES),
     ("bicycle e-bike, bicycle smartphone case", PHONE_CASES),
     ("bicycle e-bike, bicycle batter", BIKE_PARTS),
     ("bicycle e-bike", BIKE_PARTS),
+    ("bicycle batteries", BIKE_PARTS),
     ("bicycle ", BIKE_PARTS),
     ("display e-bike", BIKE_DISPLAYS),
     ("display ebike", BIKE_DISPLAYS),
@@ -435,18 +715,35 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         BIKE_HELMETS,
     ),
     (
+        "text:bike-bag",
+        re.compile(
+            r"\b(hbar\s*bag|handlebar\s*bag|trunk\s*bag|carrbag|carrier\s*bag|"
+            r"pannier|frame\s*bag|saddle\s*bag|bicycle\s*bag)\b"
+        ),
+        BIKE_BAGS,
+    ),
+    (
+        "text:bike-basket",
+        re.compile(r"\b(bicycle\s*basket|bike\s*basket|\bbasket\b)\b"),
+        BIKE_BASKETS,
+    ),
+    (
         "text:bag",
         re.compile(
             r"\b(tank\s*bag|side\s*bag|rear\s*bag|inner\s*bag|luggage\s*bag|"
-            r"top\s*case|backpack|rucksack|hydration\s*(pack|backpack|bag))\b"
+            r"touring\s*case|top\s*case|topcase|pannier|"
+            r"topcase\s*fitting|top\s*case\s*fitting|case\s*carrier|"
+            r"top\s*case\s*carrier|luggage\s*case|"
+            r"backpack|rucksack|hydration\s*(pack|backpack|bag))\b"
         ),
-        BAGS,
+        MOTO_BAGS,
     ),
     ("text:helmet", re.compile(r"\b(motorcycle\s*)?helmets?\b|\bhelm\b"), HELMETS),
     ("text:gloves", re.compile(r"\bgloves?\b|\bhandschoen"), GLOVES),
     (
         "text:boots",
-        re.compile(r"\b(mx\s+boots?|motocross\s+boots?|riding\s+boots?|laarzen|\bboots?\b)\b"),
+        # Geen losse "boot(s)" — anders Frame Protection / body parts → Boots.
+        re.compile(r"\b(mx\s+boots?|motocross\s+boots?|riding\s+boots?|enduro\s+boots?|laarzen)\b"),
         BOOTS,
     ),
     ("text:goggles", re.compile(r"\bgoggles?\b"), GOGGLES),
@@ -466,9 +763,9 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     (
         "text:apparel",
         re.compile(
-            r"\b(t-?shirts?\b|tees?\b|hoodie|sweatshirt|sweat\s*jacket|jersey|"
-            r"longsleeve|long\s*sleeve|beanie|polo\b|crewneck|"
-            r"trousers?\b|\bpants?\b|\bshorts?\b)\b"
+            r"\b(t-?shirts?\b|\btees?\b|hoodie|sweatshirt|sweat\s*jacket|jersey|"
+            r"longsleeve|long\s*sleeve|beanie|\bpolo\b|crewneck|"
+            r"trousers?\b|\bpants\b|\bshorts?\b)\b"
         ),
         CLOTHING,
     ),
@@ -497,13 +794,14 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         FUEL,
     ),
     ("text:oil", re.compile(r"\b(engine\s*oil|fork\s*oil|brake\s*fluid|motorex|oil\s*filter|scottoil|\bolie\b)\b"), OIL_CIRC),
-    ("text:electrical", re.compile(r"\b(battery|ecu|wiring|harness|ignition|stator|regulator|relay|sensor|cable)\b"), ELECTRICAL),
+    ("text:electrical", re.compile(r"\b(battery|ecu|cdi|wiring|harness|ignition|stator|regulator|relay|sensor|cable|control\s*unit)\b"), ELECTRICAL),
     ("text:lighting", re.compile(r"\b(headlight|taillight|turn\s*signal|led\s*light|\blamp\b|knipper)\b"), LIGHTING),
     (
         "text:engine-hw",
         re.compile(
+            # Geen losse "spring" (Exhaust spring → vals Engine Parts).
             r"\b(piston|gasket|cylinder|crankshaft|camshaft|valve|engine|cilinder|"
-            r"o-?ring|seal|bushing|bearing|shim|spring|shaft|needle)\b"
+            r"o-?ring|seal|bushing|bearing|shim|shaft|needle)\b"
         ),
         ENGINE_PARTS,
     ),
@@ -518,7 +816,7 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         ),
         FRAME_BODY,
     ),
-    ("text:decal", re.compile(r"\b(decal|sticker|start\s*number|number\s*plate)\b"), DECALS),
+    ("text:decal", re.compile(r"\b(decal|sticker|start\s*number|number\s*plate|graphic\s*kit)\b"), DECALS),
     ("text:tools", re.compile(r"\b(special\s*tool|torque\s*wrench|tool\s*kit|gereedschap|socket|wrench)\b"), TOOLS),
     (
         "text:bike",
@@ -529,9 +827,12 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
 ]
 
 
-# Types waar type te vaag is: sla type over, gebruik titel/tags.
-# (Geen “text first bij geldig type” meer — Type wint altijd als die matcht.)
-TEXT_FIRST_TYPES: set[str] = set()  # bewust leeg; generic types doen dit al
+# Types waar titel/body eerst mag winnen; anders vaste fallback (niet generiek MVP).
+SOFT_TYPE_FALLBACKS: dict[str, str] = {
+    # Catalogusbakken met vooral uitlaten; CDI e.d. winnen via tekst.
+    "2-stroke offroad": EXHAUST,
+    "4-stroke offroad": EXHAUST,
+}
 
 
 @dataclass(frozen=True)
@@ -557,20 +858,55 @@ def map_shopify_product_category(ktm_category: str | None) -> str:
 
 def _bucket_for_path(path: str) -> str:
     leaf = path.split(" > ")[-1]
-    if path == CLOTHING or path == BIKE_CLOTHING:
+    if path == CLOTHING:
         return "Clothing"
+    if path in (CYCLING_APPAREL, BIKE_CLOTHING, BIKE_JERSEYS, BIKE_SHORTS, BIKE_JACKETS, BIKE_HEADWEAR):
+        return "Cycling apparel"
+    if path == BIKE_SHOES:
+        return "Cycling shoes"
     if path == TOOLS:
         return "Tools"
-    if path in (BIKES_E, BIKES, BIKE_PARTS):
+    if path in (BIKES_E, BIKES, BIKE_PARTS, BIKE_ACCESSORIES):
         return "Bicycles / bike parts"
+    if path in (
+        BIKE_LIGHTS,
+        BIKE_LOCKS,
+        BIKE_MIRRORS,
+        BIKE_PUMPS,
+        BIKE_CAGES,
+        BIKE_BOTTLE_CAGES,
+        BIKE_BELLS,
+        BIKE_FENDERS,
+        BIKE_COMPUTERS,
+        BIKE_TOOLS,
+        BIKE_TRAILERS,
+        BIKE_TRAINERS,
+        BIKE_TRAINING_WHEELS,
+        BIKE_CHILD_SEATS,
+        BIKE_RACKS,
+        BIKE_STANDS,
+        BIKE_GRIPS,
+        BIKE_WATER_BOTTLES,
+    ):
+        return "Bicycle accessories"
+    if path.startswith(BIKE_PARTS + " > "):
+        return "Bicycle parts"
     if path == BIKE_HELMETS:
         return "Bicycle Helmets"
     if path == BIKE_DISPLAYS:
         return "E-bike / bike displays"
+    if path == BIKE_BAGS:
+        return "Bicycle Bags"
+    if path == BIKE_BASKETS:
+        return "Bicycle Baskets"
     if path == PHONE_CASES:
         return "Phone cases"
     if path == HELMETS:
         return "Motorcycle Helmets"
+    if path == RACING_SUITS:
+        return "Racing suits"
+    if path == MOTORCYCLE_OUTERWEAR:
+        return "Motorcycle outerwear"
     if path == GLOVES:
         return "Gloves"
     if path == BOOTS:
@@ -581,6 +917,8 @@ def _bucket_for_path(path: str) -> str:
         return "Goggles"
     if path == SUNGLASSES:
         return "Sunglasses"
+    if path == MOTO_BAGS:
+        return "Motorcycle bags"
     if path in (SPORT_BAGS, BAGS):
         return "Bags"
     if path == GIFTCARD:
@@ -598,14 +936,43 @@ def _bucket_for_path(path: str) -> str:
     return leaf
 
 
+# Soft lifestyle/apparel text hits — niet gebruiken bij Partstream/spareparts.
+# Wel bags/tassen: Partstream-titels als "Side bag", "Touring case", "Topcase".
+_PARTS_GENERIC_SKIP_TEXT = frozenset(
+    {
+        "text:apparel",
+        "text:sunglasses",
+        "text:gift card",
+        "text:flag",
+        "text:bike-bag",
+        "text:bike-basket",
+        "text:bike",
+        "text:bike-helmet",
+        "text:boots",
+    }
+)
+_PARTS_GENERIC_TYPES = frozenset(
+    {
+        "partstream",
+        "powerparts",
+        "spareparts",
+        "spare parts",
+        "spareparts functional",
+    }
+)
+
+
 _BRAND_TYPE_PREFIX = re.compile(r"^(hsq|wp)\s*-\s*", re.IGNORECASE)
 
 
 def _type_lookup_keys(ptype_key: str) -> list[str]:
     """Volledige type-key + zonder HSQ-/WP-prefix (merk is alleen herkenning)."""
-    keys = [ptype_key]
-    bare = _BRAND_TYPE_PREFIX.sub("", ptype_key).strip()
-    if bare and bare != ptype_key:
+    # Shopify/XML types bevatten soms NBSP (E\xa0MTB\xa0Fully) → normaliseren.
+    key = (ptype_key or "").replace("\xa0", " ").replace("\u202f", " ")
+    key = re.sub(r"\s+", " ", key).strip().lower()
+    keys = [key] if key else []
+    bare = _BRAND_TYPE_PREFIX.sub("", key).strip()
+    if bare and bare not in keys:
         keys.append(bare)
     return keys
 
@@ -639,10 +1006,14 @@ def resolve_shopify_product_category(
     blob = f"{title or ''}\n{body_html or ''}".lower()
     blob = re.sub(r"<[^>]+>", " ", blob)
 
+    parts_generic = any(k in _PARTS_GENERIC_TYPES for k in type_keys)
+
     def _from_text() -> CategoryDecision | None:
         if not blob.strip():
             return None
         for label, pattern, path in _TEXT_PATTERNS:
+            if parts_generic and label in _PARTS_GENERIC_SKIP_TEXT:
+                continue
             if pattern.search(blob):
                 return CategoryDecision(path, label, _bucket_for_path(path))
         return None
@@ -664,6 +1035,22 @@ def resolve_shopify_product_category(
                     )
         return None
 
+    # Soft types (2-/4-stroke Offroad): tekst eerst, anders vaste fallback (Exhaust).
+    soft_fallback = None
+    for key in type_keys:
+        if key in SOFT_TYPE_FALLBACKS:
+            soft_fallback = SOFT_TYPE_FALLBACKS[key]
+            break
+    if soft_fallback is not None:
+        hit = _from_text()
+        if hit:
+            return hit
+        return CategoryDecision(
+            soft_fallback,
+            f"type-fallback:{ptype}",
+            _bucket_for_path(soft_fallback),
+        )
+
     # Type eerst (tenzij generic) — daarna pas titel/omschrijving.
     typed = _from_type()
     if typed:
@@ -671,6 +1058,14 @@ def resolve_shopify_product_category(
     hit = _from_text()
     if hit:
         return hit
+
+    # Partstream/spareparts: tags overslaan (vaak PowerWear/Casual vals) → default motor parts.
+    if parts_generic:
+        return CategoryDecision(
+            DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
+            "default:partstream",
+            _bucket_for_path(DEFAULT_SHOPIFY_PRODUCT_CATEGORY),
+        )
 
     if tags is None:
         tag_list: list[str] = []
