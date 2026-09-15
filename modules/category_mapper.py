@@ -2,13 +2,13 @@
 Shopify standaard-Category (taxonomie) afleiden uit Type, tags, titel en body.
 
 Prioriteit (hoog → laag):
-  1. Specifiek product Type (exact of prefix) — géén generieke bakken
+  1. Specifiek product Type (exact of prefix; HSQ-/WP-prefix genegeerd)
   2. Zoekwoorden in titel + omschrijving → specifieke taxonomie-tak
   3. Specifieke tags (PowerWear, Casual, …)
   4. Default: Motor Vehicle Parts (alleen als niets matcht)
 
-Generieke types (Partstream, Archive, PowerParts, …) forceren géén parent-category;
-die gaan door naar titel/keywords.
+Generieke types (Partstream, Archive, PowerParts, Lifestyle, …) forceren
+géén type-hit; die gaan door naar titel/keywords.
 
 Zie canvas `shopify-category-mapping` voor het overzicht.
 """
@@ -65,7 +65,8 @@ GLOVES = (
     "Vehicles & Parts > Vehicle Parts & Accessories > "
     "Vehicle Safety & Security > Motorcycle Protective Gear > Motorcycle Gloves"
 )
-BOOTS = "Apparel & Accessories > Shoes"
+BOOTS = "Apparel & Accessories > Shoes > Boots"
+SHOES = "Apparel & Accessories > Shoes"
 GOGGLES = (
     "Vehicles & Parts > Vehicle Parts & Accessories > "
     "Vehicle Safety & Security > Motorcycle Protective Gear > Motorcycle Goggles"
@@ -78,7 +79,19 @@ BIKES = "Sporting Goods > Outdoor Recreation > Cycling > Bicycles"
 BIKE_PARTS = (
     "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Parts & Accessories"
 )
+BIKE_HELMETS = (
+    "Sporting Goods > Outdoor Recreation > Cycling > "
+    "Cycling Apparel & Accessories > Bicycle Helmets"
+)
+BIKE_DISPLAYS = (
+    "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Accessories > "
+    "Bicycle Computer Accessories > Bicycle Computer Displays"
+)
 BIKE_CLOTHING = CLOTHING
+PHONE_CASES = (
+    "Electronics > Communications > Telephony > "
+    "Mobile & Smart Phone Accessories > Mobile Phone Cases"
+)
 GIFTCARD = "Arts & Entertainment > Party & Celebration > Gift Giving > Gift Cards"
 OILS = OIL_CIRC  # dichtstbijzijnde taxonomie voor olie/vloeistoffen
 DECALS = "Toys & Games > Toys > Art & Drawing Toys > Stickers & Sticker Machines"
@@ -155,16 +168,27 @@ GENERIC_TYPES: set[str] = {
 }
 
 # Exact Shopify product_type → taxonomy path (case-insensitive).
+# HSQ -/WP - prefix wordt in resolve afgestript; keys hier zonder merkprefix
+# (dubbele hsq-/wp- keys mogen blijven voor backwards compat).
 TYPE_EXACT: dict[str, str] = {
     # Apparel / PowerWear
     "t-shirts and polos": CLOTHING,
+    "tees and polos": CLOTHING,
+    "tee and polos": CLOTHING,
+    "longsleeves and hoodies": CLOTHING,
+    "longsleeve": CLOTHING,
+    "longsleeves": CLOTHING,
     "hoodies, sweatshirts and sweat jackets": CLOTHING,
     "jackets": CLOTHING,
     "trousers and shorts": CLOTHING,
+    "pants and shorts": CLOTHING,
+    "pants": CLOTHING,
     "functional underwear": CLOTHING,
-    "shoes and socks": BOOTS,
+    "shoes and socks": SHOES,
     "boots": BOOTS,
     "caps and beanies": CLOTHING,
+    "headwear": CLOTHING,
+    "clothing": CLOTHING,
     "casual": CLOTHING,
     "casual and accessories": CLOTHING,
     "casual & accessories": CLOTHING,
@@ -172,10 +196,16 @@ TYPE_EXACT: dict[str, str] = {
     "gloves": GLOVES,
     "helmets": HELMETS,
     "hsq - helmets": HELMETS,
+    "bicycle helmets": BIKE_HELMETS,
+    "bicycle helmet": BIKE_HELMETS,
     "goggles": GOGGLES,
     "accessoires": CLOTHING,
+    "other accessoires": EVENT_MATERIAL,
+    "other accessories": EVENT_MATERIAL,
+    "racetrack and camping": EVENT_MATERIAL,
     "jerseys": CLOTHING,
     "shirts": CLOTHING,
+    "backpacks": BAGS,
     # Event / merchandising — alleen als tekst geen specifiekere hit heeft
     # (zie TEXT_FIRST_TYPES in resolve).
     "event material": EVENT_MATERIAL,
@@ -184,9 +214,12 @@ TYPE_EXACT: dict[str, str] = {
     "merchandising material": EVENT_MATERIAL,
     "wp - merchandising material": EVENT_MATERIAL,
     "hsq - merchandising material": EVENT_MATERIAL,
+    "merchandise": EVENT_MATERIAL,
     # Seating / covers
     "seat cover": SEATING,
     "seats": SEATING,
+    "seats offroad": SEATING,
+    "seats street": SEATING,
     "hsq - seatcover offroad": SEATING,
     # Engine
     "engine": ENGINE_PARTS,
@@ -204,14 +237,17 @@ TYPE_EXACT: dict[str, str] = {
     "levers": CONTROLS,
     # Cooling / intake / fuel / oil
     "cooling": COOLING,
+    "air filter box": AIR_INTAKE,
     "consumables / liquids": OIL_CIRC,
     "oil products": OIL_CIRC,
     "batteries lithium": ELECTRICAL,
     # Suspension / chassis
     "suspension": SUSPENSION,
     "suspension component": SUSPENSION,
+    "suspension components": SUSPENSION,
     "steering damper": SUSPENSION,
     "triple clamps": SUSPENSION,
+    "shock absorber": SUSPENSION,
     "wp - shock absorber": SUSPENSION,
     "wp - fork": SUSPENSION,
     "wp - cartridge": SUSPENSION,
@@ -270,6 +306,9 @@ TYPE_EXACT: dict[str, str] = {
     "hsq - bleeder tool": TOOLS,
     "hsq - tools": TOOLS,
     "bike stand / lift": TOOLS,
+    "stands": TOOLS,
+    "diagnosetool": TOOLS,
+    "diagnosis tool": TOOLS,
     "hv tool": TOOLS,
     "wp - mounting tool": TOOLS,
     "wp - clamping stand": TOOLS,
@@ -290,13 +329,19 @@ TYPE_EXACT: dict[str, str] = {
     "sl e kids": BIKES_E,
     "sl e mtb ht": BIKES_E,
     "xc_2": BIKES,
+    "display e-bike": BIKE_DISPLAYS,
+    "display ebike": BIKE_DISPLAYS,
+    "e-bike display": BIKE_DISPLAYS,
+    "ebike display": BIKE_DISPLAYS,
     # Other
     "gift card": GIFTCARD,
     "gift cards": GIFTCARD,
     "drivetrain kit": DRIVETRAIN,
     "alarm system": ELECTRICAL,
     "navigation": ELECTRICAL,
-    "smartphone case": CLOTHING,
+    "smartphone case": PHONE_CASES,
+    "smartphone cases": PHONE_CASES,
+    "phone case": PHONE_CASES,
     "footpegs": CONTROLS,
     "side bag": BAGS,
     "rear bag": BAGS,
@@ -314,7 +359,7 @@ TYPE_EXACT: dict[str, str] = {
     "original spare part kits": ENGINE_PARTS,
 }
 
-# Prefix rules after exact match (longest prefixes first).
+# Prefix rules after exact match (longest / most specific first).
 TYPE_PREFIX: list[tuple[str, str]] = [
     ("bicycle first layer", BIKE_CLOTHING),
     ("bicycle gloves", BIKE_CLOTHING),
@@ -324,13 +369,25 @@ TYPE_PREFIX: list[tuple[str, str]] = [
     ("bicycle shorts", BIKE_CLOTHING),
     ("bicycle socks", BIKE_CLOTHING),
     ("bicycle shoes", BIKE_CLOTHING),
-    ("bicycle helmets", HELMETS),
+    ("bicycle helmets", BIKE_HELMETS),
+    ("bicycle helmet", BIKE_HELMETS),
     ("bicycle heads and scarfs", CLOTHING),
-    ("bicycle sunglasses", GOGGLES),
+    ("bicycle sunglasses", SUNGLASSES),
     ("bicycle backpacks", BAGS),
     ("bicycle bags", BAGS),
-    ("bicycle e-bike, bicycle batter", ELECTRICAL),
+    # E-bike subsystem types — altijd fiets, nooit Motor Vehicle Electrical.
+    ("bicycle e-bike, bicycle remotes and displays", BIKE_DISPLAYS),
+    ("bicycle e-bike, bicycle cables and displays", BIKE_PARTS),
+    ("bicycle e-bike, bicycle batteries", BIKE_PARTS),
+    ("bicycle e-bike, bicycle battery", BIKE_PARTS),
+    ("bicycle e-bike, bicycle chargers", BIKE_PARTS),
+    ("bicycle e-bike, biccycle smartphone case", PHONE_CASES),
+    ("bicycle e-bike, bicycle smartphone case", PHONE_CASES),
+    ("bicycle e-bike, bicycle batter", BIKE_PARTS),
+    ("bicycle e-bike", BIKE_PARTS),
     ("bicycle ", BIKE_PARTS),
+    ("display e-bike", BIKE_DISPLAYS),
+    ("display ebike", BIKE_DISPLAYS),
     ("hsq - electric balance", BIKES_E),
     ("hsq - seatcover", SEATING),
     ("hsq - piston", ENGINE_PARTS),
@@ -357,6 +414,8 @@ TYPE_PREFIX: list[tuple[str, str]] = [
 # Alleen apparel/lifestyle tags — géén PowerParts → generic MVP.
 TAG_RULES: list[tuple[str, str]] = [
     ("powerwear", CLOTHING),
+    ("casual and accessories", CLOTHING),
+    ("casual & accessories", CLOTHING),
     ("casual", CLOTHING),
     ("electric balance bikes", BIKES_E),
     ("special tools", TOOLS),
@@ -369,15 +428,28 @@ TAG_RULES: list[tuple[str, str]] = [
 # Specifieker dan parent Motor Vehicle Parts.
 _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ("text:gift card", re.compile(r"\bgift\s*card\b|cadeaubon"), GIFTCARD),
-    ("text:helmet", re.compile(r"\bhelmets?\b|\bhelm\b"), HELMETS),
+    # Fietshelm vóór generieke helm (anders Motorcycle Helmets).
+    (
+        "text:bike-helmet",
+        re.compile(r"\b(bicycle\s*helmets?|bike\s*helmets?|fietshelm)\b"),
+        BIKE_HELMETS,
+    ),
+    (
+        "text:bag",
+        re.compile(
+            r"\b(tank\s*bag|side\s*bag|rear\s*bag|inner\s*bag|luggage\s*bag|"
+            r"top\s*case|backpack|rucksack|hydration\s*(pack|backpack|bag))\b"
+        ),
+        BAGS,
+    ),
+    ("text:helmet", re.compile(r"\b(motorcycle\s*)?helmets?\b|\bhelm\b"), HELMETS),
     ("text:gloves", re.compile(r"\bgloves?\b|\bhandschoen"), GLOVES),
     (
         "text:boots",
-        re.compile(r"\b(mx\s+boots?|motocross\s+boots?|riding\s+boots?|laarzen)\b"),
+        re.compile(r"\b(mx\s+boots?|motocross\s+boots?|riding\s+boots?|laarzen|\bboots?\b)\b"),
         BOOTS,
     ),
     ("text:goggles", re.compile(r"\bgoggles?\b"), GOGGLES),
-    # Lifestyle / casual eyewear — vóór text:body (anders "plastic" → Frame & Body).
     (
         "text:sunglasses",
         re.compile(
@@ -394,21 +466,14 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     (
         "text:apparel",
         re.compile(
-            r"\b(t-?shirts?\b|hoodie|sweatshirt|sweat\s*jacket|jersey|"
-            r"beanie|polo\b|crewneck)\b"
+            r"\b(t-?shirts?\b|tees?\b|hoodie|sweatshirt|sweat\s*jacket|jersey|"
+            r"longsleeve|long\s*sleeve|beanie|polo\b|crewneck|"
+            r"trousers?\b|\bpants?\b|\bshorts?\b)\b"
         ),
         CLOTHING,
     ),
     ("text:seat", re.compile(r"\b(seat\s*cover|zadel|saddle\s*cover)\b"), SEATING),
     ("text:window", re.compile(r"\b(fly\s*screen|windshield|windscreen|wind\s*screen)\b"), WINDOW),
-    (
-        "text:bag",
-        re.compile(
-            r"\b(tank\s*bag|side\s*bag|rear\s*bag|inner\s*bag|luggage\s*bag|"
-            r"top\s*case|backpack|rucksack)\b"
-        ),
-        BAGS,
-    ),
     ("text:mirror", re.compile(r"\bmirrors?\b"), MIRRORS),
     ("text:exhaust", re.compile(r"\b(exhaust|silencer|muffler|uitlaat|header)\b"), EXHAUST),
     # Alleen echte remonderdelen — niet complete fietsen met "brake" in de specs.
@@ -426,7 +491,6 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ("text:suspension", re.compile(r"\b(fork|shock|suspension|triple\s*clamp|swing\s*arm|swingarm|pds|damping)\b"), SUSPENSION),
     ("text:cooling", re.compile(r"\b(radiator|coolant|cooling|water\s*pump)\b"), COOLING),
     ("text:air", re.compile(r"\b(air\s*filter|airbox|intake)\b"), AIR_INTAKE),
-    # Geen losse "tank" (anders tank bag → Fuel Systems).
     (
         "text:fuel",
         re.compile(r"\b(fuel\s*tank|fuel\s*pump|throttle\s*body|injector|carburett?or)\b"),
@@ -447,7 +511,6 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     (
         "text:body",
         re.compile(
-            # Geen losse "plastic" (materiaal in apparel/lifestyle → vals Frame & Body).
             r"\b(fairing|fender|guard|protector|cover|panel|plastic\s*parts?|frame|handguard|"
             r"crash\s*bar|crash\s*bung|side\s*stand|centre\s*stand|center\s*stand|"
             r"carrier|mounting\s*kit|luggage|spoiler|bracket|clamp|footpeg|footrest|"
@@ -466,17 +529,9 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
 ]
 
 
-# Types waar titel/body eerst mag winnen (anders Flag Stand → generiek Event).
-TEXT_FIRST_TYPES: set[str] = {
-    "event material",
-    "hsq - event material",
-    "wp - event material",
-    "merchandising material",
-    "wp - merchandising material",
-    "hsq - merchandising material",
-    "lifestyle",
-    "fan gear",
-}
+# Types waar type te vaag is: sla type over, gebruik titel/tags.
+# (Geen “text first bij geldig type” meer — Type wint altijd als die matcht.)
+TEXT_FIRST_TYPES: set[str] = set()  # bewust leeg; generic types doen dit al
 
 
 @dataclass(frozen=True)
@@ -508,12 +563,20 @@ def _bucket_for_path(path: str) -> str:
         return "Tools"
     if path in (BIKES_E, BIKES, BIKE_PARTS):
         return "Bicycles / bike parts"
+    if path == BIKE_HELMETS:
+        return "Bicycle Helmets"
+    if path == BIKE_DISPLAYS:
+        return "E-bike / bike displays"
+    if path == PHONE_CASES:
+        return "Phone cases"
     if path == HELMETS:
-        return "Helmets"
+        return "Motorcycle Helmets"
     if path == GLOVES:
         return "Gloves"
     if path == BOOTS:
         return "Boots"
+    if path == SHOES:
+        return "Shoes"
     if path == GOGGLES:
         return "Goggles"
     if path == SUNGLASSES:
@@ -535,6 +598,18 @@ def _bucket_for_path(path: str) -> str:
     return leaf
 
 
+_BRAND_TYPE_PREFIX = re.compile(r"^(hsq|wp)\s*-\s*", re.IGNORECASE)
+
+
+def _type_lookup_keys(ptype_key: str) -> list[str]:
+    """Volledige type-key + zonder HSQ-/WP-prefix (merk is alleen herkenning)."""
+    keys = [ptype_key]
+    bare = _BRAND_TYPE_PREFIX.sub("", ptype_key).strip()
+    if bare and bare != ptype_key:
+        keys.append(bare)
+    return keys
+
+
 def is_missing_shopify_category(full_name: str | None) -> bool:
     """True als Category leeg is of de placeholder Uncategorized."""
     name = (full_name or "").strip()
@@ -554,11 +629,13 @@ def resolve_shopify_product_category(
     """
     Bepaal Shopify Category-pad + bron.
 
-    Volgorde: specifiek Type → titel/body → tags → XML → default.
-    Bij TEXT_FIRST_TYPES (event/lifestyle): titel/body vóór type.
+    Volgorde: specifiek Type (HSQ/WP-prefix genegeerd) → titel/body → tags → XML → default.
+    Generieke types (Partstream, Archive, …) forceren géén type-hit.
     """
     ptype = (product_type or "").strip()
     ptype_key = ptype.lower()
+    type_keys = _type_lookup_keys(ptype_key) if ptype_key else []
+    bare_type = type_keys[-1] if type_keys else ""
     blob = f"{title or ''}\n{body_html or ''}".lower()
     blob = re.sub(r"<[^>]+>", " ", blob)
 
@@ -571,33 +648,29 @@ def resolve_shopify_product_category(
         return None
 
     def _from_type() -> CategoryDecision | None:
-        if not ptype or ptype_key in GENERIC_TYPES:
+        if not ptype:
             return None
-        if ptype_key in TYPE_EXACT:
-            path = TYPE_EXACT[ptype_key]
-            return CategoryDecision(path, f"type:{ptype}", _bucket_for_path(path))
-        for prefix, path in TYPE_PREFIX:
-            if ptype_key.startswith(prefix):
-                return CategoryDecision(
-                    path, f"type-prefix:{prefix.strip()}", _bucket_for_path(path)
-                )
+        if any(k in GENERIC_TYPES for k in type_keys):
+            return None
+        for key in type_keys:
+            if key in TYPE_EXACT:
+                path = TYPE_EXACT[key]
+                return CategoryDecision(path, f"type:{ptype}", _bucket_for_path(path))
+        for key in type_keys:
+            for prefix, path in TYPE_PREFIX:
+                if key.startswith(prefix):
+                    return CategoryDecision(
+                        path, f"type-prefix:{prefix.strip()}", _bucket_for_path(path)
+                    )
         return None
 
-    text_first = ptype_key in TEXT_FIRST_TYPES or ptype_key in GENERIC_TYPES
-    if text_first:
-        hit = _from_text()
-        if hit:
-            return hit
-        typed = _from_type()
-        if typed:
-            return typed
-    else:
-        typed = _from_type()
-        if typed:
-            return typed
-        hit = _from_text()
-        if hit:
-            return hit
+    # Type eerst (tenzij generic) — daarna pas titel/omschrijving.
+    typed = _from_type()
+    if typed:
+        return typed
+    hit = _from_text()
+    if hit:
+        return hit
 
     if tags is None:
         tag_list: list[str] = []
@@ -606,10 +679,17 @@ def resolve_shopify_product_category(
     else:
         tag_list = [str(t).strip() for t in tags if str(t).strip()]
 
-    tag_lower = {t.lower() for t in tag_list}
-    for tag_key, path in TAG_RULES:
-        if tag_key in tag_lower:
-            return CategoryDecision(path, f"tag:{tag_key}", _bucket_for_path(path))
+    tag_keys: list[str] = []
+    for tag in tag_list:
+        tl = tag.lower().strip()
+        tag_keys.append(tl)
+        bare = _BRAND_TYPE_PREFIX.sub("", tl).strip()
+        if bare and bare != tl:
+            tag_keys.append(bare)
+    tag_key_set = set(tag_keys)
+    for needle, path in TAG_RULES:
+        if needle in tag_key_set or any(needle in t for t in tag_key_set):
+            return CategoryDecision(path, f"tag:{needle}", _bucket_for_path(path))
 
     if xml_category and xml_category.strip():
         path = map_shopify_product_category(xml_category)
