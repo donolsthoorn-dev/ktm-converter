@@ -70,6 +70,7 @@ GOGGLES = (
     "Vehicles & Parts > Vehicle Parts & Accessories > "
     "Vehicle Safety & Security > Motorcycle Protective Gear > Motorcycle Goggles"
 )
+SUNGLASSES = "Apparel & Accessories > Clothing Accessories > Sunglasses"
 BIKES_E = (
     "Sporting Goods > Outdoor Recreation > Cycling > Bicycles > Electric Bikes"
 )
@@ -81,6 +82,15 @@ BIKE_CLOTHING = CLOTHING
 GIFTCARD = "Arts & Entertainment > Party & Celebration > Gift Giving > Gift Cards"
 OILS = OIL_CIRC  # dichtstbijzijnde taxonomie voor olie/vloeistoffen
 DECALS = "Toys & Games > Toys > Art & Drawing Toys > Stickers & Sticker Machines"
+# Event / merchandising (geen motoronderdelen).
+EVENT_MATERIAL = (
+    "Business & Industrial > Advertising & Marketing > Trade Show Displays"
+)
+FLAG_HARDWARE = (
+    "Home & Garden > Lawn & Garden > Outdoor Living > Outdoor Structures > "
+    "Flags & Windsocks > Flag & Windsock Accessories > "
+    "Flag & Windsock Pole Mounting Hardware & Kits"
+)
 
 # Values aligned with Shopify's English taxonomy (same keys as map_category() outcomes).
 _SHOPIFY_PRODUCT_CATEGORY_BY_GOOGLE = {
@@ -139,10 +149,6 @@ GENERIC_TYPES: set[str] = {
     "road",
     "lifestyle",
     "fan gear",
-    "merchandising material",
-    "event material",
-    "wp - merchandising material",
-    "wp - event material",
     "pos",
     "software enhancements",
     "motorcycles",
@@ -170,6 +176,14 @@ TYPE_EXACT: dict[str, str] = {
     "accessoires": CLOTHING,
     "jerseys": CLOTHING,
     "shirts": CLOTHING,
+    # Event / merchandising — alleen als tekst geen specifiekere hit heeft
+    # (zie TEXT_FIRST_TYPES in resolve).
+    "event material": EVENT_MATERIAL,
+    "hsq - event material": EVENT_MATERIAL,
+    "wp - event material": EVENT_MATERIAL,
+    "merchandising material": EVENT_MATERIAL,
+    "wp - merchandising material": EVENT_MATERIAL,
+    "hsq - merchandising material": EVENT_MATERIAL,
     # Seating / covers
     "seat cover": SEATING,
     "seats": SEATING,
@@ -347,6 +361,8 @@ TAG_RULES: list[tuple[str, str]] = [
     ("electric balance bikes", BIKES_E),
     ("special tools", TOOLS),
     ("tool/transport", TOOLS),
+    ("marketing material", EVENT_MATERIAL),
+    ("hsq - marketing material", EVENT_MATERIAL),
 ]
 
 # (label, regex on title+body lowercase, category) — first match wins.
@@ -361,6 +377,20 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         BOOTS,
     ),
     ("text:goggles", re.compile(r"\bgoggles?\b"), GOGGLES),
+    # Lifestyle / casual eyewear — vóór text:body (anders "plastic" → Frame & Body).
+    (
+        "text:sunglasses",
+        re.compile(
+            r"\b(sunglasses?|sun\s*glasses?|shades|zonnebril|eyewear|"
+            r"impact-resistant\s+glasses|uvex)\b"
+        ),
+        SUNGLASSES,
+    ),
+    (
+        "text:flag",
+        re.compile(r"\b(flag\s*stand|flagpole|flag\s*pole|vlaggenmast|windsock)\b"),
+        FLAG_HARDWARE,
+    ),
     (
         "text:apparel",
         re.compile(
@@ -417,7 +447,8 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     (
         "text:body",
         re.compile(
-            r"\b(fairing|fender|guard|protector|cover|panel|plastic|frame|handguard|"
+            # Geen losse "plastic" (materiaal in apparel/lifestyle → vals Frame & Body).
+            r"\b(fairing|fender|guard|protector|cover|panel|plastic\s*parts?|frame|handguard|"
             r"crash\s*bar|crash\s*bung|side\s*stand|centre\s*stand|center\s*stand|"
             r"carrier|mounting\s*kit|luggage|spoiler|bracket|clamp|footpeg|footrest|"
             r"screw|bolt|nut|washer|collar)\b"
@@ -433,6 +464,19 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ),
     ("text:controls", re.compile(r"\b(handlebar|grip|lever|throttle|stuur)\b"), CONTROLS),
 ]
+
+
+# Types waar titel/body eerst mag winnen (anders Flag Stand → generiek Event).
+TEXT_FIRST_TYPES: set[str] = {
+    "event material",
+    "hsq - event material",
+    "wp - event material",
+    "merchandising material",
+    "wp - merchandising material",
+    "hsq - merchandising material",
+    "lifestyle",
+    "fan gear",
+}
 
 
 @dataclass(frozen=True)
@@ -472,12 +516,18 @@ def _bucket_for_path(path: str) -> str:
         return "Boots"
     if path == GOGGLES:
         return "Goggles"
+    if path == SUNGLASSES:
+        return "Sunglasses"
     if path in (SPORT_BAGS, BAGS):
         return "Bags"
     if path == GIFTCARD:
         return "Gift cards"
     if path == DECALS:
         return "Decals / stickers"
+    if path == EVENT_MATERIAL:
+        return "Event / merchandising"
+    if path == FLAG_HARDWARE:
+        return "Flag hardware"
     if path.startswith(_MVP + " > "):
         return leaf.replace("Motor Vehicle ", "")
     if path == VEHICLE_PARTS:
@@ -505,11 +555,24 @@ def resolve_shopify_product_category(
     Bepaal Shopify Category-pad + bron.
 
     Volgorde: specifiek Type → titel/body → tags → XML → default.
+    Bij TEXT_FIRST_TYPES (event/lifestyle): titel/body vóór type.
     """
     ptype = (product_type or "").strip()
     ptype_key = ptype.lower()
+    blob = f"{title or ''}\n{body_html or ''}".lower()
+    blob = re.sub(r"<[^>]+>", " ", blob)
 
-    if ptype and ptype_key not in GENERIC_TYPES:
+    def _from_text() -> CategoryDecision | None:
+        if not blob.strip():
+            return None
+        for label, pattern, path in _TEXT_PATTERNS:
+            if pattern.search(blob):
+                return CategoryDecision(path, label, _bucket_for_path(path))
+        return None
+
+    def _from_type() -> CategoryDecision | None:
+        if not ptype or ptype_key in GENERIC_TYPES:
+            return None
         if ptype_key in TYPE_EXACT:
             path = TYPE_EXACT[ptype_key]
             return CategoryDecision(path, f"type:{ptype}", _bucket_for_path(path))
@@ -518,12 +581,23 @@ def resolve_shopify_product_category(
                 return CategoryDecision(
                     path, f"type-prefix:{prefix.strip()}", _bucket_for_path(path)
                 )
+        return None
 
-    blob = f"{title or ''}\n{body_html or ''}".lower()
-    blob = re.sub(r"<[^>]+>", " ", blob)
-    for label, pattern, path in _TEXT_PATTERNS:
-        if pattern.search(blob):
-            return CategoryDecision(path, label, _bucket_for_path(path))
+    text_first = ptype_key in TEXT_FIRST_TYPES or ptype_key in GENERIC_TYPES
+    if text_first:
+        hit = _from_text()
+        if hit:
+            return hit
+        typed = _from_type()
+        if typed:
+            return typed
+    else:
+        typed = _from_type()
+        if typed:
+            return typed
+        hit = _from_text()
+        if hit:
+            return hit
 
     if tags is None:
         tag_list: list[str] = []

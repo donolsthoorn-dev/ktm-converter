@@ -12,7 +12,9 @@ Reclassify (goedgekeurde staging changes — overschrijft bestaande category):
   python3 scripts/shopify_category_apply.py --shop ktm --reclassify \\
     --from-csv output/shopify_category_reclassify_changes_ktm_….csv
   python3 scripts/shopify_category_apply.py --shop ktm --reclassify --yes \\
-    --from-csv output/shopify_category_reclassify_changes_ktm_….csv
+    --from-csv output/shopify_category_reclassify_changes_ktm_….csv \\
+    --skip-done-csv output/shopify_category_reclassify_ktm_….csv \\
+    --sleep 0.5
 
 Zonder --yes: dry-run (geen writes).
 """
@@ -244,17 +246,30 @@ def iter_empty_products(sess, shop, token, api, limit: int):
         time.sleep(0.04)
 
 
-def products_from_csv(path: Path, limit: int, *, reclassify: bool = False):
+def products_from_csv(
+    path: Path,
+    limit: int,
+    *,
+    reclassify: bool = False,
+    skip_ids: set[str] | None = None,
+):
     """
     Hergebruik dry-run / staging CSV.
 
     - default: alleen rijen zonder category (of Uncategorized); mapper resolve opnieuw
     - reclassify: rijen met action change|set (of alle als geen action-kolom);
       gebruikt proposed_category uit de CSV (goedgekeurde staging)
+    - skip_ids: product_id's overslaan (hervatten na Ctrl+C)
     """
     n = 0
+    skipped = 0
+    skip_ids = skip_ids or set()
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
+            pid = (row.get("product_id") or "").strip()
+            if pid and pid in skip_ids:
+                skipped += 1
+                continue
             if reclassify:
                 action = (row.get("action") or "").strip().lower()
                 if action and action not in ("change", "set"):
@@ -280,7 +295,23 @@ def products_from_csv(path: Path, limit: int, *, reclassify: bool = False):
                 "bucket": (row.get("proposed_bucket") or "").strip(),
             }
             if limit and n >= limit:
-                return
+                break
+    if skipped:
+        print(f"Overgeslagen (al gedaan): {skipped}", flush=True)
+
+
+def _load_done_ids(paths: list[Path]) -> set[str]:
+    done: set[str] = set()
+    for path in paths:
+        if not path.exists():
+            raise SystemExit(f"Skip-CSV niet gevonden: {path}")
+        with path.open(newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if (row.get("result") or "").strip() == "ok":
+                    pid = (row.get("product_id") or "").strip()
+                    if pid:
+                        done.add(pid)
+    return done
 
 
 def main() -> None:
@@ -298,7 +329,19 @@ def main() -> None:
         action="store_true",
         help="Overschrijf bestaande categories (vereist --from-csv met proposed_category)",
     )
-    ap.add_argument("--sleep", type=float, default=0.12, help="Pauze tussen updates (s)")
+    ap.add_argument(
+        "--skip-done-csv",
+        type=Path,
+        action="append",
+        default=[],
+        help="Eerdere apply-rapport(en): product_ids met result=ok overslaan (hervatten)",
+    )
+    ap.add_argument(
+        "--sleep",
+        type=float,
+        default=0.35,
+        help="Pauze tussen updates (s); hoger = minder Admin-druk",
+    )
     args = ap.parse_args()
 
     if args.reclassify and not args.from_csv:
@@ -311,10 +354,19 @@ def main() -> None:
     kind = "reclassify" if args.reclassify else "fill-empty"
     print(f"{mode} ({kind}) shop={shop} ({args.shop})", flush=True)
 
+    skip_ids = _load_done_ids(args.skip_done_csv) if args.skip_done_csv else set()
+    if skip_ids:
+        print(f"Skip-lijst: {len(skip_ids)} al-ok product_ids", flush=True)
+
     if args.from_csv:
         if not args.from_csv.exists():
             raise SystemExit(f"CSV niet gevonden: {args.from_csv}")
-        products = products_from_csv(args.from_csv, args.limit, reclassify=args.reclassify)
+        products = products_from_csv(
+            args.from_csv,
+            args.limit,
+            reclassify=args.reclassify,
+            skip_ids=skip_ids,
+        )
         print(f"Bron: {args.from_csv}", flush=True)
     else:
         products = iter_empty_products(sess, shop, token, api, 0)
