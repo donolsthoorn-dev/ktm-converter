@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-Vul lege Shopify Category op producten (Type → tags → titel/body → default).
+Vul of herclassificeer Shopify Category op producten.
 
-  # ktm-shop.nl — alle producten zonder category (~22k)
+Lege fills (nachtelijke job / default):
   python3 scripts/shopify_category_apply.py --shop ktm --yes
-
-  # Motox
   python3 scripts/shopify_category_apply.py --shop motox --yes
-
-  # Test / hervatten
   python3 scripts/shopify_category_apply.py --shop ktm --limit 20 --yes
   python3 scripts/shopify_category_apply.py --shop ktm --yes --from-csv output/shopify_category_mapping_dry_run_ktm_….csv
+
+Reclassify (goedgekeurde staging changes — overschrijft bestaande category):
+  python3 scripts/shopify_category_apply.py --shop ktm --reclassify \\
+    --from-csv output/shopify_category_reclassify_changes_ktm_….csv
+  python3 scripts/shopify_category_apply.py --shop ktm --reclassify --yes \\
+    --from-csv output/shopify_category_reclassify_changes_ktm_….csv
 
 Zonder --yes: dry-run (geen writes).
 """
@@ -242,13 +244,28 @@ def iter_empty_products(sess, shop, token, api, limit: int):
         time.sleep(0.04)
 
 
-def products_from_csv(path: Path, limit: int):
-    """Hergebruik dry-run CSV; resolve opnieuw met huidige mapper (zonder body)."""
+def products_from_csv(path: Path, limit: int, *, reclassify: bool = False):
+    """
+    Hergebruik dry-run / staging CSV.
+
+    - default: alleen rijen zonder category (of Uncategorized); mapper resolve opnieuw
+    - reclassify: rijen met action change|set (of alle als geen action-kolom);
+      gebruikt proposed_category uit de CSV (goedgekeurde staging)
+    """
     n = 0
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            if not is_missing_shopify_category(row.get("current_category")):
-                continue
+            if reclassify:
+                action = (row.get("action") or "").strip().lower()
+                if action and action not in ("change", "set"):
+                    continue
+                proposed = (row.get("proposed_category") or "").strip()
+                if not proposed:
+                    continue
+            else:
+                if not is_missing_shopify_category(row.get("current_category")):
+                    continue
+                proposed = ""
             n += 1
             yield {
                 "id": f"gid://shopify/Product/{row['product_id']}",
@@ -258,6 +275,9 @@ def products_from_csv(path: Path, limit: int):
                 "productType": row.get("product_type") or "",
                 "tags": [t.strip() for t in (row.get("tags") or "").split(",") if t.strip()],
                 "descriptionHtml": "",
+                "proposed_category": proposed,
+                "source": (row.get("source") or "").strip(),
+                "bucket": (row.get("proposed_bucket") or "").strip(),
             }
             if limit and n >= limit:
                 return
@@ -267,25 +287,34 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--shop", choices=("ktm", "motox"), default="ktm")
     ap.add_argument("--yes", action="store_true", help="Schrijf naar Shopify")
-    ap.add_argument("--limit", type=int, default=0, help="Max lege producten (0=alle)")
+    ap.add_argument("--limit", type=int, default=0, help="Max producten (0=alle)")
     ap.add_argument(
         "--from-csv",
         type=Path,
-        help="Optioneel: dry-run CSV i.p.v. live scan (sneller start)",
+        help="Optioneel: dry-run/staging CSV i.p.v. live scan",
+    )
+    ap.add_argument(
+        "--reclassify",
+        action="store_true",
+        help="Overschrijf bestaande categories (vereist --from-csv met proposed_category)",
     )
     ap.add_argument("--sleep", type=float, default=0.12, help="Pauze tussen updates (s)")
     args = ap.parse_args()
+
+    if args.reclassify and not args.from_csv:
+        raise SystemExit("--reclassify vereist --from-csv (goedgekeurde changes-CSV)")
 
     shop, token, api = _shop_credentials(args.shop)
     sess = _session()
 
     mode = "APPLY" if args.yes else "DRY-RUN"
-    print(f"{mode} shop={shop} ({args.shop})", flush=True)
+    kind = "reclassify" if args.reclassify else "fill-empty"
+    print(f"{mode} ({kind}) shop={shop} ({args.shop})", flush=True)
 
     if args.from_csv:
         if not args.from_csv.exists():
             raise SystemExit(f"CSV niet gevonden: {args.from_csv}")
-        products = products_from_csv(args.from_csv, args.limit)
+        products = products_from_csv(args.from_csv, args.limit, reclassify=args.reclassify)
         print(f"Bron: {args.from_csv}", flush=True)
     else:
         products = iter_empty_products(sess, shop, token, api, 0)
@@ -295,7 +324,8 @@ def main() -> None:
     ok = fail = skip = 0
     source_counts: Counter[str] = Counter()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = ROOT / "output" / f"shopify_category_apply_{args.shop}_{stamp}.csv"
+    suffix = "reclassify" if args.reclassify else "apply"
+    out = ROOT / "output" / f"shopify_category_{suffix}_{args.shop}_{stamp}.csv"
     fields = [
         "product_id",
         "handle",
@@ -314,21 +344,31 @@ def main() -> None:
         for p in products:
             if args.limit and done >= args.limit:
                 break
-            decision = resolve_shopify_product_category(
-                product_type=p.get("productType"),
-                tags=p.get("tags") or [],
-                title=p.get("title"),
-                body_html=p.get("descriptionHtml"),
-            )
-            source_counts[decision.source.split(":")[0]] += 1
+
+            if args.reclassify and p.get("proposed_category"):
+                path = p["proposed_category"]
+                source = p.get("source") or "csv:proposed"
+                bucket = p.get("bucket") or path.rsplit(" > ", 1)[-1]
+            else:
+                decision = resolve_shopify_product_category(
+                    product_type=p.get("productType"),
+                    tags=p.get("tags") or [],
+                    title=p.get("title"),
+                    body_html=p.get("descriptionHtml"),
+                )
+                path = decision.path
+                source = decision.source
+                bucket = decision.bucket
+
+            source_counts[source.split(":")[0]] += 1
             pid = (p.get("id") or "").split("/")[-1]
             row = {
                 "product_id": pid,
                 "handle": p.get("handle"),
                 "title": p.get("title"),
-                "proposed_category": decision.path,
-                "source": decision.source,
-                "bucket": decision.bucket,
+                "proposed_category": path,
+                "source": source,
+                "bucket": bucket,
                 "result": "",
                 "applied_category": "",
             }
@@ -341,7 +381,7 @@ def main() -> None:
                     print(f"  dry-run {done}…", flush=True)
                 continue
 
-            gid = resolve_taxonomy_gid(sess, shop, token, api, decision.path, gid_cache)
+            gid = resolve_taxonomy_gid(sess, shop, token, api, path, gid_cache)
             if not gid:
                 row["result"] = "no-taxonomy-gid"
                 fail += 1
@@ -355,7 +395,14 @@ def main() -> None:
                 token,
                 api,
                 _MUT_UPDATE,
-                {"product": {"id": p["id"] if str(p["id"]).startswith("gid://") else f"gid://shopify/Product/{pid}", "category": gid}},
+                {
+                    "product": {
+                        "id": p["id"]
+                        if str(p["id"]).startswith("gid://")
+                        else f"gid://shopify/Product/{pid}",
+                        "category": gid,
+                    }
+                },
             )
             payload = ((body.get("data") or {}).get("productUpdate")) or {}
             errs = payload.get("userErrors") or []

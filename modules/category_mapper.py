@@ -73,6 +73,7 @@ GOGGLES = (
 BIKES_E = (
     "Sporting Goods > Outdoor Recreation > Cycling > Bicycles > Electric Bikes"
 )
+BIKES = "Sporting Goods > Outdoor Recreation > Cycling > Bicycles"
 BIKE_PARTS = (
     "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Parts & Accessories"
 )
@@ -216,6 +217,16 @@ TYPE_EXACT: dict[str, str] = {
     "protection": FRAME_BODY,
     "bracket": FRAME_BODY,
     "tanks": FUEL,
+    "hsq - tanks": FUEL,
+    "tank protection": FRAME_BODY,
+    "tank bag": BAGS,
+    "side bag": BAGS,
+    "rear bag": BAGS,
+    "inner bag": BAGS,
+    "luggage bag": BAGS,
+    "bags and luggage": BAGS,
+    "hsq - bags and luggage": BAGS,
+    "wp - bags and luggage": BAGS,
     # Wheels / windows / mirrors / electrics
     "wheels": WHEELS,
     "windshields": WINDOW,
@@ -251,14 +262,20 @@ TYPE_EXACT: dict[str, str] = {
     "wp - socket": TOOLS,
     "wp - wrench": TOOLS,
     "wp - toolboard": TOOLS,
-    # Bikes / balance
+    # Bikes / balance / complete bikes
     "electric balance bikes": BIKES_E,
-    "bicycle": BIKE_PARTS,
+    "hsq - electric balance bikes": BIKES_E,
+    "bicycle": BIKES,
     "e mtb fully": BIKES_E,
     "e mtb ht": BIKES_E,
-    "mtb hardtail": BIKE_PARTS,
+    "mtb hardtail": BIKES,
     "e tronroad": BIKES_E,
-    "xc_2": BIKE_PARTS,
+    "e city": BIKES_E,
+    "sl e tronroad": BIKES_E,
+    "sl e troffroad": BIKES_E,
+    "sl e kids": BIKES_E,
+    "sl e mtb ht": BIKES_E,
+    "xc_2": BIKES,
     # Other
     "gift card": GIFTCARD,
     "gift cards": GIFTCARD,
@@ -298,21 +315,29 @@ TYPE_PREFIX: list[tuple[str, str]] = [
     ("bicycle sunglasses", GOGGLES),
     ("bicycle backpacks", BAGS),
     ("bicycle bags", BAGS),
-    ("bicycle e-bike, bicycle batter", ELECTRICAL),  # batteries / covers
+    ("bicycle e-bike, bicycle batter", ELECTRICAL),
     ("bicycle ", BIKE_PARTS),
+    ("hsq - electric balance", BIKES_E),
     ("hsq - seatcover", SEATING),
     ("hsq - piston", ENGINE_PARTS),
     ("hsq - helmet", HELMETS),
+    ("hsq - bags", BAGS),
+    ("hsq - tank", FUEL),
     ("hsq - tool", TOOLS),
     ("hsq - bleed", TOOLS),
+    ("hsq - electrical", ELECTRICAL),
     ("wp - shock", SUSPENSION),
     ("wp - fork", SUSPENSION),
     ("wp - cartridge", SUSPENSION),
+    ("wp - bags", BAGS),
     ("wp - tool", TOOLS),
     ("wp - wrench", TOOLS),
     ("wp - socket", TOOLS),
     ("wp - clamp", TOOLS),
     ("wp - mount", TOOLS),
+    ("sl e ", BIKES_E),
+    ("e city", BIKES_E),
+    ("e mtb", BIKES_E),
 ]
 
 # Alleen apparel/lifestyle tags — géén PowerParts → generic MVP.
@@ -344,17 +369,39 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         ),
         CLOTHING,
     ),
-    ("text:seat", re.compile(r"\b(seat\s*cover|zadel|saddle\s*cover|\bseat\b)\b"), SEATING),
+    ("text:seat", re.compile(r"\b(seat\s*cover|zadel|saddle\s*cover)\b"), SEATING),
     ("text:window", re.compile(r"\b(fly\s*screen|windshield|windscreen|wind\s*screen)\b"), WINDOW),
+    (
+        "text:bag",
+        re.compile(
+            r"\b(tank\s*bag|side\s*bag|rear\s*bag|inner\s*bag|luggage\s*bag|"
+            r"top\s*case|backpack|rucksack)\b"
+        ),
+        BAGS,
+    ),
     ("text:mirror", re.compile(r"\bmirrors?\b"), MIRRORS),
     ("text:exhaust", re.compile(r"\b(exhaust|silencer|muffler|uitlaat|header)\b"), EXHAUST),
-    ("text:brake", re.compile(r"\b(brake|braking|remmen|\brem\b|disc\s*brake|brake\s*pad|brake\s*disc)\b"), BRAKING),
+    # Alleen echte remonderdelen — niet complete fietsen met "brake" in de specs.
+    (
+        "text:brake",
+        re.compile(
+            r"\b(brake\s*pad|brake\s*disc|brake\s*rotor|brake\s*caliper|"
+            r"brake\s*lever|brake\s*line|brake\s*hose|braking\s*system|"
+            r"remblok|remschijf)\b"
+        ),
+        BRAKING,
+    ),
     ("text:clutch", re.compile(r"\bclutch\b"), DRIVETRAIN),
     ("text:chain", re.compile(r"\b(chain|sprocket|ketting|tandwiel)\b"), DRIVETRAIN),
     ("text:suspension", re.compile(r"\b(fork|shock|suspension|triple\s*clamp|swing\s*arm|swingarm|pds|damping)\b"), SUSPENSION),
     ("text:cooling", re.compile(r"\b(radiator|coolant|cooling|water\s*pump)\b"), COOLING),
     ("text:air", re.compile(r"\b(air\s*filter|airbox|intake)\b"), AIR_INTAKE),
-    ("text:fuel", re.compile(r"\b(fuel\s*tank|fuel\s*pump|throttle\s*body|injector|\btank\b|jet\b)\b"), FUEL),
+    # Geen losse "tank" (anders tank bag → Fuel Systems).
+    (
+        "text:fuel",
+        re.compile(r"\b(fuel\s*tank|fuel\s*pump|throttle\s*body|injector|carburett?or)\b"),
+        FUEL,
+    ),
     ("text:oil", re.compile(r"\b(engine\s*oil|fork\s*oil|brake\s*fluid|motorex|oil\s*filter|scottoil|\bolie\b)\b"), OIL_CIRC),
     ("text:electrical", re.compile(r"\b(battery|ecu|wiring|harness|ignition|stator|regulator|relay|sensor|cable)\b"), ELECTRICAL),
     ("text:lighting", re.compile(r"\b(headlight|taillight|turn\s*signal|led\s*light|\blamp\b|knipper)\b"), LIGHTING),
@@ -415,7 +462,7 @@ def _bucket_for_path(path: str) -> str:
         return "Clothing"
     if path == TOOLS:
         return "Tools"
-    if path in (BIKES_E, BIKE_PARTS):
+    if path in (BIKES_E, BIKES, BIKE_PARTS):
         return "Bicycles / bike parts"
     if path == HELMETS:
         return "Helmets"
