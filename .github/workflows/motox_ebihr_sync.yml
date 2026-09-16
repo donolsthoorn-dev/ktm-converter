@@ -1,0 +1,138 @@
+# Motox e-bihr: Bihr V3+VSE → Shopify create + price updates + fits_on metafields.
+#
+# Secrets:
+#   BIHR_USERNAME, BIHR_PASSWORD
+#   SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
+#   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
+#
+# Schedule: 01:00 UTC ≈ 03:00 NL (zomer) / 02:00 (winter).
+# Of via Supabase workflow_dispatch (dispatch_log_id).
+
+name: motox_ebihr_sync
+
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = schrijven naar Motox, false = dry-run"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      fetch:
+        description: "Bihr raw opnieuw ophalen"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      mode:
+        description: "Sync-modus"
+        type: choice
+        options:
+          - all
+          - create_only
+          - prices_only
+        default: all
+      max_create:
+        description: "Max nieuwe producten (0 = alle)"
+        required: false
+        default: "0"
+      max_price_updates:
+        description: "Max producten voor price-update (0 = alle)"
+        required: false
+        default: "0"
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id"
+        required: false
+        default: ""
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: shopify-write-lock
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'false' }}
+      DO_FETCH: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.fetch || 'true' }}
+      MODE: ${{ github.event.inputs.mode || 'all' }}
+      MAX_CREATE: ${{ github.event.inputs.max_create || '0' }}
+      MAX_PRICE: ${{ github.event.inputs.max_price_updates || '0' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check secrets
+        env:
+          BIHR_USERNAME: ${{ secrets.BIHR_USERNAME }}
+          BIHR_PASSWORD: ${{ secrets.BIHR_PASSWORD }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for k in BIHR_USERNAME BIHR_PASSWORD SHOPIFY_MOTOX_ACCESS_TOKEN SHOPIFY_MOTOX_SHOP_DOMAIN; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Secret $k ontbreekt"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Run Motox e-bihr sync
+        env:
+          BIHR_USERNAME: ${{ secrets.BIHR_USERNAME }}
+          BIHR_PASSWORD: ${{ secrets.BIHR_PASSWORD }}
+          BIHR_API_BASE: ${{ secrets.BIHR_API_BASE }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [[ "${DO_FETCH}" == "true" ]]; then
+            ARGS+=(--fetch)
+          else
+            # zonder fetch: nieuwste raw in repo workspace bestaat meestal niet in CI
+            echo "::error::CI zonder --fetch vereist gecachte raw (niet standaard). Gebruik fetch=true."
+            exit 1
+          fi
+          if [[ "${APPLY}" == "true" ]]; then
+            ARGS+=(--apply)
+          else
+            ARGS+=(--dry-run)
+          fi
+          if [[ "${MODE}" == "create_only" ]]; then
+            ARGS+=(--create-only)
+          elif [[ "${MODE}" == "prices_only" ]]; then
+            ARGS+=(--prices-only)
+          fi
+          if [[ "${MAX_CREATE}" != "0" ]]; then
+            ARGS+=(--max-create "${MAX_CREATE}")
+          fi
+          if [[ "${MAX_PRICE}" != "0" ]]; then
+            ARGS+=(--max-price-updates "${MAX_PRICE}")
+          fi
+          python3 -u scripts/motox_ebihr_sync.py "${ARGS[@]}"
+
+      - name: Upload sync report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motox-ebihr-sync-report
+          path: |
+            motox/e-bihr/output/sync/
+          if-no-files-found: ignore
+          retention-days: 14

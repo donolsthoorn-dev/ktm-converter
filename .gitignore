@@ -72,6 +72,15 @@ downloads/*.xml
 downloads/ftp/*
 !downloads/ftp/.gitkeep
 
+# e-bihr raw downloads + generated CSVs (groot)
+motox/e-bihr/raw/
+motox/e-bihr/generated/
+motox/e-bihr/output/
+motox/e-bihr/valid-products-ebihr-*_chunks/
+motox/e-bihr/ymm-metafields-data-ebihr-*_chunks/
+motox/e-bihr/ymm-filter-data-ebihr-*.csv
+!motox/e-bihr/originele code ebihr/
+
 # ------------------------------
 # converter/ (Next.js)
 # ------------------------------
