@@ -209,6 +209,7 @@ def main() -> None:
                     tags=p.get("tags") or [],
                     title=p.get("title"),
                     body_html=p.get("descriptionHtml"),
+                    shop=args.shop,
                 )
                 action = _action(current, decision.path)
                 row = {

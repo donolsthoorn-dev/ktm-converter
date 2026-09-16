@@ -168,18 +168,36 @@ def _bare_type(ptype: str) -> str:
     return _BRAND_TYPE_PREFIX.sub("", (ptype or "").strip().lower()).strip()
 
 
-def _type_coverage(ptype: str) -> tuple[str, str]:
+def _type_coverage(ptype: str, shop: str = "ktm") -> tuple[str, str]:
     """Return (coverage, mapped_via)."""
     keys = _type_lookup_keys((ptype or "").strip().lower())
     if not any(keys):
         return "unmapped", ""
-    if any(k in GENERIC_TYPES for k in keys):
+
+    exact = TYPE_EXACT
+    prefix_rules = TYPE_PREFIX
+    generic = GENERIC_TYPES
+    motox_exact: dict = {}
+    if shop == "motox":
+        from modules.category_mapper_motox import (  # noqa: WPS433
+            GENERIC_TYPES_MOTOX,
+            TYPE_EXACT_MOTOX,
+            TYPE_PREFIX_MOTOX,
+        )
+
+        motox_exact = TYPE_EXACT_MOTOX
+        exact = {**TYPE_EXACT, **TYPE_EXACT_MOTOX}
+        prefix_rules = list(TYPE_PREFIX_MOTOX) + list(TYPE_PREFIX)
+        generic = GENERIC_TYPES | GENERIC_TYPES_MOTOX
+
+    if any(k in generic for k in keys):
         return "generic", "GENERIC_TYPES"
     for key in keys:
-        if key in TYPE_EXACT:
-            return "exact", f"TYPE_EXACT:{key}"
+        if key in exact:
+            via = "TYPE_EXACT_MOTOX" if key in motox_exact else "TYPE_EXACT"
+            return "exact", f"{via}:{key}"
     for key in keys:
-        for prefix, _path in TYPE_PREFIX:
+        for prefix, _path in prefix_rules:
             if key.startswith(prefix):
                 return "prefix", f"TYPE_PREFIX:{prefix.strip()}"
     return "unmapped", ""
@@ -284,17 +302,19 @@ def main() -> None:
     for pt in sorted(stats.keys(), key=lambda t: (-stats[t]["count"], t.lower())):
         info = stats[pt]
         bare = _bare_type(pt) if pt != "(empty)" else ""
-        coverage, mapped_via = _type_coverage("" if pt == "(empty)" else pt)
+        coverage, mapped_via = _type_coverage("" if pt == "(empty)" else pt, shop=args.shop)
 
         type_only = resolve_shopify_product_category(
             product_type="" if pt == "(empty)" else pt,
             title="",
             tags=[],
+            shop=args.shop,
         )
         with_sample = resolve_shopify_product_category(
             product_type="" if pt == "(empty)" else pt,
             title=info["sample_title"],
             tags=[],
+            shop=args.shop,
         )
 
         needs = coverage in ("unmapped", "generic") or type_only.source.startswith("default")

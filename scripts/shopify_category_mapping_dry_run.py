@@ -148,6 +148,7 @@ def main() -> None:
                 tags=p.get("tags") or [],
                 title=p.get("title"),
                 body_html=p.get("descriptionHtml"),
+                shop=args.shop,
             )
             source_counts[decision.source.split(":")[0]] += 1
             bucket_counts[decision.bucket] += 1

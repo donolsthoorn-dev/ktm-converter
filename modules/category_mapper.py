@@ -10,6 +10,10 @@ Prioriteit (hoog → laag):
 Generieke types (Partstream, Archive, PowerParts, Lifestyle, …) forceren
 géén type-hit; die gaan door naar titel/keywords.
 
+shop=\"motox\" laadt modules.category_mapper_motox (Nederlandse Types) als overlay
+vóór de gedeelde KTM TYPE_EXACT. Jobs: shopify_category_fill_empty /
+shopify_category_reclassify met --shop motox.
+
 Zie canvas `shopify-category-mapping` voor het overzicht.
 """
 
@@ -163,7 +167,11 @@ PHONE_CASES = (
 )
 GIFTCARD = "Arts & Entertainment > Party & Celebration > Gift Giving > Gift Cards"
 OILS = OIL_CIRC  # dichtstbijzijnde taxonomie voor olie/vloeistoffen
-DECALS = "Toys & Games > Toys > Art & Drawing Toys > Stickers & Sticker Machines"
+# Motorstickers/graphics → Vehicle Decals (niet Toys; beter voor Merchant Center).
+DECALS = (
+    "Vehicles & Parts > Vehicle Parts & Accessories > "
+    "Vehicle Maintenance, Care & Decor > Vehicle Decor > Vehicle Decals"
+)
 # Event / merchandising (geen motoronderdelen).
 EVENT_MATERIAL = (
     "Business & Industrial > Advertising & Marketing > Trade Show Displays"
@@ -173,6 +181,15 @@ FLAG_HARDWARE = (
     "Flags & Windsocks > Flag & Windsock Accessories > "
     "Flag & Windsock Pole Mounting Hardware & Kits"
 )
+CLEANERS = (
+    "Home & Garden > Household Supplies > Household Cleaning Supplies > "
+    "Household Cleaning Products"
+)
+GLUE = "Hardware > Building Consumables > Hardware Glue & Adhesives"
+# Zelfde leaf als fietsflessen; merch-drinkfles ≠ Clothing.
+DRINK_BOTTLES = BIKE_WATER_BOTTLES
+# Motorkrik / paddockstand (niet side/centre stand op de motor)
+MOTO_STANDS = TOOLS
 
 # Values aligned with Shopify's English taxonomy (same keys as map_category() outcomes).
 _SHOPIFY_PRODUCT_CATEGORY_BY_GOOGLE = {
@@ -241,6 +258,8 @@ GENERIC_TYPES: set[str] = {
     "flash",
     "best deal",
     "hsq -",
+    # XC_2 = productlijn (vaak elektrisch/diagnose), geen fiets — titel beslist.
+    "xc_2",
 }
 
 # Exact Shopify product_type → taxonomy path (case-insensitive).
@@ -275,7 +294,7 @@ TYPE_EXACT: dict[str, str] = {
     "bicycle helmets": BIKE_HELMETS,
     "bicycle helmet": BIKE_HELMETS,
     "goggles": GOGGLES,
-    "accessoires": CLOTHING,
+    # Accessoires: zie SOFT_TYPE_FALLBACKS (fles/cleaner/lijm via tekst, anders kleding).
     "other accessoires": EVENT_MATERIAL,
     "other accessories": EVENT_MATERIAL,
     "racetrack and camping": EVENT_MATERIAL,
@@ -389,8 +408,9 @@ TYPE_EXACT: dict[str, str] = {
     "bleeder tool": TOOLS,
     "hsq - bleeder tool": TOOLS,
     "hsq - tools": TOOLS,
-    "bike stand / lift": TOOLS,
-    "stands": TOOLS,
+    "bike stand / lift": MOTO_STANDS,
+    "stand": MOTO_STANDS,
+    # "stands" → SOFT (centre/side stand via tekst, anders paddockstand/tools)
     "diagnosetool": TOOLS,
     "diagnosis tool": TOOLS,
     "hv tool": TOOLS,
@@ -412,7 +432,6 @@ TYPE_EXACT: dict[str, str] = {
     "sl e troffroad": BIKES_E,
     "sl e kids": BIKES_E,
     "sl e mtb ht": BIKES_E,
-    "xc_2": BIKES,
     "display e-bike": BIKE_DISPLAYS,
     "display ebike": BIKE_DISPLAYS,
     "e-bike display": BIKE_DISPLAYS,
@@ -708,6 +727,27 @@ TAG_RULES: list[tuple[str, str]] = [
 # Specifieker dan parent Motor Vehicle Parts.
 _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ("text:gift card", re.compile(r"\bgift\s*card\b|cadeaubon"), GIFTCARD),
+    (
+        "text:cleaner",
+        re.compile(
+            r"\b(power\s*cleaner|bike\s*cleaner|chain\s*cleaner|reiniger|"
+            r"schoonmaak|cleaner|degreaser|ontvetter)\b"
+        ),
+        CLEANERS,
+    ),
+    (
+        "text:glue",
+        re.compile(r"\b(power\s*glue|\bglue\b|\blijm\b|adhesive|sealant|afdicht)\b"),
+        GLUE,
+    ),
+    (
+        "text:drink-bottle",
+        re.compile(
+            r"\b(aluminium\s*bottle|aluminum\s*bottle|drinkfles|water\s*bottle|"
+            r"drinking\s*bottle)\b"
+        ),
+        DRINK_BOTTLES,
+    ),
     # Fietshelm vóór generieke helm (anders Motorcycle Helmets).
     (
         "text:bike-helmet",
@@ -832,6 +872,10 @@ SOFT_TYPE_FALLBACKS: dict[str, str] = {
     # Catalogusbakken met vooral uitlaten; CDI e.d. winnen via tekst.
     "2-stroke offroad": EXHAUST,
     "4-stroke offroad": EXHAUST,
+    # Centre/side stand in titel → FRAME_BODY; anders paddockstand.
+    "stands": MOTO_STANDS,
+    # Fles/cleaner/lijm via tekst; merch-accessoire default kleding.
+    "accessoires": CLOTHING,
 }
 
 
@@ -868,6 +912,8 @@ def _bucket_for_path(path: str) -> str:
         return "Tools"
     if path in (BIKES_E, BIKES, BIKE_PARTS, BIKE_ACCESSORIES):
         return "Bicycles / bike parts"
+    if path in (DRINK_BOTTLES, BIKE_WATER_BOTTLES):
+        return "Drink bottles"
     if path in (
         BIKE_LIGHTS,
         BIKE_LOCKS,
@@ -886,7 +932,6 @@ def _bucket_for_path(path: str) -> str:
         BIKE_RACKS,
         BIKE_STANDS,
         BIKE_GRIPS,
-        BIKE_WATER_BOTTLES,
     ):
         return "Bicycle accessories"
     if path.startswith(BIKE_PARTS + " > "):
@@ -924,7 +969,13 @@ def _bucket_for_path(path: str) -> str:
     if path == GIFTCARD:
         return "Gift cards"
     if path == DECALS:
-        return "Decals / stickers"
+        return "Vehicle decals / stickers"
+    if path == CLEANERS:
+        return "Cleaning products"
+    if path == GLUE:
+        return "Glue / adhesives"
+    if path == DRINK_BOTTLES:
+        return "Drink bottles"
     if path == EVENT_MATERIAL:
         return "Event / merchandising"
     if path == FLAG_HARDWARE:
@@ -949,6 +1000,7 @@ _PARTS_GENERIC_SKIP_TEXT = frozenset(
         "text:bike",
         "text:bike-helmet",
         "text:boots",
+        "text:drink-bottle",
     }
 )
 _PARTS_GENERIC_TYPES = frozenset(
@@ -985,6 +1037,26 @@ def is_missing_shopify_category(full_name: str | None) -> bool:
     return name.casefold() in {"uncategorized", "na"}
 
 
+def _shop_type_overlays(shop: str | None) -> tuple[dict[str, str], list[tuple[str, str]], set[str], dict[str, str]]:
+    """Return (exact, prefix, generic, soft) overlays for shop; empty for ktm/default."""
+    if (shop or "").strip().lower() != "motox":
+        return {}, [], set(), {}
+    # Lazy import: Motox-module hangt van path-constanten in dit bestand af.
+    from modules.category_mapper_motox import (  # noqa: WPS433
+        GENERIC_TYPES_MOTOX,
+        SOFT_TYPE_FALLBACKS_MOTOX,
+        TYPE_EXACT_MOTOX,
+        TYPE_PREFIX_MOTOX,
+    )
+
+    return (
+        TYPE_EXACT_MOTOX,
+        TYPE_PREFIX_MOTOX,
+        GENERIC_TYPES_MOTOX,
+        SOFT_TYPE_FALLBACKS_MOTOX,
+    )
+
+
 def resolve_shopify_product_category(
     *,
     product_type: str | None = None,
@@ -992,12 +1064,14 @@ def resolve_shopify_product_category(
     title: str | None = None,
     body_html: str | None = None,
     xml_category: str | None = None,
+    shop: str | None = None,
 ) -> CategoryDecision:
     """
     Bepaal Shopify Category-pad + bron.
 
     Volgorde: specifiek Type (HSQ/WP-prefix genegeerd) → titel/body → tags → XML → default.
     Generieke types (Partstream, Archive, …) forceren géén type-hit.
+    shop=\"motox\" activeert de Nederlandse Motox type-overlay vóór gedeelde KTM-maps.
     """
     ptype = (product_type or "").strip()
     ptype_key = ptype.lower()
@@ -1005,6 +1079,13 @@ def resolve_shopify_product_category(
     bare_type = type_keys[-1] if type_keys else ""
     blob = f"{title or ''}\n{body_html or ''}".lower()
     blob = re.sub(r"<[^>]+>", " ", blob)
+
+    motox_exact, motox_prefix, motox_generic, motox_soft = _shop_type_overlays(shop)
+    type_exact = {**TYPE_EXACT, **motox_exact} if motox_exact else TYPE_EXACT
+    # Motox-prefixes eerst (specifieker Nederlands), daarna gedeelde.
+    type_prefix = list(motox_prefix) + list(TYPE_PREFIX) if motox_prefix else TYPE_PREFIX
+    generic_types = GENERIC_TYPES | motox_generic
+    soft_fallbacks = {**SOFT_TYPE_FALLBACKS, **motox_soft}
 
     parts_generic = any(k in _PARTS_GENERIC_TYPES for k in type_keys)
 
@@ -1021,25 +1102,25 @@ def resolve_shopify_product_category(
     def _from_type() -> CategoryDecision | None:
         if not ptype:
             return None
-        if any(k in GENERIC_TYPES for k in type_keys):
+        if any(k in generic_types for k in type_keys):
             return None
         for key in type_keys:
-            if key in TYPE_EXACT:
-                path = TYPE_EXACT[key]
+            if key in type_exact:
+                path = type_exact[key]
                 return CategoryDecision(path, f"type:{ptype}", _bucket_for_path(path))
         for key in type_keys:
-            for prefix, path in TYPE_PREFIX:
+            for prefix, path in type_prefix:
                 if key.startswith(prefix):
                     return CategoryDecision(
                         path, f"type-prefix:{prefix.strip()}", _bucket_for_path(path)
                     )
         return None
 
-    # Soft types (2-/4-stroke Offroad): tekst eerst, anders vaste fallback (Exhaust).
+    # Soft types (2-/4-stroke Offroad / Motox vage bakken): tekst eerst, anders fallback.
     soft_fallback = None
     for key in type_keys:
-        if key in SOFT_TYPE_FALLBACKS:
-            soft_fallback = SOFT_TYPE_FALLBACKS[key]
+        if key in soft_fallbacks:
+            soft_fallback = soft_fallbacks[key]
             break
     if soft_fallback is not None:
         hit = _from_text()
