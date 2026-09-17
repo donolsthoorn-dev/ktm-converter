@@ -30,7 +30,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -45,6 +45,7 @@ load_project_env()
 _REQUEST_TIMEOUT = (30, 120)
 _PAGE = 1000
 _STAMP_FLUSH_CHUNK = 250
+_MIRROR_UPSERT_CHUNK = 200
 _POLICY_FLUSH_CHUNK = 25
 _CUSTOMS_FLUSH_CHUNK = 50
 _SUPABASE_RETRY_ATTEMPTS = 5
@@ -163,17 +164,24 @@ def _supabase_upsert(
     rows: list[dict[str, Any]],
     on_conflict: str,
 ) -> None:
+    """Upsert mirror-rijen in chunks, met retry op timeout/429/5xx."""
     if not rows:
         return
     h = {**headers, "Prefer": "resolution=merge-duplicates,return=minimal"}
-    r = sess.post(
-        f"{base}/{table}",
-        params={"on_conflict": on_conflict},
-        headers=h,
-        json=rows,
-        timeout=_REQUEST_TIMEOUT,
-    )
-    r.raise_for_status()
+    total = len(rows)
+    for i in range(0, total, _MIRROR_UPSERT_CHUNK):
+        chunk = rows[i : i + _MIRROR_UPSERT_CHUNK]
+        done = min(i + len(chunk), total)
+        if total > _MIRROR_UPSERT_CHUNK:
+            print(f"Mirror upsert {table}: {done}/{total}", flush=True)
+        _supabase_request_with_retry(
+            sess,
+            "POST",
+            f"{base}/{table}",
+            headers=h,
+            params={"on_conflict": on_conflict},
+            json=chunk,
+        )
 
 
 def _supabase_request_with_retry(
@@ -1285,55 +1293,71 @@ def main() -> int:
 
     # Richt de Supabase mirror direct bij op basis van succesvolle mutaties.
     ts = _iso_now()
-    try:
-        if eta_success:
-            eta_rows = [
-                {
-                    "shopify_variant_id": int(vid),
-                    "eta_date": eta,
-                    "eta_raw": eta,
-                    "synced_at": ts,
-                }
-                for vid, eta in eta_success
-            ]
-            _supabase_upsert(sess, base, headers, "shopify_eta", eta_rows, "shopify_variant_id")
 
-        if price_success or policy_success or customs_success:
-            by_vid: dict[str, dict[str, Any]] = {}
-            for vid, price in price_success:
-                row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
-                row["price"] = price
-            for vid, pol in policy_success:
-                row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
-                row["inventory_policy"] = pol
-            for vid, item_id, hs, country in customs_success:
-                row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
-                row["inventory_item_id"] = int(item_id)
-                row["harmonized_system_code"] = hs
-                row["country_code_of_origin"] = country
-            variant_rows: list[dict[str, Any]] = []
-            for vid, row in by_vid.items():
-                pid = variant_to_product_id.get(vid)
-                if pid:
-                    row["shopify_product_id"] = int(pid)
-                variant_rows.append(row)
-            _supabase_upsert(
+    def _mirror_partial_update(label: str, fn: Callable[[], None]) -> None:
+        nonlocal errors
+        try:
+            fn()
+        except requests.RequestException as e:
+            errors += 1
+            print(f"Mirror partial update fout ({label}): {e}", file=sys.stderr, flush=True)
+            if e.response is not None:
+                print((e.response.text or "")[:1500], file=sys.stderr, flush=True)
+
+    if eta_success:
+        eta_rows = [
+            {
+                "shopify_variant_id": int(vid),
+                "eta_date": eta,
+                "eta_raw": eta,
+                "synced_at": ts,
+            }
+            for vid, eta in eta_success
+        ]
+        _mirror_partial_update(
+            "shopify_eta",
+            lambda: _supabase_upsert(
+                sess, base, headers, "shopify_eta", eta_rows, "shopify_variant_id"
+            ),
+        )
+
+    if price_success or policy_success or customs_success:
+        by_vid: dict[str, dict[str, Any]] = {}
+        for vid, price in price_success:
+            row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
+            row["price"] = price
+        for vid, pol in policy_success:
+            row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
+            row["inventory_policy"] = pol
+        for vid, item_id, hs, country in customs_success:
+            row = by_vid.setdefault(vid, {"shopify_variant_id": int(vid), "synced_at": ts})
+            row["inventory_item_id"] = int(item_id)
+            row["harmonized_system_code"] = hs
+            row["country_code_of_origin"] = country
+        variant_rows: list[dict[str, Any]] = []
+        for vid, row in by_vid.items():
+            pid = variant_to_product_id.get(vid)
+            if pid:
+                row["shopify_product_id"] = int(pid)
+            variant_rows.append(row)
+        _mirror_partial_update(
+            "shopify_variants",
+            lambda: _supabase_upsert(
                 sess, base, headers, "shopify_variants", variant_rows, "shopify_variant_id"
-            )
+            ),
+        )
 
-        if product_success:
-            product_rows = [
-                {"shopify_product_id": int(pid), "status": st, "synced_at": ts}
-                for pid, st in product_success
-            ]
-            _supabase_upsert(
+    if product_success:
+        product_rows = [
+            {"shopify_product_id": int(pid), "status": st, "synced_at": ts}
+            for pid, st in product_success
+        ]
+        _mirror_partial_update(
+            "shopify_products",
+            lambda: _supabase_upsert(
                 sess, base, headers, "shopify_products", product_rows, "shopify_product_id"
-            )
-    except requests.RequestException as e:
-        errors += 1
-        print(f"Mirror partial update fout: {e}", file=sys.stderr, flush=True)
-        if e.response is not None:
-            print((e.response.text or "")[:1500], file=sys.stderr, flush=True)
+            ),
+        )
 
     if benign:
         print(f"Opmerking: {benign} idempotente ETA-clear meldingen genegeerd.", flush=True)
