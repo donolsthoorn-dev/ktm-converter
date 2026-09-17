@@ -9,6 +9,7 @@ import requests
 
 import config
 from modules.category_mapper import map_category, map_shopify_product_category
+from modules.price_markup import apply_price_markup_str
 
 IMAGE_BASE_URL = config.SHOPIFY_CDN_FILES_BASE_URL
 
@@ -452,7 +453,7 @@ def export(products, filename):
                 setcol(row, "Variant Weight Unit", "kg")
                 setcol(row, "Gift Card", "FALSE")
 
-                setcol(row, "Variant Price", p.get("price"))
+                setcol(row, "Variant Price", apply_price_markup_str(p.get("price"), type_value) or p.get("price"))
 
                 if idx == 0:
                     setcol(row, "Google Shopping / Google Product Category", map_category(category))

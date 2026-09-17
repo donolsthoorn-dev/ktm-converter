@@ -56,6 +56,7 @@ from modules.pricing_loader import (  # noqa: E402
     lookup_in_str_index,
     normalize_sku_key,
 )
+from modules.price_markup import apply_price_markup_float  # noqa: E402
 from modules.xml_loader import load_products, normalize_shopify_product_handle  # noqa: E402
 
 
@@ -86,6 +87,8 @@ query KtmProductVariantContext($id: ID!) {
   product(id: $id) {
     id
     handle
+    title
+    productType
     hasOnlyDefaultVariant
     options {
       id
@@ -375,6 +378,7 @@ mutation KtmAddVariants(
             if price_f is None or price_f <= 0:
                 print(f"[{handle_csv}] SKU {sku}: geen prijs in CSV/0150 — overslaan", flush=True)
                 continue
+            price_f = apply_price_markup_float(price_f, prod.get("productType"))
 
             inv = _inventory_policy_for_create(want)
             entry: dict[str, Any] = {

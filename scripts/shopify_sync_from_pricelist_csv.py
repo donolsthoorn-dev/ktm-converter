@@ -15,7 +15,8 @@ Leest hetzelfde KTM CSV-formaat als pricing_loader (hqETADate, SalesPrice, Artic
 StockAvailable, …):
   - hqETADate      → variant-metafield global.inventory_policy_eta_date (type date)
                      en wordt niet gezet als Shopify-voorraad > 0 (dan ETA wissen)
-  - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, gelijk aan Shopify incl. BTW)
+  - SalesPrice     → variantprijs (CSV ex-BTW × VAT_MULTIPLIER, plus 9% voor types in
+                     modules/price_markup.py)
   - ArticleStatus  → variant-signaal; deze flow zet producten niet meer naar draft.
                      Product-draft gebeurt in een apart script.
   - Variant policy  → hybride regel: `DENY` bij `ArticleStatus=80` of `StockAvailable=0`;
@@ -79,6 +80,10 @@ from modules.pricing_loader import (  # noqa: E402
     normalize_gtin,
     shopify_variant_lookup_keys,
     variant_pairs_for_pricelist_sku,
+)
+from modules.price_markup import (  # noqa: E402
+    apply_price_markup_str,
+    fetch_product_types_by_id,
 )
 
 DEFAULT_VARIANT_CACHE = PROJECT_ROOT / "cache" / "shopify_eta_sync_sku_variant.json"
@@ -1238,6 +1243,19 @@ def main() -> int:
             flush=True,
         )
 
+    type_by_pid = fetch_product_types_by_id()
+    if type_by_pid:
+        print(
+            f"Producttypes (spiegel): {len(type_by_pid)} producten — 9%-markup op matching types",
+            flush=True,
+        )
+    else:
+        print(
+            "Waarschuwing: geen producttypes uit Supabase; 9%-markup wordt overgeslagen "
+            "(prijs zou de kale CSV-prijs worden).",
+            flush=True,
+        )
+
     state: dict = load_state(state_path) if not args.force else {}
     if args.force:
         print("--force: state genegeerd (volledige sync).", flush=True)
@@ -1288,11 +1306,19 @@ def main() -> int:
                 else:
                     eta_set.append((sku, vid, d["eta_iso"]))
 
-        if d["price_incl"] is not None and needs_update_price(
-            args.force, state, sku, d["price_incl"], variant_ids
-        ):
-            for vid, _pid in pairs:
-                price_ops.append((sku, vid, d["price_incl"]))
+        if d["price_incl"] is not None:
+            for vid, pid in pairs:
+                ptype = None
+                if pid:
+                    try:
+                        ptype = type_by_pid.get(int(pid))
+                    except (TypeError, ValueError):
+                        ptype = None
+                want_price = apply_price_markup_str(d["price_incl"], ptype)
+                if want_price and needs_update_price(
+                    args.force, state, sku, want_price, [vid]
+                ):
+                    price_ops.append((sku, vid, want_price))
 
         desired_policy = str(d.get("inventory_policy") or "").upper() or None
         if needs_update_inventory_policy(args.force, state, sku, desired_policy, variant_ids):

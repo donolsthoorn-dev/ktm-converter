@@ -3,6 +3,9 @@
 Vergelijk KTM prijs-CSV('s) in input/ met de Supabase-spiegel (shopify_variants, shopify_eta,
 shopify_products) en schrijf afwijkingen naar public.pricelist_sync_staging.
 
+Geselecteerde producttypes krijgen +9% op proposed_price (zie modules/price_markup.py),
+zodat de uurlijkse apply niet de kale CSV-prijs terugzet.
+
 Geen Shopify API-calls. Bedoeld ter **handmatige review**; daarna pas (later/apply-workflow)
 mutaties naar Shopify.
 
@@ -52,6 +55,11 @@ from modules.customs_mapping import (  # noqa: E402
     parse_allowed_hs_lengths,
 )
 from modules.env_loader import load_project_env  # noqa: E402
+from modules.price_markup import (  # noqa: E402
+    apply_price_markup_decimal,
+    product_type_from_mirror_row,
+    product_type_has_markup,
+)
 
 load_project_env()
 
@@ -446,19 +454,46 @@ def main() -> int:
     print(f"  → {len(variants)} variant-rijen", flush=True)
 
     print("Supabase: shopify_products ophalen…", flush=True)
-    products = _fetch_paginated(
-        sess,
-        base,
-        headers,
-        "shopify_products",
+    products: list[dict[str, Any]] = []
+    for prod_select in (
+        "shopify_product_id,status,type",
+        "shopify_product_id,status,raw",
         "shopify_product_id,status",
-        order="shopify_product_id.asc",
-    )
+    ):
+        try:
+            products = _fetch_paginated(
+                sess,
+                base,
+                headers,
+                "shopify_products",
+                prod_select,
+                order="shopify_product_id.asc",
+            )
+            break
+        except SystemExit:
+            if prod_select == "shopify_product_id,status":
+                raise
+            print(
+                f"  shopify_products select {prod_select} mislukt; fallback…",
+                flush=True,
+            )
     status_by_pid: dict[int, str] = {}
+    type_by_pid: dict[int, str] = {}
     for row in products:
         pid = row.get("shopify_product_id")
-        if pid is not None:
-            status_by_pid[int(pid)] = str(row.get("status") or "")
+        if pid is None:
+            continue
+        ipid = int(pid)
+        status_by_pid[ipid] = str(row.get("status") or "")
+        ptype = product_type_from_mirror_row(row)
+        if ptype:
+            type_by_pid[ipid] = ptype
+    n_markup_types = sum(1 for t in type_by_pid.values() if product_type_has_markup(t))
+    print(
+        f"  → {len(products)} producten, {len(type_by_pid)} met type, "
+        f"{n_markup_types} met 9%-prijsregel",
+        flush=True,
+    )
 
     print("Supabase: shopify_eta ophalen…", flush=True)
     etas = _fetch_paginated(
@@ -537,6 +572,8 @@ def main() -> int:
         for v in vrows:
             vid = int(v["shopify_variant_id"])
             pid = int(v["shopify_product_id"]) if v.get("shopify_product_id") is not None else None
+            ptype = type_by_pid.get(pid) if pid is not None else ""
+            row_price = apply_price_markup_decimal(prop_price, ptype)
             mirror_p = _to_decimal_price(v.get("price"))
             mirror_eta = eta_by_vid.get(vid)
             mirror_stat = status_by_pid.get(pid) if pid is not None else None
@@ -552,7 +589,7 @@ def main() -> int:
                 # Deze flow zet product niet meer naar DRAFT; bij all-80 blijft productstatus ongewijzigd.
                 prop_stat = _canonical_shop_status(mirror_stat)
 
-            pc = _price_changed(mirror_p, prop_price)
+            pc = _price_changed(mirror_p, row_price)
             ec = _eta_changed(mirror_eta, prop_eta)
             sc = _status_changed(mirror_stat, prop_stat)
             ic = _inventory_policy_changed(mirror_policy, prop_inventory_policy)
@@ -566,6 +603,31 @@ def main() -> int:
             if not (pc or ec or sc or ic or cc):
                 continue
 
+            notes = _build_notes(
+                mirror_p,
+                row_price,
+                mirror_eta,
+                prop_eta,
+                mirror_stat,
+                prop_stat,
+                prop_article_status,
+                prop_stock_available_code,
+                mirror_policy,
+                prop_inventory_policy,
+                mirror_hs,
+                prop_hs,
+                mirror_country,
+                prop_country,
+                customs_source,
+                pc,
+                ec,
+                sc,
+                ic,
+                cc,
+            )
+            if pc and product_type_has_markup(ptype):
+                notes = f"{notes}; price_markup=9% type={ptype}"
+
             row: dict[str, Any] = {
                 "batch_id": str(batch_id),
                 "sku": sku,
@@ -577,7 +639,7 @@ def main() -> int:
                 "mirror_product_status": _canonical_shop_status(mirror_stat),
                 "mirror_hs_code": mirror_hs,
                 "mirror_country_of_origin": mirror_country,
-                "proposed_price": float(prop_price) if prop_price is not None else None,
+                "proposed_price": float(row_price) if row_price is not None else None,
                 "proposed_eta_date": _eta_key(prop_eta),
                 "proposed_product_status": prop_stat,
                 "proposed_hs_code": prop_hs,
@@ -594,28 +656,7 @@ def main() -> int:
                 "status_changed": sc,
                 "inventory_policy_changed": ic,
                 "customs_changed": cc,
-                "notes": _build_notes(
-                    mirror_p,
-                    prop_price,
-                    mirror_eta,
-                    prop_eta,
-                    mirror_stat,
-                    prop_stat,
-                    prop_article_status,
-                    prop_stock_available_code,
-                    mirror_policy,
-                    prop_inventory_policy,
-                    mirror_hs,
-                    prop_hs,
-                    mirror_country,
-                    prop_country,
-                    customs_source,
-                    pc,
-                    ec,
-                    sc,
-                    ic,
-                    cc,
-                ),
+                "notes": notes,
             }
             rows_out.append(row)
 
