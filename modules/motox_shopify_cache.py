@@ -46,6 +46,9 @@ _BULK_QUERY = """{
         handle
         title
         status
+        featuredImage {
+          id
+        }
         variants {
           edges {
             node {
@@ -140,19 +143,31 @@ def _gql(
     if variables is not None:
         payload["variables"] = variables
     last: dict = {}
+    last_exc: Exception | None = None
     for attempt in range(25):
-        r = sess.post(
-            url,
-            headers={
-                "Content-Type": "application/json",
-                "X-Shopify-Access-Token": token,
-            },
-            json=payload,
-            timeout=_TIMEOUT,
-            proxies={"http": None, "https": None},
-        )
-        r.raise_for_status()
-        last = r.json()
+        try:
+            r = sess.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Shopify-Access-Token": token,
+                },
+                json=payload,
+                timeout=_TIMEOUT,
+                proxies={"http": None, "https": None},
+            )
+            # Shopify gateway blips (502/503/504) — retry like throttle
+            if r.status_code in (429, 502, 503, 504):
+                wait = min(2.0 * (attempt + 1), 30.0)
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            last = r.json()
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            last_exc = exc
+            wait = min(2.0 * (attempt + 1), 30.0)
+            time.sleep(wait)
+            continue
         errs = last.get("errors") or []
         throttled = any(
             (e.get("extensions") or {}).get("code") == "THROTTLED" for e in errs
@@ -161,6 +176,8 @@ def _gql(
             time.sleep(min(2.0 * (attempt + 1), 30.0))
             continue
         return last
+    if last_exc is not None and not last:
+        raise last_exc
     return last
 
 
@@ -239,6 +256,7 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
             gid = obj.get("id") or ""
             parent = obj.get("__parentId")
             if gid.startswith("gid://shopify/Product/") and not parent:
+                feat = obj.get("featuredImage")
                 products[gid] = {
                     "id": _gid_num(gid),
                     "handle": normalize_shopify_product_handle(
@@ -246,6 +264,7 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
                     ),
                     "title": (obj.get("title") or "").strip(),
                     "status": (obj.get("status") or "").strip().upper(),
+                    "has_image": bool(feat and (feat.get("id") if isinstance(feat, dict) else feat)),
                     "skus": [],
                 }
                 continue
@@ -282,6 +301,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                 "id": pid,
                 "title": p.get("title") or "",
                 "status": p.get("status") or "",
+                "has_image": bool(p.get("has_image")),
             }
             handle_to_pid[handle] = pid
         for entry in p.get("skus") or []:

@@ -36,6 +36,7 @@ on:
           - all
           - create_only
           - prices_only
+          - images_only
         default: all
       max_create:
         description: "Max nieuwe producten (0 = alle)"
@@ -43,6 +44,10 @@ on:
         default: "0"
       max_price_updates:
         description: "Max producten voor price-update (0 = alle)"
+        required: false
+        default: "0"
+      max_image_backfill:
+        description: "Max image-backfills op bestaande producten (0 = alle)"
         required: false
         default: "0"
       dispatch_log_id:
@@ -65,6 +70,7 @@ jobs:
       MODE: ${{ github.event.inputs.mode || 'all' }}
       MAX_CREATE: ${{ github.event.inputs.max_create || '0' }}
       MAX_PRICE: ${{ github.event.inputs.max_price_updates || '0' }}
+      MAX_IMAGE_BACKFILL: ${{ github.event.inputs.max_image_backfill || '0' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -119,12 +125,17 @@ jobs:
             ARGS+=(--create-only)
           elif [[ "${MODE}" == "prices_only" ]]; then
             ARGS+=(--prices-only)
+          elif [[ "${MODE}" == "images_only" ]]; then
+            ARGS+=(--images-only)
           fi
           if [[ "${MAX_CREATE}" != "0" ]]; then
             ARGS+=(--max-create "${MAX_CREATE}")
           fi
           if [[ "${MAX_PRICE}" != "0" ]]; then
             ARGS+=(--max-price-updates "${MAX_PRICE}")
+          fi
+          if [[ "${MAX_IMAGE_BACKFILL}" != "0" ]]; then
+            ARGS+=(--max-image-backfill "${MAX_IMAGE_BACKFILL}")
           fi
           python3 -u scripts/motox_ebihr_sync.py "${ARGS[@]}"
 

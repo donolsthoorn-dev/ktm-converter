@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Motox e-bihr sync: Bihr V3+VSE → Shopify create + price updates + fits_on metafields.
+Motox e-bihr sync: Bihr V3+VSE → Shopify create + image backfill + prices + fits_on.
 
   # Dry-run tegen bestaande raw:
   python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run
@@ -11,11 +11,14 @@ Motox e-bihr sync: Bihr V3+VSE → Shopify create + price updates + fits_on meta
   # Fetch + apply:
   python3 scripts/motox_ebihr_sync.py --fetch --apply
 
-  # Alleen prijzen (geen creates):
+  # Alleen prijzen (geen creates / image-backfill):
   python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --prices-only
 
-  # Alleen creates (geen price updates):
+  # Alleen creates (geen price / image-backfill):
   python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --create-only
+
+  # Alleen ontbrekende images backfill + publiceren op alle kanalen:
+  python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --images-only --max-image-backfill 50
 """
 
 from __future__ import annotations
@@ -78,6 +81,33 @@ def _json_tuples(fits: dict) -> set[tuple[str, str, str]]:
     return out
 
 
+def _resolve_product_id(
+    handle: str,
+    skus: set[str],
+    handle_to_pid: dict[str, str],
+    sku_to_pid: dict[str, str],
+) -> str:
+    pid = (handle_to_pid.get(handle) or "").strip()
+    if pid:
+        return pid
+    for s in skus:
+        pid = (sku_to_pid.get(s) or sku_to_pid.get(s.upper()) or "").strip()
+        if pid:
+            return pid
+    return ""
+
+
+def _cache_has_image(products_index: dict, handle: str, pid: str) -> bool | None:
+    """True/False if known from cache; None if field missing (old cache)."""
+    meta = products_index.get(handle)
+    if isinstance(meta, dict) and "has_image" in meta:
+        return bool(meta.get("has_image"))
+    for m in products_index.values():
+        if isinstance(m, dict) and (m.get("id") or "") == pid and "has_image" in m:
+            return bool(m.get("has_image"))
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Motox e-bihr Shopify sync")
     ap.add_argument("--fetch", action="store_true", help="Eerst V3+VSE ophalen")
@@ -86,13 +116,37 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="Geen Shopify-writes (default zonder --apply)")
     ap.add_argument("--create-only", action="store_true", help="Alleen nieuwe producten")
     ap.add_argument("--prices-only", action="store_true", help="Alleen prijs-updates")
+    ap.add_argument(
+        "--images-only",
+        action="store_true",
+        help="Alleen image-backfill + kanalen-publish voor bestaande producten",
+    )
     ap.add_argument("--skip-metafields", action="store_true")
     ap.add_argument("--skip-images", action="store_true")
+    ap.add_argument(
+        "--skip-publish",
+        action="store_true",
+        help="Geen publishablePublish / Online Store publish",
+    )
     ap.add_argument("--max-create", type=int, default=0, help="Max nieuwe producten (0=all)")
     ap.add_argument("--max-price-updates", type=int, default=0, help="Max producten met price-update (0=all)")
+    ap.add_argument(
+        "--max-image-backfill",
+        type=int,
+        default=0,
+        help="Max bestaande producten met image-backfill (0=all)",
+    )
     ap.add_argument("--refresh-cache", action="store_true", default=True)
     ap.add_argument("--no-refresh-cache", action="store_true")
     args = ap.parse_args()
+
+    mode_n = sum(bool(x) for x in (args.create_only, args.prices_only, args.images_only))
+    if mode_n > 1:
+        raise SystemExit("Kies één van --create-only / --prices-only / --images-only")
+
+    do_create = not args.prices_only and not args.images_only
+    do_image_backfill = not args.prices_only and not args.create_only
+    do_prices = not args.create_only and not args.images_only
 
     dry_run = not args.apply or args.dry_run
     if args.apply and args.dry_run:
@@ -107,7 +161,14 @@ def main() -> int:
     if raw_dir is None or not raw_dir.is_dir():
         raise SystemExit("Geen raw-dir. Gebruik --fetch of --raw-dir.")
 
-    log.info("Raw: %s | dry_run=%s", raw_dir, dry_run)
+    log.info(
+        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s",
+        raw_dir,
+        dry_run,
+        do_create,
+        do_image_backfill,
+        do_prices,
+    )
 
     ymm = build_ymm_from_raw(raw_dir)
     fits_map = ymm["fits_on"]
@@ -125,6 +186,7 @@ def main() -> int:
     handle_to_pid = idx["handle_to_product_id"]
     sku_to_pid = idx["sku_to_product_id"]
     sku_to_vid = idx.get("sku_to_variant_id") or {}
+    products_index = idx.get("products_index") or {}
 
     admin = MotoxAdmin()
     report_rows: list[dict] = []
@@ -132,14 +194,19 @@ def main() -> int:
     create_errors = 0
     prices_updated = 0
     price_errors = 0
-    prices_unchanged = 0
     meta_set = 0
     meta_errors = 0
     skipped_exists = 0
     skipped_no_image = 0
+    images_backfilled = 0
+    image_backfill_errors = 0
+    publish_ok = 0
+    publish_errors = 0
+    skipped_already_has_image = 0
+    skipped_no_bihr_image = 0
 
     # --- Creates ---
-    if not args.prices_only:
+    if do_create:
         for g in groups:
             handle = normalize_shopify_product_handle(g["handle"]) or g["handle"]
             skus = {(v.get("sku") or "").strip().upper() for v in g["variants"] if v.get("sku")}
@@ -176,7 +243,6 @@ def main() -> int:
             )
             log.info("Created %s → %s", handle, pid)
 
-            # Metafields for new product
             if not args.skip_metafields:
                 tokens = [handle] + [v.get("sku") or "" for v in g["variants"]]
                 merged = fits_on_from_map(fits_map, tokens)
@@ -203,15 +269,109 @@ def main() -> int:
                     else:
                         meta_set += 1
 
-            # throttle Shopify
+            # Nieuwe producten met images → ACTIVE + alle sales channels
+            if g.get("published") and not args.skip_publish and not img_err:
+                aerr = admin.ensure_active(pid, dry_run=dry_run)
+                perr = admin.publish_to_all_channels(pid, dry_run=dry_run)
+                detail = "; ".join(x for x in (aerr, perr) if x)
+                if detail:
+                    publish_errors += 1
+                    report_rows.append(
+                        {"action": "publish", "handle": handle, "ok": "0", "detail": detail}
+                    )
+                else:
+                    publish_ok += 1
+                    report_rows.append(
+                        {"action": "publish", "handle": handle, "ok": "1", "detail": "all_channels"}
+                    )
+
+            if not dry_run:
+                time.sleep(0.35)
+
+    # --- Image backfill for existing products without media ---
+    if do_image_backfill and not args.skip_images:
+        if not dry_run and not args.skip_publish:
+            admin.list_publication_ids()
+
+        for g in groups:
+            handle = normalize_shopify_product_handle(g["handle"]) or g["handle"]
+            skus = {(v.get("sku") or "").strip().upper() for v in g["variants"] if v.get("sku")}
+            exists = handle in motox_handles or bool(skus & motox_skus)
+            if not exists:
+                continue
+            images = g.get("images") or []
+            if not images:
+                skipped_no_bihr_image += 1
+                continue
+            pid = _resolve_product_id(handle, skus, handle_to_pid, sku_to_pid)
+            if not pid:
+                continue
+
+            has_img = _cache_has_image(products_index, handle, pid)
+            if has_img is True:
+                skipped_already_has_image += 1
+                continue
+            if has_img is None:
+                live_has, live_err = admin.product_has_media(pid)
+                if live_err:
+                    image_backfill_errors += 1
+                    report_rows.append(
+                        {
+                            "action": "image_check",
+                            "handle": handle,
+                            "ok": "0",
+                            "detail": live_err,
+                        }
+                    )
+                    continue
+                if live_has:
+                    skipped_already_has_image += 1
+                    continue
+
+            if args.max_image_backfill and images_backfilled >= args.max_image_backfill:
+                break
+
+            img_err = admin.attach_images(pid, images, dry_run=dry_run)
+            if img_err:
+                image_backfill_errors += 1
+                report_rows.append(
+                    {"action": "image_backfill", "handle": handle, "ok": "0", "detail": img_err}
+                )
+                log.warning("Image backfill fail %s: %s", handle, img_err)
+                continue
+
+            images_backfilled += 1
+            report_rows.append(
+                {
+                    "action": "image_backfill",
+                    "handle": handle,
+                    "ok": "1",
+                    "detail": f"id={pid}; n={len(images[:20])}",
+                }
+            )
+            log.info("Image backfill %s → %s (%s urls)", handle, pid, len(images[:20]))
+
+            if g.get("published") and not args.skip_publish:
+                aerr = admin.ensure_active(pid, dry_run=dry_run)
+                perr = admin.publish_to_all_channels(pid, dry_run=dry_run)
+                detail = "; ".join(x for x in (aerr, perr) if x)
+                if detail:
+                    publish_errors += 1
+                    report_rows.append(
+                        {"action": "publish", "handle": handle, "ok": "0", "detail": detail}
+                    )
+                else:
+                    publish_ok += 1
+                    report_rows.append(
+                        {"action": "publish", "handle": handle, "ok": "1", "detail": "all_channels"}
+                    )
+
             if not dry_run:
                 time.sleep(0.35)
 
     # --- Price updates for existing ---
-    if not args.create_only:
-        # Build sku -> price from groups
+    if do_prices:
         sku_price: dict[str, str] = {}
-        sku_product_handle: dict[str, str] = {}
         for g in groups:
             for v in g["variants"]:
                 sku = (v.get("sku") or "").strip()
@@ -219,13 +379,11 @@ def main() -> int:
                 if sku and price:
                     sku_price[sku] = price
                     sku_price[sku.upper()] = price
-                    sku_product_handle[sku] = g["handle"]
 
-        # Group updates by product id
         by_pid: dict[str, list[tuple[str, str]]] = {}
         for sku, price in list(sku_price.items()):
             if sku != sku.upper() and sku.upper() in sku_price and sku != sku.upper():
-                continue  # skip duplicate lower keys processed via upper
+                continue
             vid = sku_to_vid.get(sku) or sku_to_vid.get(sku.upper())
             pid = sku_to_pid.get(sku) or sku_to_pid.get(sku.upper())
             if not vid or not pid:
@@ -236,8 +394,7 @@ def main() -> int:
         for pid, pairs in by_pid.items():
             if args.max_price_updates and n_price_products >= args.max_price_updates:
                 break
-            # dedupe variant ids
-            seen = {}
+            seen: dict[str, str] = {}
             for vid, price in pairs:
                 seen[vid] = price
             pairs = list(seen.items())
@@ -261,12 +418,6 @@ def main() -> int:
             if not dry_run:
                 time.sleep(0.25)
 
-        prices_unchanged = max(0, len(by_pid) - n_price_products)
-
-    # --- Metafields for existing products that have fitment (optional fill) ---
-    # Only for creates above unless --prices-only; skip bulk metafield backfill in v1 nightly
-    # to keep runtime bounded. Creates already set metafields.
-
     summary = {
         "dry_run": dry_run,
         "raw_dir": str(raw_dir),
@@ -275,6 +426,12 @@ def main() -> int:
         "create_errors": create_errors,
         "skipped_exists": skipped_exists,
         "skipped_no_image": skipped_no_image,
+        "images_backfilled": images_backfilled,
+        "image_backfill_errors": image_backfill_errors,
+        "skipped_already_has_image": skipped_already_has_image,
+        "skipped_no_bihr_image_for_existing": skipped_no_bihr_image,
+        "publish_ok": publish_ok,
+        "publish_errors": publish_errors,
         "price_variant_updates": prices_updated,
         "price_errors": price_errors,
         "metafields_set": meta_set,
@@ -292,7 +449,6 @@ def main() -> int:
         w.writeheader()
         w.writerows(report_rows)
 
-    # GitHub Step Summary
     gh = os.environ.get("GITHUB_STEP_SUMMARY")
     if gh:
         with open(gh, "a", encoding="utf-8") as f:
@@ -300,6 +456,11 @@ def main() -> int:
             f.write(f"- dry_run: `{dry_run}`\n")
             f.write(f"- created: **{created}** (errors {create_errors})\n")
             f.write(f"- skipped exists: {skipped_exists}, no image: {skipped_no_image}\n")
+            f.write(
+                f"- image backfill: **{images_backfilled}** "
+                f"(errors {image_backfill_errors}, already had {skipped_already_has_image})\n"
+            )
+            f.write(f"- publish channels: **{publish_ok}** (errors {publish_errors})\n")
             f.write(f"- price variant updates: **{prices_updated}** (errors {price_errors})\n")
             f.write(f"- metafields set: **{meta_set}** (errors {meta_errors})\n")
             f.write(f"- report: `{report_path}`\n")
@@ -308,7 +469,7 @@ def main() -> int:
     print(json.dumps(summary, indent=2))
     print(f"Report: {report_path}")
 
-    if create_errors or price_errors or meta_errors:
+    if create_errors or price_errors or meta_errors or image_backfill_errors or publish_errors:
         return 2 if not dry_run else 0
     return 0
 

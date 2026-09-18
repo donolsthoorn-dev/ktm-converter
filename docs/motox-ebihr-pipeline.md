@@ -9,11 +9,14 @@ Credentials: [`.env.bihr`](../.env.bihr) / [`.env.motox`](../.env.motox) lokaal;
 Nachtelijke (of handmatige) job schrijft **direct naar Motox Shopify**:
 
 1. Bihr V3 + VSE ophalen
-2. New-only producten **aanmaken** (met images)
-3. **Prijzen updaten** op bestaande Bihr-SKU’s
-4. **Metafields** `global.fits_on` (+ summary/year/make/model) zetten op nieuwe producten
+2. New-only producten **aanmaken** (met images) + publiceren op **alle sales channels**
+3. Bestaande producten **zonder afbeelding**: images backfill als Bihr ze nu wel heeft, daarna opnieuw publiceren op alle kanalen
+4. **Prijzen updaten** op bestaande Bihr-SKU’s
+5. **Metafields** `global.fits_on` (+ summary/year/make/model) zetten op nieuwe producten
 
 YMM-**app**/filter-CSV is **later** (lokaal); v1 dekt theme-metafields.
+
+Motox app-scopes: products/variants/metafields write; voor alle kanalen ook **`read_publications` + `write_publications`**. Zonder die scopes valt publish terug op alleen Online Store.
 
 ```bash
 # Lokaal dry-run (geen Shopify-writes)
@@ -24,6 +27,9 @@ python3 scripts/motox_ebihr_sync.py --fetch --apply
 
 # Alleen prijzen
 python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --prices-only
+
+# Alleen image-backfill + kanalen (begrensd)
+python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --images-only --max-image-backfill 50
 ```
 
 ### GitHub Actions
@@ -42,8 +48,6 @@ Workflow: [`.github/workflows/motox_ebihr_sync.yml`](../.github/workflows/motox_
 - **Schedule:** `0 1 * * *` UTC (~03:00 NL zomer)
 - **Manual:** Actions → `motox_ebihr_sync` → eerst `apply=false` (dry-run), daarna `apply=true`
 - Artifacts: `motox/e-bihr/output/sync/` + Step Summary
-
-Motox app-scopes: products write, variants write, metafields write.
 
 ## CSV-pipeline (debug / handmatige import)
 

@@ -1,4 +1,4 @@
-"""Motox Shopify Admin API: create products, update prices, set YMM metafields."""
+"""Motox Shopify Admin API: create products, update prices, set YMM metafields, publish."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ class MotoxAdmin:
         self.domain, self.token, self.api = load_motox_env()
         self.url = f"https://{self.domain}/admin/api/{self.api}/graphql.json"
         self.sess = _session()
+        self._publication_ids: list[str] | None = None
 
     def gql(self, query: str, variables: dict | None = None) -> dict:
         return _gql(self.sess, self.url, self.token, query, variables)
@@ -251,6 +252,211 @@ class MotoxAdmin:
         if body.get("errors"):
             return str(body.get("errors"))[:300]
         uerr = (((body.get("data") or {}).get("metafieldsSet")) or {}).get("userErrors") or []
+        if uerr:
+            return str(uerr)[:300]
+        return ""
+
+    def product_has_media(self, product_id: str) -> tuple[bool, str]:
+        """Live check: featuredMedia present. Returns (has_media, error)."""
+        q = """
+        query MotoxProductMedia($id: ID!) {
+          product(id: $id) {
+            featuredMedia { id }
+            media(first: 1) { nodes { id } }
+          }
+        }
+        """
+        body = self.gql(q, {"id": f"gid://shopify/Product/{product_id}"})
+        if body.get("errors"):
+            return False, str(body.get("errors"))[:300]
+        prod = ((body.get("data") or {}).get("product")) or {}
+        if not prod:
+            return False, "product_not_found"
+        if prod.get("featuredMedia"):
+            return True, ""
+        nodes = ((prod.get("media") or {}).get("nodes")) or []
+        return bool(nodes), ""
+
+    def set_status(self, product_id: str, status: str, *, dry_run: bool = False) -> str:
+        """Zet productstatus (ACTIVE/DRAFT/ARCHIVED). Returns error or ''."""
+        status = (status or "").strip().upper()
+        if status not in ("ACTIVE", "DRAFT", "ARCHIVED"):
+            return f"invalid status {status}"
+        if dry_run:
+            return ""
+        q = """
+        mutation MotoxProductSetStatus($input: ProductInput!) {
+          productUpdate(input: $input) {
+            product { id status }
+            userErrors { field message }
+          }
+        }
+        """
+        body = self.gql(
+            q,
+            {"input": {"id": f"gid://shopify/Product/{product_id}", "status": status}},
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        uerr = (((body.get("data") or {}).get("productUpdate")) or {}).get("userErrors") or []
+        if uerr:
+            return str(uerr)[:300]
+        return ""
+
+    def ensure_active(self, product_id: str, *, dry_run: bool = False) -> str:
+        """Zet productstatus op ACTIVE. Returns error or ''."""
+        return self.set_status(product_id, "ACTIVE", dry_run=dry_run)
+
+    def unpublish_from_all_channels(self, product_id: str, *, dry_run: bool = False) -> str:
+        """Haal product van alle publications. Returns error or ''."""
+        if dry_run:
+            return ""
+        pub_ids, err = self.list_publication_ids()
+        if err or not pub_ids:
+            return self._publish_online_store_only_unpublished(product_id) if not err else err
+        q = """
+        mutation MotoxPublishableUnpublish($id: ID!, $input: [PublicationInput!]!) {
+          publishableUnpublish(id: $id, input: $input) {
+            userErrors { field message }
+          }
+        }
+        """
+        body = self.gql(
+            q,
+            {
+                "id": f"gid://shopify/Product/{product_id}",
+                "input": [{"publicationId": pid} for pid in pub_ids],
+            },
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        uerr = (
+            (((body.get("data") or {}).get("publishableUnpublish")) or {}).get("userErrors") or []
+        )
+        if uerr:
+            return str(uerr)[:400]
+        return ""
+
+    def _publish_online_store_only_unpublished(self, product_id: str) -> str:
+        q = """
+        mutation MotoxUnpublishOnline($input: ProductInput!) {
+          productUpdate(input: $input) {
+            product { id publishedAt }
+            userErrors { field message }
+          }
+        }
+        """
+        body = self.gql(
+            q,
+            {
+                "input": {
+                    "id": f"gid://shopify/Product/{product_id}",
+                    "published": False,
+                }
+            },
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        uerr = (((body.get("data") or {}).get("productUpdate")) or {}).get("userErrors") or []
+        if uerr:
+            return str(uerr)[:300]
+        return ""
+
+    def list_publication_ids(self, *, force: bool = False) -> tuple[list[str], str]:
+        """
+        Alle sales-channel publication IDs (Online Store, POS, …).
+        Vereist read_publications scope. Cached op de instance.
+        """
+        if self._publication_ids is not None and not force:
+            return self._publication_ids, ""
+        q = """
+        query MotoxPublications {
+          publications(first: 50) {
+            nodes { id name }
+          }
+        }
+        """
+        body = self.gql(q)
+        if body.get("errors"):
+            return [], str(body.get("errors"))[:400]
+        nodes = (((body.get("data") or {}).get("publications")) or {}).get("nodes") or []
+        ids = [n["id"] for n in nodes if n.get("id")]
+        self._publication_ids = ids
+        log.info(
+            "Motox publications: %s",
+            ", ".join(f"{n.get('name')}={n.get('id')}" for n in nodes) or "(none)",
+        )
+        return ids, ""
+
+    def publish_to_all_channels(self, product_id: str, *, dry_run: bool = False) -> str:
+        """
+        Publiceer product op alle shop-publications (alle kanalen).
+        Falls back to productUpdate published:true (Online Store only) als
+        publications-scope ontbreekt.
+        """
+        if dry_run:
+            return ""
+        pub_ids, err = self.list_publication_ids()
+        if err or not pub_ids:
+            # Fallback: alleen Online Store via legacy published flag
+            log.warning(
+                "publications API niet beschikbaar (%s); fallback productUpdate published=true",
+                err or "empty",
+            )
+            return self._publish_online_store_only(product_id)
+
+        q = """
+        mutation MotoxPublishablePublish($id: ID!, $input: [PublicationInput!]!) {
+          publishablePublish(id: $id, input: $input) {
+            userErrors { field message }
+          }
+        }
+        """
+        body = self.gql(
+            q,
+            {
+                "id": f"gid://shopify/Product/{product_id}",
+                "input": [{"publicationId": pid} for pid in pub_ids],
+            },
+        )
+        if body.get("errors"):
+            # Scope missing → fallback
+            err_s = str(body.get("errors"))
+            if "ACCESS" in err_s.upper() or "publication" in err_s.lower():
+                log.warning("publishablePublish geweigerd; fallback Online Store: %s", err_s[:200])
+                return self._publish_online_store_only(product_id)
+            return err_s[:300]
+        uerr = (
+            (((body.get("data") or {}).get("publishablePublish")) or {}).get("userErrors") or []
+        )
+        if uerr:
+            # Partial channel errors: log but treat hard failures only
+            msg = str(uerr)[:400]
+            # If all failed, return error; Shopify often returns per-channel noise
+            return msg
+        return ""
+
+    def _publish_online_store_only(self, product_id: str) -> str:
+        q = """
+        mutation MotoxPublishOnline($input: ProductInput!) {
+          productUpdate(input: $input) {
+            product { id publishedAt }
+            userErrors { field message }
+          }
+        }
+        """
+        body = self.gql(
+            q,
+            {
+                "input": {
+                    "id": f"gid://shopify/Product/{product_id}",
+                    "published": True,
+                }
+            },
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        uerr = (((body.get("data") or {}).get("productUpdate")) or {}).get("userErrors") or []
         if uerr:
             return str(uerr)[:300]
         return ""
