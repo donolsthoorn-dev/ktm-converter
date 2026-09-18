@@ -1,0 +1,100 @@
+# Tag-clone ontbrekende telling-SKU's: ktm-shop.nl → Motox POS (ktm-shop-nederland).
+# Script zet synkro-clone-ktm-shop-nederland op het KTM-product; Synkro kloont.
+# Trigger: Supabase 07:30–22:30 NL (migratie 034) of handmatige workflow_dispatch.
+# Geen GitHub schedule (onbetrouwbaar op de minuut).
+
+name: motox_synkro_clone_missing
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = tag schrijven op ktm-shop.nl, false = dry-run"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      max_products:
+        description: "Max producten per run (default 40)"
+        required: false
+        default: "40"
+      scope:
+        description: "Bron van SKU's"
+        type: choice
+        options:
+          - telling
+        default: telling
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency:
+      group: ${{ inputs.apply == 'true' && 'shopify-write-lock' || 'motox-synkro-clone-missing-dry' }}
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event.inputs.apply || 'false' }}
+      MAX_PRODUCTS: ${{ github.event.inputs.max_products || '40' }}
+      SCOPE: ${{ github.event.inputs.scope || 'telling' }}
+      DISPATCH_LOG_ID: ${{ github.event.inputs.dispatch_log_id || '' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install "requests>=2.28,<3"
+
+      - name: Check secrets en telling-bestand
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for k in SHOPIFY_ACCESS_TOKEN SHOPIFY_SHOP_DOMAIN SHOPIFY_MOTOX_ACCESS_TOKEN SHOPIFY_MOTOX_SHOP_DOMAIN; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Secret $k ontbreekt"
+              missing=1
+            fi
+          done
+          if [[ ! -f "motox/Voorraad winkel - WERKDOC EJIS.csv" && ! -f "motox/telling_skus.txt" ]]; then
+            echo "::error::Telling-bestand ontbreekt (motox/Voorraad winkel - WERKDOC EJIS.csv of motox/telling_skus.txt)"
+            missing=1
+          fi
+          exit "$missing"
+
+      - name: Synkro clone-missing
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          EXTRA=(--scope "${SCOPE}" --max "${MAX_PRODUCTS}" --live-motox --live-ktm)
+          if [[ "${APPLY}" == "true" ]]; then
+            EXTRA+=(--yes)
+          fi
+          python3 -u scripts/motox_synkro_clone_missing.py "${EXTRA[@]}"
+
+      - name: Upload rapport
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: motox-synkro-clone-missing-${{ github.run_id }}
+          path: output/motox_synkro_clone_missing_*.csv
+          if-no-files-found: ignore
+          retention-days: 14

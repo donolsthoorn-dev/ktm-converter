@@ -16,9 +16,11 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
 | `ktm_shopify_gtin_fill` | `shopify_gtin_fill.yml` (lege barcodes/GTIN uit prijs-CSV) | Dagelijks **05:30** |
 | `ktm_price_eta_apply_hourly_0700_2300` | `price_eta_status_sync.yml` apply, `apply_scope=price_eta` | **07:00** t/m **23:00**, elk heel uur (**:00**) |
 | `ktm_price_eta_policy_nightly` | `price_eta_status_sync.yml` apply, `apply_scope=policy` | **00:15**, **07:15**, **12:15**, **18:15** |
+| `ktm_motox_synkro_clone_missing` | `motox_synkro_clone_missing.yml` (tag-clone telling-SKU’s ktm-shop.nl → Motox POS, max 40) | **07:30** t/m **22:30**, elk half uur (**:30**) |
 
 - dispatch stuurt `dispatch_log_id` mee → GitHub-run koppelt aan de juiste `workflow_dispatch_log`-rij (geen “laatste rij”-verwarring meer)
-- `shopify_write_lock_busy`: geen nieuwe dispatch naar GitHub zolang een Shopify-write-run `run_state=running` is (log `skipped`, geen spook-`queued`)
+- `shopify_write_lock_busy`: geen nieuwe dispatch naar GitHub zolang een Shopify-write-run `run_state=running` is (log `skipped`, geen spook-`queued`). Lock-lijst: price/ETA, customs, auto-deactivate, publish, GTIN-fill, Motox Synkro clone-missing.
+- Motox Synkro clone-missing: dry-run lokaal met `python3 scripts/motox_synkro_clone_missing.py`; apply tagt max 40 KTM-producten met `synkro-clone-ktm-shop-nederland`. Telling-CSV of `motox/telling_skus.txt` moet in de repo staan voor CI.
 - verweesde `queued` zonder `github_run_id` (>2u) → `dispatch_never_started`
 - guard: `price_eta` start niet als er al een `scope=policy` run in progress is (tussenliggende uren worden dan bewust overgeslagen)
 - zulke overgeslagen runs worden gelogd met `run_state=skipped` en reden `policy_run_in_progress`
@@ -52,6 +54,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/027_github_dispatch_fire_and_forget.sql` (verplicht na 025/026; pg_net + cron-compatibel)
    - `converter/supabase/migrations/032_publish_sellable_active_after_deactivate.sql` (Webshop-publish 04:30 NL)
    - `converter/supabase/migrations/033_gtin_fill_nightly_and_staging.sql` (GTIN-fill 05:30 NL + staging `proposed_barcode`)
+   - `converter/supabase/migrations/034_motox_synkro_clone_missing_hourly.sql` (Synkro tag-clone 07:30–22:30 NL)
 2. Create vault secret for GitHub API token (required):
 
 ```sql
