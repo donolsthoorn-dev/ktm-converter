@@ -135,10 +135,10 @@ mutation ($product: ProductUpdateInput!) {
 """
 
 _MUT_ALT = """
-mutation ($files: [FileUpdateInput!]!) {
-  fileUpdate(files: $files) {
-    files { id alt }
-    userErrors { field message }
+mutation ($productId: ID!, $media: [UpdateMediaInput!]!) {
+  productUpdateMedia(productId: $productId, media: $media) {
+    media { alt }
+    mediaUserErrors { field message }
   }
 }
 """
@@ -605,13 +605,19 @@ def _write_seo(sess, url, token, product_gid: str, title: str, description: str)
     return ""
 
 
-def _write_alts(sess, url, token, files: list[dict]) -> str:
-    pending = [f for f in files if f.get("id") and f.get("alt")]
+def _write_alts(sess, url, token, product_gid: str, files: list[dict]) -> str:
+    pending = [{"id": f["id"], "alt": f["alt"]} for f in files if f.get("id") and f.get("alt")]
     for start in range(0, len(pending), 10):
         chunk = pending[start : start + 10]
-        body = _gql(sess, url, token, _MUT_ALT, {"files": chunk})
-        payload = ((body.get("data") or {}).get("fileUpdate")) or {}
-        errs = payload.get("userErrors") or []
+        body = _gql(
+            sess,
+            url,
+            token,
+            _MUT_ALT,
+            {"productId": product_gid, "media": chunk},
+        )
+        payload = ((body.get("data") or {}).get("productUpdateMedia")) or {}
+        errs = payload.get("mediaUserErrors") or []
         if errs:
             return str(errs)[:300]
     return ""
@@ -729,6 +735,7 @@ def main() -> int:
                     sess,
                     shop_url,
                     token,
+                    product["id"],
                     [{"id": m["id"], "alt": alt} for m in alt_targets],
                 )
             if not fout:
