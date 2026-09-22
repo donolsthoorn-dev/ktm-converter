@@ -520,7 +520,11 @@ def main() -> int:
         with open(gh, "a", encoding="utf-8") as f:
             f.write("## Motox e-bihr sync\n\n")
             f.write(f"- dry_run: `{dry_run}`\n")
-            f.write(f"- created: **{created}** (errors {create_errors})\n")
+            f.write(f"- created: **{created}** (errors {create_errors})")
+            if create_errors:
+                f.write(" — create errors are warnings (job stays green)\n")
+            else:
+                f.write("\n")
             f.write(f"- skipped exists: {skipped_exists}, no image: {skipped_no_image}\n")
             f.write(
                 f"- image backfill: **{images_backfilled}** "
@@ -540,7 +544,16 @@ def main() -> int:
     print(json.dumps(summary, indent=2))
     print(f"Report: {report_path}")
 
-    if create_errors or price_errors or meta_errors or image_backfill_errors or publish_errors:
+    # Create failures are expected for odd Bihr option data; log + report but do
+    # not fail the job. Price / metafield / image / publish errors still fail apply.
+    if create_errors:
+        log.warning(
+            "Create errors: %s (non-fatal; see sync_report). "
+            "Price/meta/image/publish errors still fail the job.",
+            create_errors,
+        )
+    hard_errors = price_errors or meta_errors or image_backfill_errors or publish_errors
+    if hard_errors:
         return 2 if not dry_run else 0
     return 0
 

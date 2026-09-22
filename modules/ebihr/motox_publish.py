@@ -13,6 +13,69 @@ from modules.motox_shopify_cache import _gql, _session, load_motox_env
 
 log = logging.getLogger("ebihr.motox_publish")
 
+
+def _sku_label(sku: str, index: int) -> str:
+    s = (sku or "").strip()
+    if s:
+        return s
+    return f"Variant {index + 1}"
+
+
+def _unique_variant_option_rows(group: dict) -> tuple[list[str], list[list[str]]]:
+    """
+    Build option names + per-variant values that Shopify will accept.
+
+    Bihr often leaves variation attrs empty on sibling SKUs. Filling those with
+    the same "Default" / "Default Title" makes productSet return INVALID_VARIANT.
+    Empty/duplicate combos are uniquified with the SKU.
+    """
+    variants = group.get("variants") or []
+    option_names = list(group.get("option_names") or [])
+
+    if not option_names:
+        option_names = ["Title"]
+        if len(variants) <= 1:
+            return option_names, [["Default Title"]]
+        rows = [[_sku_label(v.get("sku") or "", i)] for i, v in enumerate(variants)]
+        return option_names, rows
+
+    rows: list[list[str]] = []
+    for v in variants:
+        ovals = list(v.get("option_values") or [])
+        while len(ovals) < len(option_names):
+            ovals.append("")
+        row = []
+        for oi in range(len(option_names)):
+            raw = ovals[oi]
+            val = raw.strip() if isinstance(raw, str) else (str(raw) if raw else "")
+            row.append(val or "Default")
+        rows.append(row)
+
+    seen: dict[tuple[str, ...], int] = {}
+    for i, row in enumerate(rows):
+        key = tuple(row)
+        if key not in seen:
+            seen[key] = i
+            continue
+        label = _sku_label(variants[i].get("sku") or "", i)
+        # Prefer renaming the last option so earlier dimensions stay readable.
+        new_row = list(row)
+        last = new_row[-1]
+        if last in ("", "Default", "Default Title"):
+            new_row[-1] = label
+        else:
+            new_row[-1] = f"{last} ({label})"
+        # Extremely rare: still colliding after rename
+        guard = 0
+        while tuple(new_row) in seen and guard < 5:
+            new_row[-1] = f"{new_row[-1]}-{guard}"
+            guard += 1
+        rows[i] = new_row
+        seen[tuple(new_row)] = i
+
+    return option_names, rows
+
+
 # Motox theme / Metafields Manager (zie motox_ebihr_missing_ymm_imports)
 META_NS = "global"
 META_FITS_ON = "fits_on"
@@ -44,33 +107,25 @@ class MotoxAdmin:
         if not (group.get("images") or []):
             return None, "no_image"
 
-        option_names = list(group.get("option_names") or [])
-        # Shopify requires at least Title option if no options
-        if not option_names:
-            option_names = ["Title"]
-            for v in variants:
-                v["option_values"] = ["Default Title"]
-
-        # Collect option values per option
+        option_names, value_rows = _unique_variant_option_rows(group)
+        # Collect option values per option (post-uniquify)
         product_options = []
         for oi, name in enumerate(option_names):
             vals = []
-            seen = set()
-            for v in variants:
-                ovals = v.get("option_values") or []
-                val = (ovals[oi] if oi < len(ovals) else "") or "Default"
+            seen: set[str] = set()
+            for row in value_rows:
+                val = row[oi]
                 if val not in seen:
                     seen.add(val)
                     vals.append({"name": val})
             product_options.append({"name": name, "values": vals or [{"name": "Default"}]})
 
         set_variants = []
-        for v in variants:
-            ovals = v.get("option_values") or []
-            option_values = []
-            for oi, name in enumerate(option_names):
-                val = (ovals[oi] if oi < len(ovals) else "") or "Default"
-                option_values.append({"optionName": name, "name": val})
+        for v, row in zip(variants, value_rows):
+            option_values = [
+                {"optionName": name, "name": row[oi]}
+                for oi, name in enumerate(option_names)
+            ]
             price = (v.get("price") or "").strip() or "0.00"
             inv_policy = (v.get("inventory_policy") or "continue").upper()
             if inv_policy not in ("CONTINUE", "DENY"):
@@ -173,6 +228,45 @@ class MotoxAdmin:
         variants = [
             {"id": f"gid://shopify/ProductVariant/{vid}", "price": price}
             for vid, price in variant_id_prices
+        ]
+        body = self.gql(
+            q,
+            {
+                "productId": f"gid://shopify/Product/{product_id}",
+                "variants": variants,
+            },
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        payload = ((body.get("data") or {}).get("productVariantsBulkUpdate")) or {}
+        uerr = payload.get("userErrors") or []
+        if uerr:
+            return str(uerr)[:300]
+        return ""
+
+    def update_variant_barcodes(
+        self,
+        product_id: str,
+        variant_id_barcodes: list[tuple[str, str]],
+        *,
+        dry_run: bool = False,
+    ) -> str:
+        """variant_id_barcodes: list of (variant_numeric_id, barcode). Returns error or ''."""
+        if not variant_id_barcodes:
+            return ""
+        if dry_run:
+            return ""
+        q = """
+        mutation MotoxVariantsBulkBarcode($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            productVariants { id }
+            userErrors { field message }
+          }
+        }
+        """
+        variants = [
+            {"id": f"gid://shopify/ProductVariant/{vid}", "barcode": barcode}
+            for vid, barcode in variant_id_barcodes
         ]
         body = self.gql(
             q,

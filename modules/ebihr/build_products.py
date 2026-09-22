@@ -600,11 +600,26 @@ def _group_key(product: dict) -> str:
 
 
 def _unique_option_names(variants: list[dict]) -> list[str]:
+    """
+    Option axes for a product group.
+
+    Keep a name when values differ across variants, OR when it is only present
+    on some siblings (others empty). Dropping those axes left multi-SKU groups
+    with no options → Shopify Title/Default Title collisions on create.
+    """
     unique: dict[str, set[str]] = {}
+    present: dict[str, int] = {}
     for var in variants:
-        for name, val in _variation_attrs(var).items():
+        attrs = _variation_attrs(var)
+        for name, val in attrs.items():
             unique.setdefault(name, set()).add(val)
-    names = [n for n, vals in unique.items() if len(vals) > 1]
+            present[name] = present.get(name, 0) + 1
+    n = len(variants)
+    names = [
+        name
+        for name, vals in unique.items()
+        if len(vals) > 1 or (n > 1 and 0 < present.get(name, 0) < n)
+    ]
     for color_key in ("Kleur", "Kleuren", "Color", "Colour"):
         if color_key in names:
             names.insert(0, names.pop(names.index(color_key)))
