@@ -127,6 +127,7 @@ Volgorde, commando’s, delta vs. volledige catalogus en `export_delta_app_impor
 * **Tests:** `python -m pytest tests/`
 * **Lint/format:** `ruff check .` en `ruff format .` (config: `pyproject.toml`).
 * **CI:** GitHub Actions (`.github/workflows/ci.yml`) op push/PR: ruff, `compileall`, pytest (Python 3.10 en 3.12).
+* **Workflow-namen:** jobs voor alleen ktm-shop.nl heten `ktm_…`, jobs voor beide shops `shops_…`, Motox-only blijft `motox_…`. Oud → nieuw: **`docs/workflow-namen.md`**.
 
 ### Foutopsporing `main.py` (ETL)
 

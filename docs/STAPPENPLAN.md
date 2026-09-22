@@ -107,7 +107,7 @@ python3 -u scripts/export_product_metafields.py --brand wp
 Twee sporen:
 
 1. **Fitment:** XML → `canonical_product_fits_on` → push naar Shopify (`fits_on` JSON + platte velden + `ymm_summary`).
-2. **Catalogus:** GitHub **Job worker** / `shopify_catalog_mirror` → `shopify_products` / `shopify_variants` / `shopify_eta` — **geen** YMM uit Shopify-spiegel.
+2. **Catalogus:** GitHub **ktm_job_worker** / `shopify_catalog_mirror` → `shopify_products` / `shopify_variants` / `shopify_eta` — **geen** YMM uit Shopify-spiegel.
 
 **Volledige handleiding** (diff/full push, GitHub, spook-producten, fouten): [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md).
 
@@ -135,9 +135,9 @@ Product staat in Supabase maar **niet** in Shopify → oude `shopify_product_id`
 
 | Workflow | Gebruik |
 |----------|---------|
-| **Job worker** | Catalog mirror (nacht) |
-| **YMM delivery** | Wekelijkse **diff**-push |
-| **YMM push to Shopify** | Handmatig: sync (`run_xml_sync`) en/of push (`full_push` voor hele catalogus) |
+| **ktm_job_worker** | Catalog mirror (nacht) |
+| **ktm_ymm_delivery** | Wekelijkse **diff**-push |
+| **ktm_ymm_push** | Handmatig: sync (`run_xml_sync`) en/of push (`full_push` voor hele catalogus) |
 
 Export-CSV (hieronder) blijft optionele backup.
 
@@ -191,8 +191,8 @@ python3 scripts/shopify_sync_from_pricelist_csv.py
 
 | Wat | Waar |
 |-----|------|
-| Shopify catalogus → Supabase (’s nachts) | GitHub Actions **Job worker** (producten/varianten/ETA) |
-| YMM diff-push naar Shopify (wekelijks) | GitHub **YMM delivery** |
+| Shopify catalogus → Supabase (’s nachts) | GitHub Actions **ktm_job_worker** (producten/varianten/ETA) |
+| YMM diff-push naar Shopify (wekelijks) | GitHub **ktm_ymm_delivery** |
 | XML → canonical + push | [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md) |
 
 Stap 4 CSV-export is **backup**; YMM-app-import (stap 5) blijft apart.

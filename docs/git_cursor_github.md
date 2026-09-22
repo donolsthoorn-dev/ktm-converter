@@ -102,7 +102,7 @@ git remote set-url origin https://github.com/donolsthoorn-dev/ktm-converter.git
 
 ## Job-worker workflow
 
-Het actieve bestand staat in **`.github/workflows/job-worker.yml`** (na SSH-setup kun je dat gewoon pushen). In `docs/github-actions-job-worker.yml` staat alleen een korte verwijzing.
+Het actieve bestand staat in **`.github/workflows/ktm_job_worker.yml`** (na SSH-setup kun je dat gewoon pushen). In `docs/github-actions-job-worker.yml` staat alleen een korte verwijzing. Oude en nieuwe workflow-namen: **`docs/workflow-namen.md`**.
 
 ---
 

@@ -659,7 +659,7 @@ def main() -> int:
     headers = _headers()
     sess = requests.Session()
     sess.trust_env = False
-    workflow_file = os.environ.get("WORKFLOW_FILE_NAME", "price_eta_status_sync.yml").strip()
+    workflow_file = os.environ.get("WORKFLOW_FILE_NAME", "ktm_price_eta_status_sync.yml").strip()
     github_run_id_raw = (os.environ.get("GITHUB_RUN_ID") or "").strip()
     github_run_id: int | None = None
     if github_run_id_raw.isdigit():

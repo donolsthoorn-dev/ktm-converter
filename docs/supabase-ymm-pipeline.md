@@ -7,7 +7,7 @@
 | **Catalogus** | Shopify API | `shopify_products`, `shopify_variants`, `shopify_eta` | Prijzen, ETA, customs, staging, SKU→product_id |
 | **Fitment (YMM)** | CBEXPDN XML | `canonical_product_fits_on` | Waarheid voor `fits_on`; push naar Shopify |
 
-De **nachtelijke catalog mirror** (`shopify_catalog_mirror` in `job-worker.yml`) blijft voor producten/varianten/prijzen/ETA.
+De **nachtelijke catalog mirror** (`shopify_catalog_mirror` in `ktm_job_worker.yml`) blijft voor producten/varianten/prijzen/ETA.
 
 **Standaard vult de mirror geen YMM meer** (`shopify_ymm` uit Shopify is uit). Optioneel legacy: `SHOPIFY_MIRROR_SYNC_FITS_ON=1`.
 
@@ -70,7 +70,7 @@ python3 scripts/supabase_job_worker.py
 # herhaal worker tot: Geen queued jobs.
 ```
 
-Of GitHub: **Job worker** → Run workflow.
+Of GitHub: **ktm_job_worker** → Run workflow.
 
 ### 2) XML → canonical + projection
 
@@ -170,13 +170,13 @@ Optioneel later: oude `shopify_products`-spoken handmatig opruimen (niet verplic
 
 | Workflow | Wat | Wanneer |
 |----------|-----|---------|
-| **Job worker** | `shopify_catalog_mirror` | Nachtelijk / handmatig — catalogus spiegelen |
-| **YMM delivery** | `shopify_ymm_push_diff_from_supabase` | Wekelijks diff-push (limit default 500) |
-| **YMM push to Shopify** | sync +/of push, optioneel `full_push` | Handmatig |
+| **ktm_job_worker** | `shopify_catalog_mirror` | Nachtelijk / handmatig — catalogus spiegelen |
+| **ktm_ymm_delivery** | `shopify_ymm_push_diff_from_supabase` | Wekelijks diff-push (limit default 500) |
+| **ktm_ymm_push** | sync +/of push, optioneel `full_push` | Handmatig |
 
-### YMM delivery (alleen diff-push)
+### ktm_ymm_delivery (alleen diff-push)
 
-**Actions → YMM delivery (Supabase → Shopify)**
+**Actions → ktm_ymm_delivery**
 
 | Input | Waarde |
 |-------|--------|
@@ -186,7 +186,7 @@ Optioneel later: oude `shopify_products`-spoken handmatig opruimen (niet verplic
 
 ≈ `--push-only --write` (geen XML-sync).
 
-### YMM push to Shopify (handmatig)
+### ktm_ymm_push (handmatig)
 
 | Input | Sync | Push | Gebruik |
 |-------|------|------|---------|

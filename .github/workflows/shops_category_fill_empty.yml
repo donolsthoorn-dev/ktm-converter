@@ -10,7 +10,7 @@
 #
 # Schedule 03:45 UTC ≈ 05:45 NL (zomer) / 04:45 (winter).
 
-name: shopify_category_fill_empty
+name: shops_category_fill_empty
 
 on:
   schedule:

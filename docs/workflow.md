@@ -154,6 +154,6 @@ Eerste keer / volledige resync: zonder delta-flags; zie `docs/metafields_manager
 
 ## 11. GitHub Actions: nachtelijke Supabase-job
 
-Los van FTP/`main.py`: workflow **Job worker** (`.github/workflows/job-worker.yml`) kopieert ’s nachts Shopify → Supabase en ververst de YMM-projectie. **Geen** volledige YMM-backfill naar Shopify in die run.
+Los van FTP/`main.py`: workflow **ktm_job_worker** (`.github/workflows/ktm_job_worker.yml`) kopieert ’s nachts Shopify → Supabase en ververst de YMM-projectie. **Geen** volledige YMM-backfill naar Shopify in die run.
 
 Handmatig backfill (kleine batches): **`docs/supabase-ymm-pipeline.md`**. Rode run in Actions → logs + tabel `jobs` in Supabase (`error_message`).

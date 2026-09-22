@@ -1,7 +1,7 @@
 # Nightly: Shopify catalog -> Supabase (+ optional YMM projection after migration 020).
 # See docs/supabase-ymm-pipeline.md
 
-name: Job worker
+name: ktm_job_worker
 
 on:
   schedule:

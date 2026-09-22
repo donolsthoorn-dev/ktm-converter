@@ -5,10 +5,10 @@
 #   optioneel SHOPIFY_ADMIN_API_VERSION
 # Secrets Motox (optioneel): SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
 #
-# Handmatig starten (Actions → shopify_category_reclassify → Run workflow).
+# Handmatig starten (Actions → shops_category_reclassify → Run workflow).
 # Duurt vaak 1–3 uur per shop; sleep=0.5s om Admin-druk te beperken.
 
-name: shopify_category_reclassify
+name: shops_category_reclassify
 
 on:
   workflow_dispatch:

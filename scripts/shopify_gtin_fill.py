@@ -4,7 +4,7 @@ Vul lege Shopify-variantbarcodes (GTIN) vanuit de KTM/HSQ/WP prijs-CSV's.
 
 Alleen fill-if-empty: bestaande barcodes worden niet overschreven.
 Eerste run is de inhaal over de hele catalogus; daarna blijft dit klein.
-Doorlopende GTINs voor prijs/ETA-delta's gaan via price_eta_status_sync.
+Doorlopende GTINs voor prijs/ETA-delta's gaan via ktm_price_eta_status_sync.
 
   python3 scripts/shopify_gtin_fill.py
   python3 scripts/shopify_gtin_fill.py --yes

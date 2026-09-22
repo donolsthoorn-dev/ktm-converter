@@ -1,8 +1,8 @@
 # Eerste inhaal + nachtelijke fill-if-empty voor variant-GTIN (barcode) uit prijs-CSV.
-# Na de inhaal vult price_eta_status_sync dezelfde GTINs mee op de prijs/ETA-delta.
+# Na de inhaal vult ktm_price_eta_status_sync dezelfde GTINs mee op de prijs/ETA-delta.
 # Trigger: Supabase 05:30 NL (migratie 033) en/of GitHub schedule.
 
-name: shopify_gtin_fill
+name: ktm_shopify_gtin_fill
 
 on:
   schedule:

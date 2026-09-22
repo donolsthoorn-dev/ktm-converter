@@ -2,7 +2,7 @@
 # Triggers: GitHub schedule (~04:30 NL winter) of workflow_dispatch / Supabase dispatch (032).
 # Zie docs/supabase-scheduler.md voor NL-planning via Supabase-cron.
 
-name: shopify_publish_sellable_active_products
+name: ktm_shopify_publish_sellable_active_products
 
 on:
   schedule:

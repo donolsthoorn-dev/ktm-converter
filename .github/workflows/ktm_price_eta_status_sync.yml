@@ -6,10 +6,10 @@
 #
 # Secrets staging: SUPABASE_*, KTM_* (FTP). Secrets apply: + SHOPIFY_*.
 #
-# Spiegel (shopify_*) moet actueel zijn → draai job-worker vóór staging als je tegen de laatste Shopify-stand vergelijkt.
+# Spiegel (shopify_*) moet actueel zijn → draai ktm_job_worker vóór staging als je tegen de laatste Shopify-stand vergelijkt.
 
-name: price_eta_status_sync
-run-name: price_eta_status_sync (mode=${{ github.event.inputs.mode || 'apply' }}, scope=${{ github.event.inputs.apply_scope || 'price_eta' }})
+name: ktm_price_eta_status_sync
+run-name: ktm_price_eta_status_sync (mode=${{ github.event.inputs.mode || 'apply' }}, scope=${{ github.event.inputs.apply_scope || 'price_eta' }})
 concurrency:
   group: price-eta-status-sync-${{ github.event.inputs.mode || 'apply' }}-${{ github.event.inputs.apply_scope || 'price_eta' }}
   cancel-in-progress: false
@@ -37,7 +37,7 @@ on:
         required: false
         default: ""
   # workflow_run:
-  #   workflows: [Job worker]
+  #   workflows: [ktm_job_worker]
   #   types: [completed]
 
 jobs:
@@ -54,7 +54,7 @@ jobs:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}
       APPLY_SCOPE: ${{ github.event.inputs.apply_scope || 'price_eta' }}
       DISPATCH_LOG_ID: ${{ github.event.inputs.dispatch_log_id || '' }}
-      WORKFLOW_FILE_NAME: price_eta_status_sync.yml
+      WORKFLOW_FILE_NAME: ktm_price_eta_status_sync.yml
       SKIP_STAGING_REBUILD: "0"
       SKIP_REASON: ""
       SKIP_REASON_DETAIL: ""
@@ -72,7 +72,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          WORKFLOW_FILE: price_eta_status_sync.yml
+          WORKFLOW_FILE: ktm_price_eta_status_sync.yml
           CURRENT_RUN_ID: ${{ github.run_id }}
         run: |
           python - <<'PY'
@@ -130,6 +130,7 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import urllib.error
           import urllib.request
 
           token = (os.environ.get("GITHUB_TOKEN") or "").strip()
@@ -139,25 +140,36 @@ jobs:
               print("Customs-guard mist context; ga door zonder skip.")
               raise SystemExit(0)
 
-          url = f"https://api.github.com/repos/{repo}/actions/workflows/customs_missing_fill.yml/runs?status=in_progress&event=workflow_dispatch&per_page=100"
-          req = urllib.request.Request(
-              url,
-              headers={
-                  "Authorization": f"Bearer {token}",
-                  "Accept": "application/vnd.github+json",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              },
+          # Nieuwe bestandsnaam, plus de oude zolang een run van vóór de hernoeming nog loopt.
+          workflow_files = (
+              "ktm_customs_missing_fill.yml",
+              "customs_missing_fill.yml",
           )
-          with urllib.request.urlopen(req, timeout=20) as resp:
-              body = json.loads(resp.read().decode("utf-8", "replace"))
-
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
           blocking = []
-          for run in body.get("workflow_runs") or []:
-              rid = int(run.get("id") or 0)
-              if rid == current_run_id:
-                  continue
-              title = str(run.get("display_title") or "").strip()
-              blocking.append((rid, title))
+          for workflow_file in workflow_files:
+              url = (
+                  f"https://api.github.com/repos/{repo}/actions/workflows/"
+                  f"{workflow_file}/runs?status=in_progress&event=workflow_dispatch&per_page=100"
+              )
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      body = json.loads(resp.read().decode("utf-8", "replace"))
+              except urllib.error.HTTPError as exc:
+                  if exc.code == 404:
+                      continue
+                  raise
+              for run in body.get("workflow_runs") or []:
+                  rid = int(run.get("id") or 0)
+                  if rid == current_run_id:
+                      continue
+                  title = str(run.get("display_title") or "").strip()
+                  blocking.append((rid, title))
 
           if blocking:
               print("Customs-run actief; deze apply-run wordt overgeslagen.")
@@ -182,7 +194,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          WORKFLOW_FILE: price_eta_status_sync.yml
+          WORKFLOW_FILE: ktm_price_eta_status_sync.yml
           GITHUB_RUN_ID: ${{ github.run_id }}
           APPLY_SCOPE: ${{ env.APPLY_SCOPE }}
           DISPATCH_LOG_ID: ${{ env.DISPATCH_LOG_ID }}

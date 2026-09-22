@@ -1,8 +1,8 @@
 # Supabase canonical YMM → Shopify metafields (handmatige trigger).
 # Na lokale --sync-only: full_push=true, run_xml_sync=false, handles leeg = hele catalogus.
-# Secrets: SUPABASE_*, SHOPIFY_* (zelfde als job-worker.yml)
+# Secrets: SUPABASE_*, SHOPIFY_* (zelfde als ktm_job_worker.yml)
 
-name: YMM push to Shopify
+name: ktm_ymm_push
 
 on:
   workflow_dispatch:

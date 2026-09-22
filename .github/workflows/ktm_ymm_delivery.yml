@@ -1,8 +1,8 @@
 # Periodiek: push gewijzigde canonical YMM naar Shopify (diff op content_hash).
 # Vereist: migratie 028 + eerst canonical_ymm_sync_to_supabase (na nieuwe XML).
-# Catalog mirror (producten/prijzen/ETA) blijft in job-worker.yml.
+# Catalog mirror (producten/prijzen/ETA) blijft in ktm_job_worker.yml.
 
-name: YMM delivery (Supabase → Shopify)
+name: ktm_ymm_delivery
 
 on:
   schedule:

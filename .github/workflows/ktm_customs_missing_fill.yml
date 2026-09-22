@@ -1,7 +1,7 @@
 # Nachtelijke aanvul-run voor missende customs-data.
 # Trigger via Supabase scheduler (workflow_dispatch).
 
-name: customs_missing_fill
+name: ktm_customs_missing_fill
 
 on:
   workflow_dispatch:

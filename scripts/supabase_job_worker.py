@@ -7,7 +7,7 @@ Bedoeld voor GitHub Actions (schedule / workflow_dispatch). Vereist o.a.:
   Supabase-URL en service role (``load_project_env()``: ``.env``,
   ``converter/.env``, ``converter/.env.local``; ``NEXT_PUBLIC_SUPABASE_URL`` → ``SUPABASE_URL``)
   Voor job_type shopify_catalog_mirror / shopify_ymm_backfill_*: SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
-  (zie workflow job-worker.yml)
+  (zie workflow ktm_job_worker.yml)
 
 Gebruik (vanaf projectroot): secrets staan in ``.env`` / ``converter/.env.local``, of tijdelijk:
 

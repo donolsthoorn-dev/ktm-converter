@@ -1,4 +1,4 @@
-name: shopify_auto_deactivate_invalid_products
+name: ktm_shopify_auto_deactivate_invalid_products
 
 on:
   workflow_dispatch:

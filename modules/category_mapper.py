@@ -11,8 +11,8 @@ Generieke types (Partstream, Archive, PowerParts, Lifestyle, …) forceren
 géén type-hit; die gaan door naar titel/keywords.
 
 shop=\"motox\" laadt modules.category_mapper_motox (Nederlandse Types) als overlay
-vóór de gedeelde KTM TYPE_EXACT. Jobs: shopify_category_fill_empty /
-shopify_category_reclassify met --shop motox.
+vóór de gedeelde KTM TYPE_EXACT. Jobs: shops_category_fill_empty /
+shops_category_reclassify met --shop motox.
 
 Zie canvas `shopify-category-mapping` voor het overzicht.
 """

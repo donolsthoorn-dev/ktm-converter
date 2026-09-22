@@ -3,7 +3,7 @@
 # Trigger: Supabase 07:30–22:30 NL (migratie 034) of handmatige workflow_dispatch.
 # Geen GitHub schedule (onbetrouwbaar op de minuut).
 
-name: motox_synkro_clone_missing
+name: shops_synkro_clone_missing
 
 on:
   workflow_dispatch:
