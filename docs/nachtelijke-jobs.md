@@ -1,10 +1,10 @@
-# Nachtelijke jobs
+# Automatische jobs
 
-Wat er elke nacht vanzelf gebeurt. De tijden zijn Nederlandse zomertijd. Duurt een vorige job van dezelfde shop nog, dan wacht de volgende.
+Wat er elke dag vanzelf gebeurt.
 
 ## ktm-shop.nl
 
-### 22:45 — Webshopteksten
+### 22:45 — SEO teksten
 
 Schrijft de titel, de korte Google-tekst en de alt-tekst van de foto. Eerst producten die te koop zijn en op voorraad liggen, daarna de rest. Maximaal 4000 per nacht.
 
@@ -46,13 +46,13 @@ Werkt prijs en levertijd bij vanuit de prijslijst. De prijs is inclusief btw. Op
 
 Dezelfde controle als om 00:15. Ook om 12:15 en 18:15.
 
-### Maandag 07:15 — Passendheid
+### Maandag 07:15 — Fits-on
 
 Werkt bij op welke motor een product past, als dat veranderd is. Maximaal 500 producten.
 
 ## Motox
 
-### 21:15 — Webshopteksten
+### 21:15 — SEO teksten
 
 Schrijft de titel, de korte Google-tekst en de alt-tekst van de foto. Eerst producten die te koop zijn en op voorraad liggen, daarna de rest. Maximaal 4000 per nacht.
 
@@ -77,10 +77,6 @@ Geeft een categorie aan producten die er nog geen hebben. Een categorie die al i
 ### 06:00 — Producten zonder foto
 
 Verbergt producten die te koop staan maar geen foto hebben.
-
-### 07:00 — Dubbele producten
-
-Verwijdert een dubbel product waarvan het adres op `-1` eindigt. Alleen als het origineel er ook is en ze hetzelfde artikelnummer delen. Maximaal 100 per nacht. De volgende nacht gaat hij weer vooraan verder.
 
 ### 07:15 — Barcodes
 

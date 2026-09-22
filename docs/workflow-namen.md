@@ -34,7 +34,6 @@ Python-scripts houden hun bestaande bestandsnaam. Alleen de workflowbestanden zi
 - `motox_ebihr_seo.yml`
 - `motox_ebihr_sync.yml`
 - `motox_deactivate_products_without_image.yml`
-- `motox_delete_handle_dupes.yml` — nachtelijke `-1`-handles, max 100
 - `motox_shopify_gtin_fill.yml` — lege barcode uit e-bihr `BarCode`
 - `motox_oem_price_sync.yml` — eenmalige prijsiinhaal, alleen handmatig
 

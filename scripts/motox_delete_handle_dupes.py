@@ -12,7 +12,7 @@ Standaard dry-run, en standaard maar 5 producten. Eerste proef:
 
 Een volgende run hervat automatisch na de laatst verwijderde handle, zodat
 al weggegooide duplicaten niet opnieuw bij Shopify worden opgevraagd.
-De nachtelijke job gebruikt --from-start en schuift die cursor niet op.
+Er is geen nachtelijke job meer; de POS-kopie van 2024-09-13 is opgeruimd.
 
   python3 scripts/motox_delete_handle_dupes.py --apply --limit 200
   python3 scripts/motox_delete_handle_dupes.py --apply --limit 0
