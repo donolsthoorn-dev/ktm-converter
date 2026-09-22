@@ -2,7 +2,7 @@
 #
 # Elke nacht eerst actieve producten mét voorraad, daarna de rest.
 # 4000 producten blijven binnen de 6 uur limiet van GitHub Actions.
-# Een volgende run slaat producten over die titel, omschrijving en alt al hebben.
+# Een volgende run slaat complete teksten over. 'Past op' en alleen-de-naam worden opnieuw geschreven.
 #
 # Secrets:
 #   SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN

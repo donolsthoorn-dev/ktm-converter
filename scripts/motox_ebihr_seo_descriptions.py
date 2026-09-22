@@ -12,8 +12,10 @@ daarna de rest. in-stock en rest beperken tot één groep.
 
 OEM-merken (KTM, Husqvarna, GasGas, WP) worden overgeslagen.
 Een product wordt overgeslagen als titel, omschrijving én alt-teksten al
-gevuld zijn, tenzij --overwrite. Ontbreekt alleen titel of alt, dan geen
-nieuwe modelaanroep.
+gevuld zijn, tenzij --overwrite. Een omschrijving met "Past op", of een tekst
+die alleen de productnaam herhaalt, wordt opnieuw geschreven. Passendheid
+hoort niet in de SEO-tekst. Ontbreekt alleen titel of alt, dan geen nieuwe
+modelaanroep.
 
 API-sleutel (niet committen), in .env.motox of de omgeving:
   OPENAI_API_KEY=...
@@ -55,7 +57,7 @@ from modules.motox_shopify_cache import load_motox_env  # noqa: E402
 from modules.seo_completeness import SEO_DESC_MAX, SEO_TITLE_MAX, collapse_ws, strip_html  # noqa: E402
 
 _REQUEST_TIMEOUT = (15, 60)
-PROMPT_VERSION = "6"
+PROMPT_VERSION = "7"
 CACHE_PATH = ROOT / "cache" / "motox" / "ebihr_seo_descriptions.json"
 OEM_VENDORS = frozenset({"ktm", "husqvarna", "gasgas", "gas gas", "wp"})
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
@@ -64,6 +66,7 @@ _ENGLISH_LEFT = re.compile(
     r"(?i)\b(?:sheath|crystall|crystal|traditional|composed|handlebar|printed|"
     r"thickness|material|polyurethane|inside|made)\b|\bback-"
 )
+_PAST_OP = re.compile(r"(?i)\bpast op\b")
 # Kledingmaat (XL, maat 42). Een maat mét eenheid (24,5 cm, 0,5 mm) blijft staan.
 _SIZE = re.compile(
     r"(?i)(?:\s*[-–—,/|]\s*)?\b(?:size|maat|taille|pointure)\s*[:=]?\s*"
@@ -88,7 +91,7 @@ Regels:
 - Geen prijs, geen verzending, geen superlatieven.
 - Gebruik "origineel" alleen als de bron dat letterlijk over dit artikel zegt.
 - Geen HTML. Zet geen aanhalingstekens om het antwoord.
-- Zet zelf geen fitmentzin ("Past op …") in de tekst; die plakken wij erachter.
+- Zet geen "Past op" in de tekst. Passendheid staat apart en kan per jaar veranderen.
 Antwoord alleen met die volledige tekst.
 
 Vormvoorbeeld (kopieer deze feiten niet, tenzij ze in de input staan):
@@ -252,25 +255,6 @@ def propose_seo_title(title: str, vendor: str) -> str:
     while words and words[-1].lower().strip(".,;") in _DANGLING:
         words.pop()
     return " ".join(words)
-
-
-def fitment_clause(ymm: str) -> str:
-    """Volledige 'Past op …'-zin. Bij meerdere merken alleen het eerste, onverkort."""
-    text = collapse_ws(ymm)
-    if not text:
-        return ""
-    clause = f"Past op {text}."
-    if len(clause) <= 90:
-        return clause
-    first = collapse_ws(text.split("|")[0])
-    if "|" in text:
-        shorter = f"Past op {first} en andere merken."
-        if len(shorter) <= 90:
-            return shorter
-    one = f"Past op {first}."
-    if len(one) <= 90:
-        return one
-    return ""
 
 
 def _norm_words(text: str) -> set[str]:
@@ -437,7 +421,7 @@ def _user_prompt(*, title: str, vendor: str, product_type: str, body: str, budge
     )
 
 
-def _fallback_description(title: str, vendor: str, product_type: str, clause: str) -> str:
+def _fallback_description(title: str, vendor: str, product_type: str) -> str:
     options = []
     bare = strip_sizes(title)
     if bare:
@@ -448,11 +432,9 @@ def _fallback_description(title: str, vendor: str, product_type: str, clause: st
     if vendor and vendor not in options:
         options.append(vendor)
     for intro in options:
-        text = compose_description(intro, clause)
-        if text and not mentions_size(text):
+        text = compose_description(intro, "")
+        if text and not mentions_size(text) and not _PAST_OP.search(text):
             return text
-    if clause and len(clause) <= SEO_DESC_MAX and not _incomplete(clause):
-        return clause
     return ""
 
 
@@ -467,13 +449,12 @@ def propose_description(
     call,
 ) -> tuple[str, str]:
     """Return (description, bron) where bron is ai of template."""
+    del ymm  # passendheid hoort niet in de SEO-tekst
     plain = collapse_ws(_ABBREV.sub(" ", strip_sizes(strip_html(body_html)[:700])))
     shown_title = collapse_ws(_ABBREV.sub(" ", strip_sizes(title)))
-    clause = fitment_clause(ymm)
-    tail = f". {clause}" if clause else "."
-    budget = max(SEO_DESC_MAX - len(tail), 0)
-    source_blob = " ".join([title, vendor, product_type, plain, ymm])
-    template = _fallback_description(title, vendor, product_type, clause)
+    budget = SEO_DESC_MAX - 1
+    source_blob = " ".join([title, vendor, product_type, plain])
+    template = _fallback_description(title, vendor, product_type)
 
     if budget < 24:
         return template, "template"
@@ -513,15 +494,13 @@ def propose_description(
                 + ", ".join(copied)
             )
             continue
+        if _PAST_OP.search(intro):
+            last_err = "geen 'Past op' in de tekst"
+            continue
         body_has_facts = len(plain) > 40
-        use_clause = clause
-        fit_limit = budget
-        if len(intro) > budget and len(intro) <= SEO_DESC_MAX:
-            use_clause = ""
-            fit_limit = SEO_DESC_MAX
-        if len(intro) > fit_limit or (body_has_facts and _is_title_echo(intro, shown_title)):
-            fitted = _without_title_echo(intro, fit_limit, shown_title)
-            if fitted and not _is_title_echo(fitted, shown_title):
+        if len(intro) > budget or (body_has_facts and _is_title_echo(intro, shown_title)):
+            fitted = _without_title_echo(intro, budget, shown_title)
+            if fitted and not _is_title_echo(fitted, shown_title) and not _PAST_OP.search(fitted):
                 intro = fitted.rstrip(".")
             elif body_has_facts:
                 last_err = (
@@ -530,10 +509,14 @@ def propose_description(
                     "Herhaal niet alleen de productnaam."
                 )
                 continue
-        text = compose_description(intro, use_clause)
-        if not text and len(intro) + 1 <= SEO_DESC_MAX:
-            text = compose_description(intro, "")
-        if text and len(text) <= SEO_DESC_MAX and not mentions_size(text) and not _ENGLISH_LEFT.search(text):
+        text = compose_description(intro, "")
+        if (
+            text
+            and len(text) <= SEO_DESC_MAX
+            and not mentions_size(text)
+            and not _ENGLISH_LEFT.search(text)
+            and not _PAST_OP.search(text)
+        ):
             return text, "ai"
         last_err = "de zin past niet in zijn geheel"
     if last_err:
@@ -588,15 +571,17 @@ def _thin_description(row: dict) -> bool:
     return len(unused) >= 3
 
 
+def _needs_new_description(row: dict) -> bool:
+    desc = row.get("seo_description") or ""
+    if not desc or _PAST_OP.search(desc):
+        return True
+    return _thin_description(row)
+
+
 def _needs_seo(row: dict, overwrite: bool) -> bool:
     if overwrite:
         return True
-    return (
-        not row["seo_title"]
-        or not row["seo_description"]
-        or _thin_description(row)
-        or _missing_alt(row)
-    )
+    return not row["seo_title"] or _needs_new_description(row) or _missing_alt(row)
 
 
 def iter_products(
@@ -756,12 +741,11 @@ def main() -> int:
         else:
             seo_title = product["seo_title"]
 
-        if product["seo_description"] and not args.overwrite and not _thin_description(product):
+        if product["seo_description"] and not args.overwrite and not _needs_new_description(product):
             description = product["seo_description"]
             bron = "bestaand"
         else:
             plain = strip_html(product["body_html"])[:700]
-            clause = fitment_clause(product["ymm"])
             payload = {
                 "v": PROMPT_VERSION,
                 "model": model,
@@ -769,7 +753,6 @@ def main() -> int:
                 "vendor": product["vendor"],
                 "type": product["type"],
                 "body": plain,
-                "fitment": clause,
             }
             digest = _source_hash(payload)
             cached = items.get(digest) or {}
