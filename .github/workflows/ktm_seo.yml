@@ -1,0 +1,106 @@
+# ktm-shop.nl: SEO-titel, meta-omschrijving en alt-tekst.
+#
+# Elke nacht eerst actieve producten mét voorraad, daarna de rest.
+# 4000 producten blijven binnen de 6 uur limiet van GitHub Actions.
+# Een volgende run slaat gevulde titel, omschrijving en alt over.
+# HOMNN en barcode worden niet aangeraakt.
+#
+# Deelt shopify-write-lock met de andere Shopify-jobs, dus deze wacht
+# als Motox-SEO of een prijssync nog schrijft.
+#
+# Secrets:
+#   SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
+#   optioneel SHOPIFY_ADMIN_API_VERSION
+#   OPENAI_API_KEY
+#   optioneel OPENAI_MODEL, OPENAI_BASE_URL
+#
+# Schedule: 20:45 UTC ≈ 22:45 NL (zomer) / 21:45 (winter).
+
+name: ktm_seo
+
+on:
+  schedule:
+    - cron: "45 20 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = schrijven naar ktm-shop.nl, false = dry-run"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      batch:
+        description: "priority = eerst voorraad, daarna de rest"
+        type: choice
+        options:
+          - priority
+          - in-stock
+          - rest
+        default: priority
+      limit:
+        description: "Max producten (0 = alle die nog leeg zijn)"
+        required: false
+        default: "20"
+
+jobs:
+  seo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'ktm-seo-dry' }}
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'false' }}
+      BATCH: ${{ github.event.inputs.batch || 'priority' }}
+      LIMIT: ${{ github.event_name == 'schedule' && '4000' || github.event.inputs.limit || '20' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check secrets
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for k in SHOPIFY_ACCESS_TOKEN SHOPIFY_SHOP_DOMAIN OPENAI_API_KEY; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Secret $k ontbreekt"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: SEO titel, omschrijving en alt
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        run: |
+          set -euo pipefail
+          ARGS=(--batch "${BATCH}" --limit "${LIMIT}")
+          if [[ "${APPLY}" == "true" ]]; then
+            ARGS+=(--apply)
+          fi
+          python3 scripts/ktm_seo.py "${ARGS[@]}"
+
+      - name: Upload CSV
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ktm-seo
+          path: output/ktm_seo_*.csv
+          if-no-files-found: ignore

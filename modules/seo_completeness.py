@@ -1,6 +1,8 @@
-"""Voorstellen voor SEO-titel, meta, alt-tekst en opschoning van productcopy.
+"""Voorstellen voor SEO-titel, alt-tekst en een template-fallback voor de meta.
 
-Alleen templates + regels (geen LLM). Bedoeld voor fill-if-empty nachtruns.
+De meta-omschrijving voor de dry-run komt uit het model (zelfde pad als Motox).
+Passendheid ("Past op") en HOMNN worden niet in de tekst gezet of uit de
+productcopy gehaald. Bedoeld voor fill-if-empty.
 """
 
 from __future__ import annotations
@@ -113,7 +115,7 @@ def propose_seo_description(
     v = collapse_ws(vendor) or "KTM"
     t = collapse_ws(title)
     lines = marketing_lines(strip_html(body_html))
-    ymm = collapse_ws(ymm_summary)
+    _ = ymm_summary  # passendheid hoort niet in de SEO-tekst
     bits = [f"Origineel {v}-onderdeel"]
     if lines:
         bits.append(lines[0])
@@ -121,8 +123,6 @@ def propose_seo_description(
             bits.append(lines[1])
     elif t and len(t) <= 80:
         bits.append(t)
-    if ymm:
-        bits.append(f"Past op {ymm}")
     text = ". ".join(b.rstrip(".") for b in bits if b)
     text = collapse_ws(text.replace("..", "."))
     if not text.endswith("."):
@@ -188,7 +188,6 @@ def build_proposal(
         title=title, vendor=vendor, body_html=body_html, ymm_summary=ymm_summary
     )
     alt = propose_image_alt(title, vendor)
-    body_stripped = propose_body_html_strip_homnn(body_html)
     src_bc = re.sub(r"\D+", "", source_barcode or "")
     cur_bc = (current_barcode or "").strip()
     change_barcode = bool(src_bc) and not cur_bc
@@ -197,11 +196,11 @@ def build_proposal(
         seo_title=seo_title,
         seo_description=seo_desc,
         image_alt=alt,
-        body_html_stripped=body_stripped,
+        body_html_stripped=None,
         change_seo_title=not (current_seo_title or "").strip(),
         change_seo_description=not (current_seo_description or "").strip(),
         change_image_alt=empty_alts,
-        change_body_homnn=body_stripped is not None,
+        change_body_homnn=False,
         change_barcode=change_barcode,
         proposed_barcode=src_bc if change_barcode else cur_bc,
     )
