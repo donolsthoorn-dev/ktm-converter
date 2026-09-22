@@ -57,7 +57,7 @@ from modules.motox_shopify_cache import load_motox_env  # noqa: E402
 from modules.seo_completeness import SEO_DESC_MAX, SEO_TITLE_MAX, collapse_ws, strip_html  # noqa: E402
 
 _REQUEST_TIMEOUT = (15, 60)
-PROMPT_VERSION = "7"
+PROMPT_VERSION = "8"
 CACHE_PATH = ROOT / "cache" / "motox" / "ebihr_seo_descriptions.json"
 OEM_VENDORS = frozenset({"ktm", "husqvarna", "gasgas", "gas gas", "wp"})
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
@@ -82,7 +82,9 @@ _DANGLING = frozenset(
 _SYSTEM = """Je schrijft het eerste deel van een Nederlandse SEO-meta-omschrijving voor een motorwinkel.
 Regels:
 - Alleen feiten uit de aangeleverde velden. Verzin geen materialen, jaren of compatibiliteit.
-- Zet die feiten in de eerste zin. Gebruik de productnaam niet als aparte openingszin.
+- Eén zin, korter dan het maximum. Noem alleen materiaal en bewerking van dit ene artikel.
+- Laat reclametekst over het hele assortiment weg. Herhaal geen artikelnummers uit de titel.
+- Gebruik de productnaam niet als aparte openingszin.
 - Vertaal de brontekst volledig naar het Nederlands. Laat geen Engelse woorden staan, behalve merknamen en type-aanduidingen uit de titel.
 - Geen kleding- of variantenmaat (S, M, L, XL, XXL, maat 42, size). Die wisselt per variant.
 - Technische maat die het artikel zelf is, zoals een cilinderdiameter in mm, mag wel.
@@ -414,10 +416,19 @@ def _call_model(
 def _user_prompt(*, title: str, vendor: str, product_type: str, body: str, budget: int) -> str:
     return (
         f"Maximum tekens voor jouw deel: {budget}\n"
+        "Eén zin. Alleen materiaal en bewerking. Geen assortimentstekst, geen artikelnummers uit de titel.\n"
         f"Merk: {vendor or '-'}\n"
         f"Titel: {title or '-'}\n"
         f"Type: {product_type or '-'}\n"
         f"Brontekst:\n{body or '(geen omschrijving)'}"
+    )
+
+
+def _shorten_prompt(text: str, budget: int) -> str:
+    return (
+        f"Kort deze tekst in tot één Nederlandse zin van maximaal {budget} tekens. "
+        "Behoud materiaal en bewerking. Geen superlatieven, geen Past op, geen afgekapt woord.\n\n"
+        f"{text}"
     )
 
 
@@ -462,6 +473,26 @@ def propose_description(
     user = _user_prompt(
         title=shown_title, vendor=vendor, product_type=product_type, body=plain, budget=budget
     )
+    body_has_facts = len(plain) > 40
+
+    def usable(raw: str) -> str:
+        intro = strip_sizes(_clean_model_text(raw)).rstrip(".")
+        if not intro or mentions_size(intro) or _ABBREV.search(intro) or _incomplete(intro):
+            return ""
+        if _invented_years(intro, source_blob) or _ENGLISH_LEFT.search(intro) or _PAST_OP.search(intro):
+            return ""
+        if body_has_facts and _is_title_echo(intro, shown_title):
+            return ""
+        if len(intro) > budget:
+            fitted = _without_title_echo(intro, budget, shown_title)
+            if not fitted or _is_title_echo(fitted, shown_title) or _PAST_OP.search(fitted):
+                return ""
+            intro = fitted.rstrip(".")
+        text = compose_description(intro, "")
+        if not text or len(text) > SEO_DESC_MAX or mentions_size(text) or _PAST_OP.search(text):
+            return ""
+        return text
+
     last_err = ""
     for _ in range(3):
         try:
@@ -471,54 +502,29 @@ def propose_description(
         except Exception as exc:
             print(f"AI-aanroep mislukt, template gebruikt: {exc}"[:240], flush=True)
             return template, "template"
-        intro = strip_sizes(_clean_model_text(raw))
-        if not intro:
-            last_err = "lege tekst"
-            continue
-        if mentions_size(intro):
-            last_err = "bevat een variantenmaat; laat maat weg"
-            continue
-        if _ABBREV.search(intro):
-            last_err = "bevat een afkorting; schrijf het voluit"
-            continue
-        if _incomplete(intro):
-            last_err = "zin is afgekapt; schrijf hem voluit"
-            continue
-        if _invented_years(intro, source_blob):
-            last_err = "jaartal dat niet in de bron staat"
-            continue
-        copied = sorted(set(_ENGLISH_LEFT.findall(intro)))
-        if copied:
-            last_err = (
-                "Engelse woorden overgenomen; vertaal volledig naar het Nederlands: "
-                + ", ".join(copied)
-            )
-            continue
-        if _PAST_OP.search(intro):
-            last_err = "geen 'Past op' in de tekst"
-            continue
-        body_has_facts = len(plain) > 40
-        if len(intro) > budget or (body_has_facts and _is_title_echo(intro, shown_title)):
-            fitted = _without_title_echo(intro, budget, shown_title)
-            if fitted and not _is_title_echo(fitted, shown_title) and not _PAST_OP.search(fitted):
-                intro = fitted.rstrip(".")
-            elif body_has_facts:
-                last_err = (
-                    f"te lang ({len(intro)} tekens, maximum is {budget}). "
-                    "Zet de feiten uit de brontekst in de eerste zin, korter dan het maximum. "
-                    "Herhaal niet alleen de productnaam."
-                )
-                continue
-        text = compose_description(intro, "")
-        if (
-            text
-            and len(text) <= SEO_DESC_MAX
-            and not mentions_size(text)
-            and not _ENGLISH_LEFT.search(text)
-            and not _PAST_OP.search(text)
-        ):
+        text = usable(raw)
+        if text:
             return text, "ai"
-        last_err = "de zin past niet in zijn geheel"
+        if body_has_facts and len(collapse_ws(raw)) > budget:
+            try:
+                short = usable(call(_shorten_prompt(collapse_ws(raw), budget)))
+            except SystemExit:
+                raise
+            except Exception as exc:
+                print(f"Inkorten mislukt: {exc}"[:240], flush=True)
+                short = ""
+            if short:
+                return short, "ai"
+        cleaned = strip_sizes(_clean_model_text(raw))
+        if len(cleaned) > budget:
+            last_err = (
+                f"te lang ({len(cleaned)} tekens, maximum is {budget}). "
+                "Eén kortere zin met alleen materiaal en bewerking."
+            )
+        elif body_has_facts and _is_title_echo(cleaned, shown_title):
+            last_err = "herhaal niet alleen de productnaam; noem materiaal of bewerking"
+        else:
+            last_err = "de zin past niet in zijn geheel"
     if last_err:
         print(f"  template ({last_err})", flush=True)
     return template, "template"
