@@ -2,6 +2,9 @@
 """
 Motox e-bihr sync: Bihr V3+VSE → Shopify create + image backfill + prices + fits_on.
 
+fits_on gaat naar nieuwe producten én naar bestaande producten waar de
+passendheid leeg is of afwijkt van de VSE-data van deze run.
+
   # Dry-run tegen bestaande raw:
   python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run
 
@@ -52,6 +55,7 @@ from modules.metafields_manager_export import (  # noqa: E402
     _ymm_summary,
 )
 from modules.motox_shopify_cache import (  # noqa: E402
+    _fits_on_hash,
     load_motox_indexes,
     refresh_motox_cache,
 )
@@ -166,6 +170,12 @@ def main() -> int:
     do_create = not args.prices_only and not args.images_only
     do_image_backfill = not args.prices_only and not args.create_only
     do_prices = not args.create_only and not args.images_only
+    do_fitment = (
+        not args.prices_only
+        and not args.images_only
+        and not args.create_only
+        and not args.skip_metafields
+    )
 
     dry_run = not args.apply or args.dry_run
     if args.apply and args.dry_run:
@@ -181,12 +191,13 @@ def main() -> int:
         raise SystemExit("Geen raw-dir. Gebruik --fetch of --raw-dir.")
 
     log.info(
-        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s",
+        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s fitment=%s",
         raw_dir,
         dry_run,
         do_create,
         do_image_backfill,
         do_prices,
+        do_fitment,
     )
 
     ymm = build_ymm_from_raw(raw_dir)
@@ -219,6 +230,11 @@ def main() -> int:
     price_products_written = 0
     meta_set = 0
     meta_errors = 0
+    fitment_checked = 0
+    fitment_unchanged = 0
+    fitment_written = 0
+    fitment_no_source = 0
+    fitment_errors = 0
     skipped_exists = 0
     skipped_no_image = 0
     images_backfilled = 0
@@ -392,6 +408,70 @@ def main() -> int:
             if not dry_run:
                 time.sleep(0.35)
 
+    # --- fits_on op bestaande producten: leeg of afwijkend van VSE ---
+    if do_fitment:
+        hash_by_pid = {
+            (meta.get("id") or ""): (meta.get("fits_on_hash") or "")
+            for meta in products_index.values()
+            if isinstance(meta, dict) and meta.get("id")
+        }
+        for g in groups:
+            handle = normalize_shopify_product_handle(g["handle"]) or g["handle"]
+            skus = {(v.get("sku") or "").strip().upper() for v in g["variants"] if v.get("sku")}
+            if handle not in motox_handles and not (skus & motox_skus):
+                continue
+            tokens = [handle] + [v.get("sku") or "" for v in g["variants"]]
+            merged = fits_on_from_map(fits_map, tokens)
+            if not merged:
+                fitment_no_source += 1
+                continue
+            pid = _resolve_product_id(handle, skus, handle_to_pid, sku_to_pid)
+            if not pid:
+                continue
+            fitment_checked += 1
+            desired = _fits_on_hash(merged)
+            if hash_by_pid.get(pid) == desired:
+                fitment_unchanged += 1
+                continue
+            fo_json = json.dumps(merged, ensure_ascii=False)
+            tuples = _json_tuples(merged)
+            years = {y for _, _, y in tuples}
+            makes = {m for m, _, _ in tuples}
+            models = {m for _, m, _ in tuples}
+            merr = admin.set_ymm_metafields(
+                pid,
+                fits_on_json=fo_json,
+                ymm_summary=_ymm_summary(tuples) if tuples else "",
+                fits_on_year=_pipe_join_sorted(years),
+                fits_on_make=_pipe_join_sorted(makes),
+                fits_on_model=_pipe_join_sorted(models),
+                dry_run=dry_run,
+            )
+            if merr:
+                fitment_errors += 1
+                report_rows.append(
+                    {"action": "fitment", "handle": handle, "ok": "0", "detail": merr}
+                )
+                log.warning("Fitment fail %s: %s", handle, merr)
+                continue
+            fitment_written += 1
+            hash_by_pid[pid] = desired
+            report_rows.append(
+                {"action": "fitment", "handle": handle, "ok": "1", "detail": "updated"}
+            )
+            if fitment_written % 50 == 0:
+                log.info("Fitment bijgewerkt: %s", fitment_written)
+            if not dry_run:
+                time.sleep(0.2)
+        log.info(
+            "Fitment: checked=%s unchanged=%s written=%s no_source=%s errors=%s",
+            fitment_checked,
+            fitment_unchanged,
+            fitment_written,
+            fitment_no_source,
+            fitment_errors,
+        )
+
     # --- Price updates for existing (delta by default) ---
     if do_prices:
         use_delta = not args.force_all_prices
@@ -502,6 +582,11 @@ def main() -> int:
         "price_delta": not args.force_all_prices,
         "metafields_set": meta_set,
         "metafields_errors": meta_errors,
+        "fitment_checked": fitment_checked,
+        "fitment_unchanged": fitment_unchanged,
+        "fitment_written": fitment_written,
+        "fitment_no_source": fitment_no_source,
+        "fitment_errors": fitment_errors,
         "build": build_stats,
     }
     out_dir = OUTPUT_ROOT / "sync"
@@ -538,6 +623,11 @@ def main() -> int:
                 f"{'' if not args.force_all_prices else ' [force-all]'}\n"
             )
             f.write(f"- metafields set: **{meta_set}** (errors {meta_errors})\n")
+            f.write(
+                f"- fitment existing: checked **{fitment_checked}**, "
+                f"unchanged **{fitment_unchanged}**, written **{fitment_written}**, "
+                f"no source **{fitment_no_source}** (errors {fitment_errors})\n"
+            )
             f.write(f"- report: `{report_path}`\n")
 
     log.info("Summary: %s", summary)
@@ -552,7 +642,9 @@ def main() -> int:
             "Price/meta/image/publish errors still fail the job.",
             create_errors,
         )
-    hard_errors = price_errors or meta_errors or image_backfill_errors or publish_errors
+    hard_errors = (
+        price_errors or meta_errors or fitment_errors or image_backfill_errors or publish_errors
+    )
     if hard_errors:
         return 2 if not dry_run else 0
     return 0

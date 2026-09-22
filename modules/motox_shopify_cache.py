@@ -16,6 +16,7 @@ Caches:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -51,6 +52,9 @@ _BULK_QUERY = """{
         status
         featuredImage {
           id
+        }
+        metafield(namespace: "global", key: "fits_on") {
+          value
         }
         variants {
           edges {
@@ -251,6 +255,31 @@ def _run_bulk(sess: requests.Session, gql_url: str, token: str) -> Path:
         poll_interval = min(poll_interval + 0.5, 15.0)
 
 
+def _fits_on_hash(value) -> str:
+    """Stabiele hash van global.fits_on, ongeacht sleutelvolgorde."""
+    if value is None or value == "":
+        return ""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return ""
+    if not isinstance(value, dict) or not value:
+        return ""
+    normalized: dict = {}
+    for make, models in value.items():
+        if not isinstance(models, dict):
+            continue
+        normalized[str(make)] = {}
+        for model, years in models.items():
+            ys = sorted({str(y) for y in (years if isinstance(years, list) else [])})
+            normalized[str(make)][str(model)] = ys
+    if not normalized:
+        return ""
+    canon = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canon.encode()).hexdigest()
+
+
 def _parse_bulk(path: Path) -> dict[str, dict]:
     """product_gid -> {id, handle, title, status, skus}"""
     products: dict[str, dict] = {}
@@ -272,8 +301,20 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
                     "title": (obj.get("title") or "").strip(),
                     "status": (obj.get("status") or "").strip().upper(),
                     "has_image": bool(feat and (feat.get("id") if isinstance(feat, dict) else feat)),
+                    "fits_on_hash": _fits_on_hash((obj.get("metafield") or {}).get("value")),
                     "skus": [],
                 }
+                continue
+            # Metafield kan als losse JSONL-regel terugkomen, alleen met value + parent.
+            if (
+                parent in products
+                and "value" in obj
+                and "sku" not in obj
+                and not gid.startswith("gid://shopify/ProductVariant/")
+            ):
+                hashed = _fits_on_hash(obj.get("value"))
+                if hashed:
+                    products[parent]["fits_on_hash"] = hashed
                 continue
             # Bulk JSONL variant rows often have only sku + __parentId (no id).
             is_variant = bool(parent) and (
@@ -310,6 +351,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                 "title": p.get("title") or "",
                 "status": p.get("status") or "",
                 "has_image": bool(p.get("has_image")),
+                "fits_on_hash": p.get("fits_on_hash") or "",
             }
             handle_to_pid[handle] = pid
         for entry in p.get("skus") or []:

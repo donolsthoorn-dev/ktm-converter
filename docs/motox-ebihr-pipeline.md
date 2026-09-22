@@ -12,7 +12,7 @@ Nachtelijke (of handmatige) job schrijft **direct naar Motox Shopify**:
 2. New-only producten **aanmaken** (met images) + publiceren op **alle sales channels**
 3. Bestaande producten **zonder afbeelding**: images backfill als Bihr ze nu wel heeft, daarna opnieuw publiceren op alle kanalen
 4. **Prijzen (delta):** alleen SKUs waar Bihr-prijs ≠ huidige Motox-prijs (uit cache); `--force-all-prices` voor alles
-5. **Metafields** `global.fits_on` (+ summary/year/make/model) zetten op nieuwe producten
+5. **Metafields** `global.fits_on` (+ summary/year/make/model) op nieuwe producten, en op bestaande producten als de passendheid leeg is of afwijkt van VSE
 
 YMM-**app**/filter-CSV is **later** (lokaal); v1 dekt theme-metafields.
 
