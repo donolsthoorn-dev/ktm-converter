@@ -19,6 +19,9 @@ Motox e-bihr sync: Bihr V3+VSE → Shopify create + image backfill + prices + fi
 
   # Alleen ontbrekende images backfill + publiceren op alle kanalen:
   python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --images-only --max-image-backfill 50
+
+Prijzen: standaard alleen delta (Bihr ≠ huidige Motox-prijs uit cache).
+  --force-all-prices  schrijft alle matched prijzen opnieuw (oude gedrag)
 """
 
 from __future__ import annotations
@@ -59,6 +62,17 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger("motox_ebihr_sync")
+
+
+def _normalize_price(value: str | None) -> str:
+    """Normaliseer prijs voor vergelijking (2 decimalen). Leeg → ''."""
+    raw = (value or "").strip().replace(",", ".")
+    if not raw:
+        return ""
+    try:
+        return f"{float(raw):.2f}"
+    except ValueError:
+        return raw
 
 
 def _latest_raw() -> Path | None:
@@ -136,6 +150,11 @@ def main() -> int:
         default=0,
         help="Max bestaande producten met image-backfill (0=all)",
     )
+    ap.add_argument(
+        "--force-all-prices",
+        action="store_true",
+        help="Alle matched prijzen schrijven (geen delta t.o.v. Motox-cache)",
+    )
     ap.add_argument("--refresh-cache", action="store_true", default=True)
     ap.add_argument("--no-refresh-cache", action="store_true")
     args = ap.parse_args()
@@ -186,6 +205,7 @@ def main() -> int:
     handle_to_pid = idx["handle_to_product_id"]
     sku_to_pid = idx["sku_to_product_id"]
     sku_to_vid = idx.get("sku_to_variant_id") or {}
+    sku_to_shop_price = idx.get("sku_to_price") or {}
     products_index = idx.get("products_index") or {}
 
     admin = MotoxAdmin()
@@ -194,6 +214,9 @@ def main() -> int:
     create_errors = 0
     prices_updated = 0
     price_errors = 0
+    price_checked = 0
+    price_unchanged = 0
+    price_products_written = 0
     meta_set = 0
     meta_errors = 0
     skipped_exists = 0
@@ -369,8 +392,23 @@ def main() -> int:
             if not dry_run:
                 time.sleep(0.35)
 
-    # --- Price updates for existing ---
+    # --- Price updates for existing (delta by default) ---
     if do_prices:
+        use_delta = not args.force_all_prices
+        if use_delta and not sku_to_shop_price:
+            log.warning(
+                "Geen sku_to_price in Motox-cache — delta niet mogelijk; "
+                "alle matched prijzen worden geschreven. Ververs cache of gebruik --force-all-prices."
+            )
+            use_delta = False
+        elif use_delta:
+            log.info(
+                "Prijs-delta: Bihr vs Motox-cache (%s SKU-prijzen in cache)",
+                len(sku_to_shop_price),
+            )
+        else:
+            log.info("Prijs-modus: force-all (geen delta)")
+
         sku_price: dict[str, str] = {}
         for g in groups:
             for v in g["variants"]:
@@ -388,7 +426,21 @@ def main() -> int:
             pid = sku_to_pid.get(sku) or sku_to_pid.get(sku.upper())
             if not vid or not pid:
                 continue
-            by_pid.setdefault(pid, []).append((vid, price))
+            bihr_n = _normalize_price(price)
+            if not bihr_n:
+                continue
+            price_checked += 1
+            if use_delta:
+                shop_raw = (
+                    sku_to_shop_price.get(sku)
+                    or sku_to_shop_price.get(sku.upper())
+                    or ""
+                )
+                shop_n = _normalize_price(shop_raw)
+                if shop_n and shop_n == bihr_n:
+                    price_unchanged += 1
+                    continue
+            by_pid.setdefault(pid, []).append((vid, bihr_n))
 
         n_price_products = 0
         for pid, pairs in by_pid.items():
@@ -407,6 +459,7 @@ def main() -> int:
                 )
             else:
                 prices_updated += len(pairs)
+                price_products_written += 1
                 report_rows.append(
                     {
                         "action": "price",
@@ -417,6 +470,15 @@ def main() -> int:
                 )
             if not dry_run:
                 time.sleep(0.25)
+
+        log.info(
+            "Prijzen: checked=%s unchanged=%s products_written=%s variants_written=%s errors=%s",
+            price_checked,
+            price_unchanged,
+            price_products_written,
+            prices_updated,
+            price_errors,
+        )
 
     summary = {
         "dry_run": dry_run,
@@ -432,8 +494,12 @@ def main() -> int:
         "skipped_no_bihr_image_for_existing": skipped_no_bihr_image,
         "publish_ok": publish_ok,
         "publish_errors": publish_errors,
+        "price_checked": price_checked,
+        "price_unchanged": price_unchanged,
+        "price_products_written": price_products_written,
         "price_variant_updates": prices_updated,
         "price_errors": price_errors,
+        "price_delta": not args.force_all_prices,
         "metafields_set": meta_set,
         "metafields_errors": meta_errors,
         "build": build_stats,
@@ -461,7 +527,12 @@ def main() -> int:
                 f"(errors {image_backfill_errors}, already had {skipped_already_has_image})\n"
             )
             f.write(f"- publish channels: **{publish_ok}** (errors {publish_errors})\n")
-            f.write(f"- price variant updates: **{prices_updated}** (errors {price_errors})\n")
+            f.write(
+                f"- prices: checked **{price_checked}**, unchanged **{price_unchanged}**, "
+                f"products written **{price_products_written}**, "
+                f"variants written **{prices_updated}** (errors {price_errors})"
+                f"{'' if not args.force_all_prices else ' [force-all]'}\n"
+            )
             f.write(f"- metafields set: **{meta_set}** (errors {meta_errors})\n")
             f.write(f"- report: `{report_path}`\n")
 

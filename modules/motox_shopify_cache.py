@@ -7,8 +7,10 @@ Gescheiden van de KTM-shop caches in cache/, zodat merken/shops niet door elkaar
 
 Caches:
   cache/motox/shopify_skus.json              — list[str] (uppercase SKUs)
-  cache/motox/shopify_products_index.json    — handle -> {id, title, status}
+  cache/motox/shopify_products_index.json    — handle -> {id, title, status, has_image}
   cache/motox/shopify_sku_to_product_id.json — sku -> product id
+  cache/motox/shopify_sku_to_variant_id.json — sku -> variant id
+  cache/motox/shopify_sku_to_price.json      — sku -> current Shopify price (string)
   cache/motox/shopify_handle_to_product_id.json — handle -> product id
 """
 
@@ -33,6 +35,7 @@ SKUS_FILE = CACHE_DIR / "shopify_skus.json"
 PRODUCTS_INDEX_FILE = CACHE_DIR / "shopify_products_index.json"
 SKU_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_sku_to_product_id.json"
 SKU_TO_VARIANT_ID_FILE = CACHE_DIR / "shopify_sku_to_variant_id.json"
+SKU_TO_PRICE_FILE = CACHE_DIR / "shopify_sku_to_price.json"
 HANDLE_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_handle_to_product_id.json"
 BULK_JSONL_FILE = CACHE_DIR / "shopify_products_bulk.jsonl"
 
@@ -295,6 +298,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     products_index: dict[str, dict] = {}
     sku_to_pid: dict[str, str] = {}
     sku_to_vid: dict[str, str] = {}
+    sku_to_price: dict[str, str] = {}
     handle_to_pid: dict[str, str] = {}
 
     for p in products.values():
@@ -313,9 +317,11 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
             if isinstance(entry, str):
                 s = entry.strip()
                 vid = ""
+                price = ""
             else:
                 s = (entry.get("sku") or "").strip()
                 vid = (entry.get("variant_id") or "").strip()
+                price = (entry.get("price") or "").strip()
             if not s:
                 continue
             skus.add(s.upper())
@@ -328,6 +334,11 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                     sku_to_vid[s] = vid
                 if s.upper() not in sku_to_vid:
                     sku_to_vid[s.upper()] = vid
+            if price:
+                if s not in sku_to_price:
+                    sku_to_price[s] = price
+                if s.upper() not in sku_to_price:
+                    sku_to_price[s.upper()] = price
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     SKUS_FILE.write_text(
@@ -342,6 +353,9 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     SKU_TO_VARIANT_ID_FILE.write_text(
         json.dumps(sku_to_vid, ensure_ascii=False), encoding="utf-8"
     )
+    SKU_TO_PRICE_FILE.write_text(
+        json.dumps(sku_to_price, ensure_ascii=False), encoding="utf-8"
+    )
     HANDLE_TO_PRODUCT_ID_FILE.write_text(
         json.dumps(handle_to_pid, ensure_ascii=False), encoding="utf-8"
     )
@@ -351,12 +365,14 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
         "skus": len(skus),
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
+        "sku_to_price": len(sku_to_price),
         "handles": len(handle_to_pid),
         "cache_dir": str(CACHE_DIR),
     }
     print(
         f"Motox-cache geschreven: {summary['products']} producten, "
-        f"{summary['skus']} SKUs, {summary['sku_to_variant_id']} variant-ids → {CACHE_DIR}",
+        f"{summary['skus']} SKUs, {summary['sku_to_variant_id']} variant-ids, "
+        f"{summary['sku_to_price']} prijzen → {CACHE_DIR}",
         flush=True,
     )
     return summary
@@ -401,6 +417,7 @@ def load_motox_indexes() -> dict:
       products_index: dict
       sku_to_product_id: dict[str, str]
       sku_to_variant_id: dict[str, str]
+      sku_to_price: dict[str, str]
       handle_to_product_id: dict[str, str]
       summary: dict
     """
@@ -408,6 +425,7 @@ def load_motox_indexes() -> dict:
     products_index = _load_json(PRODUCTS_INDEX_FILE, {})
     sku_to_pid = _load_json(SKU_TO_PRODUCT_ID_FILE, {})
     sku_to_vid = _load_json(SKU_TO_VARIANT_ID_FILE, {})
+    sku_to_price = _load_json(SKU_TO_PRICE_FILE, {})
     handle_to_pid = _load_json(HANDLE_TO_PRODUCT_ID_FILE, {})
     if not handle_to_pid and products_index:
         handle_to_pid = {
@@ -426,6 +444,7 @@ def load_motox_indexes() -> dict:
         "skus": len(skus),
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
+        "sku_to_price": len(sku_to_price),
         "handles": len(handles),
         "cache_dir": str(CACHE_DIR),
         "present": SKUS_FILE.is_file() and PRODUCTS_INDEX_FILE.is_file(),
@@ -436,6 +455,7 @@ def load_motox_indexes() -> dict:
         "products_index": products_index,
         "sku_to_product_id": sku_to_pid,
         "sku_to_variant_id": sku_to_vid,
+        "sku_to_price": sku_to_price,
         "handle_to_product_id": handle_to_pid,
         "summary": summary,
     }

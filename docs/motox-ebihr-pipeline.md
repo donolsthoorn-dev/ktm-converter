@@ -11,7 +11,7 @@ Nachtelijke (of handmatige) job schrijft **direct naar Motox Shopify**:
 1. Bihr V3 + VSE ophalen
 2. New-only producten **aanmaken** (met images) + publiceren op **alle sales channels**
 3. Bestaande producten **zonder afbeelding**: images backfill als Bihr ze nu wel heeft, daarna opnieuw publiceren op alle kanalen
-4. **Prijzen updaten** op bestaande Bihr-SKU’s
+4. **Prijzen (delta):** alleen SKUs waar Bihr-prijs ≠ huidige Motox-prijs (uit cache); `--force-all-prices` voor alles
 5. **Metafields** `global.fits_on` (+ summary/year/make/model) zetten op nieuwe producten
 
 YMM-**app**/filter-CSV is **later** (lokaal); v1 dekt theme-metafields.
@@ -25,8 +25,11 @@ python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run --
 # Lokaal apply
 python3 scripts/motox_ebihr_sync.py --fetch --apply
 
-# Alleen prijzen
+# Alleen prijzen (delta t.o.v. Motox-cache)
 python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --prices-only
+
+# Alle prijzen forceren (geen delta)
+python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --prices-only --force-all-prices
 
 # Alleen image-backfill + kanalen (begrensd)
 python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --images-only --max-image-backfill 50
