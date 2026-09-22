@@ -11,6 +11,7 @@ Caches:
   cache/motox/shopify_sku_to_product_id.json — sku -> product id
   cache/motox/shopify_sku_to_variant_id.json — sku -> variant id
   cache/motox/shopify_sku_to_price.json      — sku -> current Shopify price (string)
+  cache/motox/shopify_sku_to_customs.json    — sku -> {hs, country}
   cache/motox/shopify_handle_to_product_id.json — handle -> product id
 """
 
@@ -37,6 +38,7 @@ PRODUCTS_INDEX_FILE = CACHE_DIR / "shopify_products_index.json"
 SKU_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_sku_to_product_id.json"
 SKU_TO_VARIANT_ID_FILE = CACHE_DIR / "shopify_sku_to_variant_id.json"
 SKU_TO_PRICE_FILE = CACHE_DIR / "shopify_sku_to_price.json"
+SKU_TO_CUSTOMS_FILE = CACHE_DIR / "shopify_sku_to_customs.json"
 HANDLE_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_handle_to_product_id.json"
 BULK_JSONL_FILE = CACHE_DIR / "shopify_products_bulk.jsonl"
 
@@ -62,6 +64,10 @@ _BULK_QUERY = """{
               id
               sku
               price
+              inventoryItem {
+                harmonizedSystemCode
+                countryCodeOfOrigin
+              }
             }
           }
         }
@@ -283,6 +289,7 @@ def _fits_on_hash(value) -> str:
 def _parse_bulk(path: Path) -> dict[str, dict]:
     """product_gid -> {id, handle, title, status, skus}"""
     products: dict[str, dict] = {}
+    variant_to_product: dict[str, str] = {}
     with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -324,13 +331,33 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
             if is_variant and parent in products:
                 sku = (obj.get("sku") or "").strip()
                 if sku:
+                    inv = obj.get("inventoryItem") if isinstance(obj.get("inventoryItem"), dict) else {}
                     products[parent]["skus"].append(
                         {
                             "sku": sku,
                             "variant_id": _gid_num(gid) if gid else "",
                             "price": (obj.get("price") or "").strip(),
+                            "hs": (inv.get("harmonizedSystemCode") or "").strip(),
+                            "country": (inv.get("countryCodeOfOrigin") or "").strip(),
+                            "customs_seen": "inventoryItem" in obj,
                         }
                     )
+                if gid:
+                    variant_to_product[gid] = parent
+                continue
+            # inventoryItem kan als losse regel onder de variant staan.
+            if (
+                parent in variant_to_product
+                and gid.startswith("gid://shopify/InventoryItem/")
+            ):
+                product_gid = variant_to_product[parent]
+                vid = _gid_num(parent)
+                for entry in products[product_gid]["skus"]:
+                    if entry.get("variant_id") == vid:
+                        entry["hs"] = (obj.get("harmonizedSystemCode") or "").strip()
+                        entry["country"] = (obj.get("countryCodeOfOrigin") or "").strip()
+                        entry["customs_seen"] = True
+                        break
     return products
 
 
@@ -340,6 +367,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     sku_to_pid: dict[str, str] = {}
     sku_to_vid: dict[str, str] = {}
     sku_to_price: dict[str, str] = {}
+    sku_to_customs: dict[str, dict[str, str]] = {}
     handle_to_pid: dict[str, str] = {}
 
     for p in products.values():
@@ -364,6 +392,11 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                 s = (entry.get("sku") or "").strip()
                 vid = (entry.get("variant_id") or "").strip()
                 price = (entry.get("price") or "").strip()
+                if entry.get("customs_seen"):
+                    sku_to_customs[s.upper()] = {
+                        "hs": (entry.get("hs") or "").strip(),
+                        "country": (entry.get("country") or "").strip(),
+                    }
             if not s:
                 continue
             skus.add(s.upper())
@@ -398,6 +431,9 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     SKU_TO_PRICE_FILE.write_text(
         json.dumps(sku_to_price, ensure_ascii=False), encoding="utf-8"
     )
+    SKU_TO_CUSTOMS_FILE.write_text(
+        json.dumps(sku_to_customs, ensure_ascii=False), encoding="utf-8"
+    )
     HANDLE_TO_PRODUCT_ID_FILE.write_text(
         json.dumps(handle_to_pid, ensure_ascii=False), encoding="utf-8"
     )
@@ -408,6 +444,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
+        "sku_to_customs": len(sku_to_customs),
         "handles": len(handle_to_pid),
         "cache_dir": str(CACHE_DIR),
     }
@@ -460,6 +497,7 @@ def load_motox_indexes() -> dict:
       sku_to_product_id: dict[str, str]
       sku_to_variant_id: dict[str, str]
       sku_to_price: dict[str, str]
+      sku_to_customs: dict[str, dict]
       handle_to_product_id: dict[str, str]
       summary: dict
     """
@@ -468,6 +506,7 @@ def load_motox_indexes() -> dict:
     sku_to_pid = _load_json(SKU_TO_PRODUCT_ID_FILE, {})
     sku_to_vid = _load_json(SKU_TO_VARIANT_ID_FILE, {})
     sku_to_price = _load_json(SKU_TO_PRICE_FILE, {})
+    sku_to_customs = _load_json(SKU_TO_CUSTOMS_FILE, {})
     handle_to_pid = _load_json(HANDLE_TO_PRODUCT_ID_FILE, {})
     if not handle_to_pid and products_index:
         handle_to_pid = {
@@ -487,6 +526,7 @@ def load_motox_indexes() -> dict:
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
+        "sku_to_customs": len(sku_to_customs) if isinstance(sku_to_customs, dict) else 0,
         "handles": len(handles),
         "cache_dir": str(CACHE_DIR),
         "present": SKUS_FILE.is_file() and PRODUCTS_INDEX_FILE.is_file(),
@@ -498,6 +538,7 @@ def load_motox_indexes() -> dict:
         "sku_to_product_id": sku_to_pid,
         "sku_to_variant_id": sku_to_vid,
         "sku_to_price": sku_to_price,
+        "sku_to_customs": sku_to_customs if isinstance(sku_to_customs, dict) else {},
         "handle_to_product_id": handle_to_pid,
         "summary": summary,
     }

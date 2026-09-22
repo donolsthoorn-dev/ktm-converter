@@ -1,5 +1,7 @@
 # Motox e-bihr: Bihr V3+VSE → Shopify create + price updates + fits_on metafields.
 # fits_on ook op bestaande producten, als die leeg is of afwijkt van VSE.
+# Goederencode en land van herkomst gaan mee bij aanmaken, en worden
+# op bestaande producten bijgewerkt als ze leeg zijn of afwijken.
 #
 # Secrets:
 #   BIHR_USERNAME, BIHR_PASSWORD

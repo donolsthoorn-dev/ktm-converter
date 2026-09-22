@@ -14,6 +14,18 @@ from modules.motox_shopify_cache import _gql, _session, load_motox_env
 log = logging.getLogger("ebihr.motox_publish")
 
 
+def _customs_input(hs_code: str | None, country: str | None) -> dict[str, str]:
+    """Shopify InventoryItem-velden. Lege waarden worden niet meegestuurd."""
+    out: dict[str, str] = {}
+    hs = (hs_code or "").strip()
+    co = (country or "").strip().upper()
+    if hs:
+        out["harmonizedSystemCode"] = hs
+    if co:
+        out["countryCodeOfOrigin"] = co
+    return out
+
+
 def _sku_label(sku: str, index: int) -> str:
     s = (sku or "").strip()
     if s:
@@ -137,6 +149,9 @@ class MotoxAdmin:
                 "price": price,
                 "inventoryPolicy": inv_policy,
             }
+            customs = _customs_input(v.get("hs_code"), v.get("country"))
+            if customs:
+                entry["inventoryItem"] = customs
             set_variants.append(entry)
 
         status = "ACTIVE" if group.get("published") else "DRAFT"
@@ -268,6 +283,52 @@ class MotoxAdmin:
             {"id": f"gid://shopify/ProductVariant/{vid}", "barcode": barcode}
             for vid, barcode in variant_id_barcodes
         ]
+        body = self.gql(
+            q,
+            {
+                "productId": f"gid://shopify/Product/{product_id}",
+                "variants": variants,
+            },
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        payload = ((body.get("data") or {}).get("productVariantsBulkUpdate")) or {}
+        uerr = payload.get("userErrors") or []
+        if uerr:
+            return str(uerr)[:300]
+        return ""
+
+    def update_variant_customs(
+        self,
+        product_id: str,
+        variant_customs: list[tuple[str, str, str]],
+        *,
+        dry_run: bool = False,
+    ) -> str:
+        """variant_customs: (variant_numeric_id, hs_code, country). Lege velden blijven staan."""
+        variants = []
+        for vid, hs_code, country in variant_customs:
+            customs = _customs_input(hs_code, country)
+            if not vid or not customs:
+                continue
+            variants.append(
+                {
+                    "id": f"gid://shopify/ProductVariant/{vid}",
+                    "inventoryItem": customs,
+                }
+            )
+        if not variants:
+            return ""
+        if dry_run:
+            return ""
+        q = """
+        mutation MotoxVariantsBulkCustoms($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            productVariants { id }
+            userErrors { field message }
+          }
+        }
+        """
         body = self.gql(
             q,
             {

@@ -4,6 +4,8 @@ Motox e-bihr sync: Bihr V3+VSE → Shopify create + image backfill + prices + fi
 
 fits_on gaat naar nieuwe producten én naar bestaande producten waar de
 passendheid leeg is of afwijkt van de VSE-data van deze run.
+Goederencode en land van herkomst uit Bihr gaan mee bij het aanmaken, en
+worden op bestaande producten bijgewerkt als ze leeg zijn of afwijken.
 
   # Dry-run tegen bestaande raw:
   python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run
@@ -176,6 +178,7 @@ def main() -> int:
         and not args.create_only
         and not args.skip_metafields
     )
+    do_customs = not args.prices_only and not args.images_only and not args.create_only
 
     dry_run = not args.apply or args.dry_run
     if args.apply and args.dry_run:
@@ -191,13 +194,14 @@ def main() -> int:
         raise SystemExit("Geen raw-dir. Gebruik --fetch of --raw-dir.")
 
     log.info(
-        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s fitment=%s",
+        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s fitment=%s customs=%s",
         raw_dir,
         dry_run,
         do_create,
         do_image_backfill,
         do_prices,
         do_fitment,
+        do_customs,
     )
 
     ymm = build_ymm_from_raw(raw_dir)
@@ -217,6 +221,7 @@ def main() -> int:
     sku_to_pid = idx["sku_to_product_id"]
     sku_to_vid = idx.get("sku_to_variant_id") or {}
     sku_to_shop_price = idx.get("sku_to_price") or {}
+    sku_to_customs = idx.get("sku_to_customs") or {}
     products_index = idx.get("products_index") or {}
 
     admin = MotoxAdmin()
@@ -235,6 +240,11 @@ def main() -> int:
     fitment_written = 0
     fitment_no_source = 0
     fitment_errors = 0
+    customs_checked = 0
+    customs_unchanged = 0
+    customs_written = 0
+    customs_no_source = 0
+    customs_errors = 0
     skipped_exists = 0
     skipped_no_image = 0
     images_backfilled = 0
@@ -472,6 +482,75 @@ def main() -> int:
             fitment_errors,
         )
 
+    # --- Goederencode en land van herkomst op bestaande producten ---
+    if do_customs:
+        by_product: dict[str, list[tuple[str, str, str]]] = {}
+        handle_by_pid: dict[str, str] = {}
+        for g in groups:
+            handle = normalize_shopify_product_handle(g["handle"]) or g["handle"]
+            skus = {(v.get("sku") or "").strip().upper() for v in g["variants"] if v.get("sku")}
+            if handle not in motox_handles and not (skus & motox_skus):
+                continue
+            has_source = False
+            for v in g["variants"]:
+                sku = (v.get("sku") or "").strip()
+                hs = (v.get("hs_code") or "").strip()
+                country = (v.get("country") or "").strip()
+                if not hs and not country:
+                    continue
+                has_source = True
+                sku_key = sku.upper()
+                vid = (sku_to_vid.get(sku) or sku_to_vid.get(sku_key) or "").strip()
+                if not vid:
+                    continue
+                current = sku_to_customs.get(sku_key) or sku_to_customs.get(sku) or {}
+                cur_hs = (current.get("hs") or "").strip()
+                cur_country = (current.get("country") or "").strip()
+                send_hs = hs if hs and hs != cur_hs else ""
+                send_country = country if country and country != cur_country else ""
+                customs_checked += 1
+                if not send_hs and not send_country:
+                    customs_unchanged += 1
+                    continue
+                pid = _resolve_product_id(handle, skus, handle_to_pid, sku_to_pid)
+                if not pid:
+                    continue
+                by_product.setdefault(pid, []).append((vid, send_hs, send_country))
+                handle_by_pid[pid] = handle
+            if not has_source:
+                customs_no_source += 1
+        for pid, items in by_product.items():
+            err = admin.update_variant_customs(pid, items, dry_run=dry_run)
+            handle = handle_by_pid.get(pid) or pid
+            if err:
+                customs_errors += 1
+                report_rows.append(
+                    {"action": "customs", "handle": handle, "ok": "0", "detail": err}
+                )
+                log.warning("Douane fail %s: %s", handle, err)
+                continue
+            customs_written += len(items)
+            report_rows.append(
+                {
+                    "action": "customs",
+                    "handle": handle,
+                    "ok": "1",
+                    "detail": f"{len(items)} variants",
+                }
+            )
+            if customs_written % 100 == 0:
+                log.info("Douane bijgewerkt: %s varianten", customs_written)
+            if not dry_run:
+                time.sleep(0.15)
+        log.info(
+            "Douane: checked=%s unchanged=%s written=%s no_source=%s errors=%s",
+            customs_checked,
+            customs_unchanged,
+            customs_written,
+            customs_no_source,
+            customs_errors,
+        )
+
     # --- Price updates for existing (delta by default) ---
     if do_prices:
         use_delta = not args.force_all_prices
@@ -587,6 +666,11 @@ def main() -> int:
         "fitment_written": fitment_written,
         "fitment_no_source": fitment_no_source,
         "fitment_errors": fitment_errors,
+        "customs_checked": customs_checked,
+        "customs_unchanged": customs_unchanged,
+        "customs_written": customs_written,
+        "customs_no_source": customs_no_source,
+        "customs_errors": customs_errors,
         "build": build_stats,
     }
     out_dir = OUTPUT_ROOT / "sync"
@@ -628,6 +712,11 @@ def main() -> int:
                 f"unchanged **{fitment_unchanged}**, written **{fitment_written}**, "
                 f"no source **{fitment_no_source}** (errors {fitment_errors})\n"
             )
+            f.write(
+                f"- customs existing: checked **{customs_checked}**, "
+                f"unchanged **{customs_unchanged}**, written **{customs_written}**, "
+                f"no source **{customs_no_source}** (errors {customs_errors})\n"
+            )
             f.write(f"- report: `{report_path}`\n")
 
     log.info("Summary: %s", summary)
@@ -643,7 +732,12 @@ def main() -> int:
             create_errors,
         )
     hard_errors = (
-        price_errors or meta_errors or fitment_errors or image_backfill_errors or publish_errors
+        price_errors
+        or meta_errors
+        or fitment_errors
+        or customs_errors
+        or image_backfill_errors
+        or publish_errors
     )
     if hard_errors:
         return 2 if not dry_run else 0

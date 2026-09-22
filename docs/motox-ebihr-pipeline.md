@@ -13,6 +13,7 @@ Nachtelijke (of handmatige) job schrijft **direct naar Motox Shopify**:
 3. Bestaande producten **zonder afbeelding**: images backfill als Bihr ze nu wel heeft, daarna opnieuw publiceren op alle kanalen
 4. **Prijzen (delta):** alleen SKUs waar Bihr-prijs ≠ huidige Motox-prijs (uit cache); `--force-all-prices` voor alles
 5. **Metafields** `global.fits_on` (+ summary/year/make/model) op nieuwe producten, en op bestaande producten als de passendheid leeg is of afwijkt van VSE
+6. **Douane:** Bihr `CommodityCode` en `CountryOfOrigin` op nieuwe producten meteen, en op bestaande producten als de goederencode of het land van herkomst leeg is of afwijkt
 
 YMM-**app**/filter-CSV is **later** (lokaal); v1 dekt theme-metafields.
 
