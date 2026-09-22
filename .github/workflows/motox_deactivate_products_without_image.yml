@@ -1,0 +1,91 @@
+# Motox: actieve producten zonder featured image op DRAFT zetten.
+#
+# Secrets:
+#   SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
+#   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
+#
+# Schedule: 04:00 UTC ≈ 06:00 NL (zomer) / 05:00 (winter), ná de e-bihr sync.
+# Handmatig: apply=false is dry-run.
+
+name: motox_deactivate_products_without_image
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = op DRAFT zetten, false = alleen controleren"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      limit:
+        description: "Max producten (0 = alle actieve zonder afbeelding)"
+        required: false
+        default: "0"
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
+
+jobs:
+  motox_deactivate_products_without_image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-deactivate-no-image-dry' }}
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'false' }}
+      LIMIT: ${{ github.event.inputs.limit || '0' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check secrets
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for k in SHOPIFY_MOTOX_ACCESS_TOKEN SHOPIFY_MOTOX_SHOP_DOMAIN; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Secret $k ontbreekt"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Deactiveer Motox-producten zonder afbeelding
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [[ "${APPLY}" == "true" ]]; then
+            ARGS+=(--apply)
+          fi
+          if [[ "${LIMIT}" != "0" ]]; then
+            ARGS+=(--limit "${LIMIT}")
+          fi
+          python3 -u scripts/motox_deactivate_products_without_image.py "${ARGS[@]}"
+
+      - name: Upload rapport
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: motox-deactivate-products-without-image
+          path: output/motox_deactivate_products_without_image.csv
+          if-no-files-found: ignore
