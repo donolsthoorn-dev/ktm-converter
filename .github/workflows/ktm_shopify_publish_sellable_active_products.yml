@@ -1,13 +1,10 @@
 # Publiceer ACTIVE + ERP-verkoopbare producten op Webshop (published_at leeg).
-# Triggers: GitHub schedule (~04:30 NL winter) of workflow_dispatch / Supabase dispatch (032).
+# Trigger: Supabase 04:30 NL (migratie 032) of handmatige workflow_dispatch.
 # Zie docs/supabase-scheduler.md voor NL-planning via Supabase-cron.
 
 name: ktm_shopify_publish_sellable_active_products
 
 on:
-  schedule:
-    # 03:30 UTC ≈ 04:30 CET (winter); ≈ 05:30 CEST (zomer). Na auto_deactivate (~04:00 NL).
-    - cron: "30 3 * * *"
   workflow_dispatch:
     inputs:
       apply:
@@ -31,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     concurrency:
-      group: shopify-write-lock
+      group: ${{ inputs.apply == 'true' && 'shopify-write-lock-ktm' || 'ktm-publish-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

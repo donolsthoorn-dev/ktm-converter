@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: shopify-write-lock
+      group: ${{ github.event.inputs.mode != 'staging' && 'shopify-write-lock-ktm' || 'ktm-price-staging' }}
       cancel-in-progress: false
     env:
       RUN_MODE: ${{ github.event.inputs.mode || 'apply' }}

@@ -6,8 +6,9 @@
 # Secrets Motox (optioneel): SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
 #
 # Handmatig starten (Actions → shops_category_reclassify → Run workflow).
-# Staging leest de catalogus via één Shopify bulk-export.
-# Apply schrijft één product per aanroep, met 0,15s pauze.
+# Staging leest de catalogus via één Shopify bulk-export en pakt geen schrijfslot.
+# Apply schrijft één product per aanroep, met 0,15s pauze, in het slot van die shop.
+# ktm en Motox lopen tegelijk.
 
 name: shops_category_reclassify
 
@@ -40,14 +41,15 @@ on:
 
 jobs:
   reclassify:
+    if: github.event.inputs.shop == 'both' || github.event.inputs.shop == matrix.shop
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: shopify-write-lock
+      group: ${{ github.event.inputs.apply == 'true' && format('shopify-write-lock-{0}', matrix.shop) || format('category-reclassify-dry-{0}', matrix.shop) }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         shop: [ktm, motox]
     env:

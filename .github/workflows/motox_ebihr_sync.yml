@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 360
     # Dry-run hoeft niet te wachten op andere Shopify-write jobs.
     concurrency:
-      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-ebihr-sync-dry' }}
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock-motox' || 'motox-ebihr-sync-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

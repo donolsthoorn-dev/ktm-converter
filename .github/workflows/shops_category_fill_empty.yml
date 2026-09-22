@@ -9,6 +9,8 @@
 #   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
 #
 # Schedule 03:45 UTC ≈ 05:45 NL (zomer) / 04:45 (winter).
+# Leest de catalogus via één bulk-export. Elke shop heeft een eigen schrijfslot
+# en ze lopen tegelijk. Een dry-run pakt geen slot.
 
 name: shops_category_fill_empty
 
@@ -39,14 +41,15 @@ on:
 
 jobs:
   fill:
+    if: github.event_name == 'schedule' || github.event.inputs.shop == 'both' || github.event.inputs.shop == '' || github.event.inputs.shop == matrix.shop
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: shopify-write-lock
+      group: ${{ (github.event_name == 'schedule' || github.event.inputs.apply == 'true') && format('shopify-write-lock-{0}', matrix.shop) || format('category-fill-dry-{0}', matrix.shop) }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         shop: [ktm, motox]
     env:

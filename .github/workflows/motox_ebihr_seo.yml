@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-ebihr-seo-dry' }}
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock-motox' || 'motox-ebihr-seo-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

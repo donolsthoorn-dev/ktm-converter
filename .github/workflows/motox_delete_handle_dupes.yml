@@ -8,7 +8,7 @@
 #   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
 #
 # Schedule: 05:00 UTC ≈ 07:00 NL (zomer) / 06:00 (winter).
-# Wacht op shopify-write-lock, dus loopt ná een nog bezig zijnde e-bihr-sync.
+# Wacht op shopify-write-lock-motox, dus loopt ná een nog bezig zijnde e-bihr-sync.
 
 name: motox_delete_handle_dupes
 
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     concurrency:
-      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-delete-handle-dupes-dry' }}
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock-motox' || 'motox-delete-handle-dupes-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

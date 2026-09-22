@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:
-      group: shopify-write-lock
+      group: ${{ inputs.apply == 'true' && 'shopify-write-lock-ktm' || 'ktm-deactivate-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

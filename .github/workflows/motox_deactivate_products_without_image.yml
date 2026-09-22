@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     concurrency:
-      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-deactivate-no-image-dry' }}
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock-motox' || 'motox-deactivate-no-image-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

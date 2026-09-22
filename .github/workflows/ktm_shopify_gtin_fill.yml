@@ -1,13 +1,10 @@
 # Eerste inhaal + nachtelijke fill-if-empty voor variant-GTIN (barcode) uit prijs-CSV.
 # Na de inhaal vult ktm_price_eta_status_sync dezelfde GTINs mee op de prijs/ETA-delta.
-# Trigger: Supabase 05:30 NL (migratie 033) en/of GitHub schedule.
+# Trigger: Supabase 05:30 NL (migratie 033).
 
 name: ktm_shopify_gtin_fill
 
 on:
-  schedule:
-    # 03:30 UTC ≈ 05:30 CEST (zomer) / 04:30 CET (winter). DST-vast via Supabase 033.
-    - cron: "30 3 * * *"
   workflow_dispatch:
     inputs:
       apply:
@@ -31,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: shopify-write-lock
+      group: ${{ inputs.apply == 'true' && 'shopify-write-lock-ktm' || 'ktm-gtin-fill-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

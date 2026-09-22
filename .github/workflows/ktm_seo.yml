@@ -5,8 +5,8 @@
 # Een volgende run slaat gevulde titel, omschrijving en alt over.
 # HOMNN en barcode worden niet aangeraakt.
 #
-# Deelt shopify-write-lock met de andere Shopify-jobs, dus deze wacht
-# als Motox-SEO of een prijssync nog schrijft.
+# Deelt shopify-write-lock-ktm met de andere ktm-shop-jobs, dus deze wacht
+# als een prijssync nog schrijft. Motox-jobs blokkeren deze run niet.
 #
 # Secrets:
 #   SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'ktm-seo-dry' }}
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock-ktm' || 'ktm-seo-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

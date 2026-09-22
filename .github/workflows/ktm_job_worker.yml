@@ -1,11 +1,9 @@
-# Nightly: Shopify catalog -> Supabase (+ optional YMM projection after migration 020).
-# See docs/supabase-ymm-pipeline.md
+# Shopify catalog -> Supabase (+ optional YMM projection after migration 020).
+# Start: Supabase 03:00 NL. See docs/supabase-ymm-pipeline.md
 
 name: ktm_job_worker
 
 on:
-  schedule:
-    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       refresh_projection:

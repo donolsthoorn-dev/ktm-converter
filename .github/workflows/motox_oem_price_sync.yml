@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     concurrency:
-      group: ${{ inputs.apply == 'true' && 'shopify-write-lock' || 'motox-oem-price-dry' }}
+      group: ${{ inputs.apply == 'true' && 'shopify-write-lock-motox' || 'motox-oem-price-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"

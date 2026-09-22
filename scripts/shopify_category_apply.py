@@ -2,7 +2,7 @@
 """
 Vul of herclassificeer Shopify Category op producten.
 
-Lege fills (nachtelijke job / default):
+Lege fills (nachtelijke job / default) lezen de catalogus via één bulk-export:
   python3 scripts/shopify_category_apply.py --shop ktm --yes
   python3 scripts/shopify_category_apply.py --shop motox --yes
   python3 scripts/shopify_category_apply.py --shop ktm --limit 20 --yes
@@ -45,26 +45,12 @@ from modules.category_mapper import (  # noqa: E402
     is_missing_shopify_category,
     resolve_shopify_product_category,
 )
+from modules.shopify_catalog_bulk import (  # noqa: E402
+    download_product_catalog,
+    iter_bulk_products,
+)
 
 _REQUEST_TIMEOUT = (15, 120)
-
-_QUERY_PRODUCTS = """
-query ($c: String) {
-  products(first: 50, after: $c) {
-    pageInfo { hasNextPage endCursor }
-    nodes {
-      id
-      handle
-      title
-      status
-      productType
-      tags
-      descriptionHtml
-      category { fullName }
-    }
-  }
-}
-"""
 
 _SEARCH_TAXONOMY = """
 query ($q: String!) {
@@ -218,27 +204,21 @@ def resolve_taxonomy_gid(
     return None
 
 
-def iter_empty_products(sess, shop, token, api, limit: int):
-    cursor = None
-    scanned = 0
-    while True:
-        body = _gql(sess, shop, token, api, _QUERY_PRODUCTS, {"c": cursor})
-        conn = body["data"]["products"]
-        for p in conn["nodes"]:
-            scanned += 1
+def iter_empty_products(sess, shop, token, api, label: str):
+    """Producten zonder category, uit één bulk-export van de catalogus."""
+    bulk_path = ROOT / "output" / f".category_fill_bulk_{label}_{datetime.now():%Y%m%d_%H%M%S}.jsonl"
+    try:
+        download_product_catalog(
+            lambda query, variables=None: _gql(sess, shop, token, api, query, variables),
+            bulk_path,
+        )
+        for p in iter_bulk_products(bulk_path):
             cat = (p.get("category") or {}).get("fullName") if p.get("category") else None
             if not is_missing_shopify_category(cat):
                 continue
             yield p
-            if limit and scanned >= limit:
-                # limit is on scanned products not empties — keep going until enough yields?
-                pass
-        if limit and scanned >= limit:
-            return
-        if not conn["pageInfo"]["hasNextPage"]:
-            return
-        cursor = conn["pageInfo"]["endCursor"]
-        time.sleep(0.04)
+    finally:
+        bulk_path.unlink(missing_ok=True)
 
 
 def products_from_csv(
@@ -364,8 +344,8 @@ def main() -> None:
         )
         print(f"Bron: {args.from_csv}", flush=True)
     else:
-        products = iter_empty_products(sess, shop, token, api, 0)
-        print("Bron: live products zonder category", flush=True)
+        products = iter_empty_products(sess, shop, token, api, args.shop)
+        print("Bron: bulk-export, producten zonder category", flush=True)
 
     gid_cache: dict[str, str | None] = {}
     ok = fail = skip = 0

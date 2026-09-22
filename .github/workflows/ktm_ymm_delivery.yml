@@ -1,6 +1,7 @@
 # Periodiek: push gewijzigde canonical YMM naar Shopify (diff op content_hash).
 # Vereist: migratie 028 + eerst canonical_ymm_sync_to_supabase (na nieuwe XML).
 # Catalog mirror (producten/prijzen/ETA) blijft in ktm_job_worker.yml.
+# De maandagrun schrijft en pakt shopify-write-lock-ktm. Een dry-run niet.
 
 name: ktm_ymm_delivery
 
@@ -27,6 +28,9 @@ jobs:
   deliver:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    concurrency:
+      group: ${{ (github.event_name == 'schedule' || inputs.dry_run == false) && 'shopify-write-lock-ktm' || 'ktm-ymm-delivery-dry' }}
+      cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"
     steps:

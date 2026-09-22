@@ -8,7 +8,7 @@
 #   SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
 #   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION, BIHR_API_BASE
 #
-# Schedule: 05:15 UTC. Deelt shopify-write-lock, dus wacht tot e-bihr-sync
+# Schedule: 05:15 UTC. Deelt shopify-write-lock-motox, dus wacht tot e-bihr-sync
 # en de dubbelen-job klaar zijn. Zo raken twee Bihr-downloads elkaar niet.
 
 name: motox_shopify_gtin_fill
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-gtin-fill-dry' }}
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock-motox' || 'motox-gtin-fill-dry' }}
       cancel-in-progress: false
     env:
       PYTHONUNBUFFERED: "1"
