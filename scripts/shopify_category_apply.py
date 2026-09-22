@@ -14,7 +14,7 @@ Reclassify (goedgekeurde staging changes — overschrijft bestaande category):
   python3 scripts/shopify_category_apply.py --shop ktm --reclassify --yes \\
     --from-csv output/shopify_category_reclassify_changes_ktm_….csv \\
     --skip-done-csv output/shopify_category_reclassify_ktm_….csv \\
-    --sleep 0.5
+    --sleep 0.15
 
 Zonder --yes: dry-run (geen writes).
 """
@@ -334,7 +334,7 @@ def main() -> None:
     ap.add_argument(
         "--sleep",
         type=float,
-        default=0.35,
+        default=0.15,
         help="Pauze tussen updates (s); hoger = minder Admin-druk",
     )
     args = ap.parse_args()
