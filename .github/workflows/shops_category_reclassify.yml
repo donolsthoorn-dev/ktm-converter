@@ -41,11 +41,10 @@ on:
 
 jobs:
   reclassify:
-    if: github.event.inputs.shop == 'both' || github.event.inputs.shop == matrix.shop
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: ${{ github.event.inputs.apply == 'true' && format('shopify-write-lock-{0}', matrix.shop) || format('category-reclassify-dry-{0}', matrix.shop) }}
+      group: ${{ (github.event.inputs.apply == 'true' && (github.event.inputs.shop == 'both' || github.event.inputs.shop == matrix.shop)) && format('shopify-write-lock-{0}', matrix.shop) || format('category-reclassify-dry-{0}', matrix.shop) }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
