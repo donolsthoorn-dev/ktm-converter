@@ -156,14 +156,18 @@ def _gql(
                 timeout=_TIMEOUT,
                 proxies={"http": None, "https": None},
             )
-            # Shopify gateway blips (502/503/504) — retry like throttle
-            if r.status_code in (429, 502, 503, 504):
+            # Shopify transient HTTP blips — retry like throttle
+            if r.status_code in (429, 500, 502, 503, 504):
                 wait = min(2.0 * (attempt + 1), 30.0)
                 time.sleep(wait)
                 continue
             r.raise_for_status()
             last = r.json()
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.HTTPError,
+        ) as exc:
             last_exc = exc
             wait = min(2.0 * (attempt + 1), 30.0)
             time.sleep(wait)
