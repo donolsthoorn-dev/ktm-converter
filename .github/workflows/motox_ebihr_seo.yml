@@ -1,0 +1,102 @@
+# Motox e-bihr: SEO-titel, meta-omschrijving en alt-tekst.
+#
+# Elke nacht eerst actieve producten mét voorraad, daarna de rest.
+# 4000 producten blijven binnen de 6 uur limiet van GitHub Actions.
+# Een volgende run slaat producten over die titel, omschrijving en alt al hebben.
+#
+# Secrets:
+#   SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
+#   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
+#   OPENAI_API_KEY
+#   optioneel OPENAI_MODEL, OPENAI_BASE_URL
+#
+# Schedule: 19:15 UTC ≈ 21:15 NL (zomer) / 20:15 (winter).
+
+name: motox_ebihr_seo
+
+on:
+  schedule:
+    - cron: "15 19 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = schrijven naar Motox, false = dry-run"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      batch:
+        description: "priority = eerst voorraad, daarna de rest"
+        type: choice
+        options:
+          - priority
+          - in-stock
+          - rest
+        default: priority
+      limit:
+        description: "Max producten (0 = alle die nog leeg zijn)"
+        required: false
+        default: "20"
+
+jobs:
+  seo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-ebihr-seo-dry' }}
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'false' }}
+      BATCH: ${{ github.event.inputs.batch || 'priority' }}
+      LIMIT: ${{ github.event_name == 'schedule' && '4000' || github.event.inputs.limit || '20' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check secrets
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for k in SHOPIFY_MOTOX_ACCESS_TOKEN SHOPIFY_MOTOX_SHOP_DOMAIN OPENAI_API_KEY; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Secret $k ontbreekt"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: SEO titel, omschrijving en alt
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        run: |
+          set -euo pipefail
+          ARGS=(--batch "${BATCH}" --limit "${LIMIT}")
+          if [[ "${APPLY}" == "true" ]]; then
+            ARGS+=(--apply)
+          fi
+          python3 scripts/motox_ebihr_seo_descriptions.py "${ARGS[@]}"
+
+      - name: Upload CSV
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: motox-ebihr-seo
+          path: output/motox_ebihr_seo_descriptions_*.csv
+          if-no-files-found: ignore
