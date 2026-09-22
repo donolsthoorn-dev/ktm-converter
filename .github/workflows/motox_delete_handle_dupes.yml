@@ -1,0 +1,92 @@
+# Motox: verwijder handle-duplicaten <artikelnummer>-1.
+#
+# Alleen als het basisproduct bestaat en minstens één SKU deelt.
+# Elke nacht vanaf het begin, maximaal 100. De opruim-cursor wordt niet opgeschoven.
+#
+# Secrets:
+#   SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN
+#   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
+#
+# Schedule: 05:00 UTC ≈ 07:00 NL (zomer) / 06:00 (winter).
+# Wacht op shopify-write-lock, dus loopt ná een nog bezig zijnde e-bihr-sync.
+
+name: motox_delete_handle_dupes
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = verwijderen, false = alleen controleren"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      limit:
+        description: "Max te verwijderen producten (0 = alle kandidaten)"
+        required: false
+        default: "100"
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
+
+jobs:
+  motox_delete_handle_dupes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: ${{ (github.event_name == 'schedule' || inputs.apply == 'true') && 'shopify-write-lock' || 'motox-delete-handle-dupes-dry' }}
+      cancel-in-progress: false
+    env:
+      PYTHONUNBUFFERED: "1"
+      APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || 'false' }}
+      LIMIT: ${{ github.event_name == 'schedule' && '100' || github.event.inputs.limit || '100' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check secrets
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for k in SHOPIFY_MOTOX_ACCESS_TOKEN SHOPIFY_MOTOX_SHOP_DOMAIN; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Secret $k ontbreekt"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Verwijder Motox handle-duplicaten
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+        run: |
+          set -euo pipefail
+          ARGS=(--refresh-cache --from-start --limit "${LIMIT}")
+          if [[ "${APPLY}" == "true" ]]; then
+            ARGS+=(--apply)
+          fi
+          python3 -u scripts/motox_delete_handle_dupes.py "${ARGS[@]}"
+
+      - name: Upload rapport
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: motox-delete-handle-dupes-${{ github.run_id }}
+          path: motox/e-bihr/output/sync/delete_handle_dupes_*
+          if-no-files-found: ignore
+          retention-days: 14
