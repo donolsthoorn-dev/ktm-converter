@@ -55,14 +55,16 @@ from modules.motox_shopify_cache import load_motox_env  # noqa: E402
 from modules.seo_completeness import SEO_DESC_MAX, SEO_TITLE_MAX, collapse_ws, strip_html  # noqa: E402
 
 _REQUEST_TIMEOUT = (15, 60)
-PROMPT_VERSION = "4"
+PROMPT_VERSION = "5"
 CACHE_PATH = ROOT / "cache" / "motox" / "ebihr_seo_descriptions.json"
 OEM_VENDORS = frozenset({"ktm", "husqvarna", "gasgas", "gas gas", "wp"})
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _ABBREV = re.compile(r"(?i)\bT/C\b|%")
+# Kledingmaat (XL, maat 42). Een maat mét eenheid (24,5 cm, 0,5 mm) blijft staan.
 _SIZE = re.compile(
     r"(?i)(?:\s*[-–—,/|]\s*)?\b(?:size|maat|taille|pointure)\s*[:=]?\s*"
-    r"(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|[2-5]xl|\d{1,2})\b"
+    r"(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|[2-5]xl|"
+    r"(?>\d{1,2})(?![,.]\d)(?!\s*(?:mm|cm|m|inch|in)\b))"
     r"|\b(?:xxxs|xxs|xs|xxl|xxxl|[2-5]xl|xl)\b"
 )
 _QUOTES = "\"'“”‘’"
@@ -73,6 +75,7 @@ _DANGLING = frozenset(
 _SYSTEM = """Je schrijft het eerste deel van een Nederlandse SEO-meta-omschrijving voor een motorwinkel.
 Regels:
 - Alleen feiten uit de aangeleverde velden. Verzin geen materialen, jaren of compatibiliteit.
+- Zet die feiten in de eerste zin. Gebruik de productnaam niet als aparte openingszin.
 - Geen kleding- of variantenmaat (S, M, L, XL, XXL, maat 42, size). Die wisselt per variant.
 - Technische maat die het artikel zelf is, zoals een cilinderdiameter in mm, mag wel.
 - Schrijf woorden voluit. Geen afkortingen en geen weglatingsteken. De zin moet in zijn geheel binnen het maximum passen; kap geen woord af.
@@ -263,6 +266,30 @@ def fitment_clause(ymm: str) -> str:
     if len(one) <= 90:
         return one
     return ""
+
+
+def _norm_words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _is_title_echo(sentence: str, title: str) -> bool:
+    """True als de zin alleen de productnaam herhaalt."""
+    words = _norm_words(sentence)
+    title_words = _norm_words(title)
+    if not words or not title_words:
+        return False
+    extra = words - title_words - {"voor", "van", "de", "het", "een", "met", "en"}
+    return not extra and len(words & title_words) >= min(3, len(title_words))
+
+
+def _without_title_echo(text: str, max_len: int, title: str) -> str:
+    """Sla een openingszin over die alleen de productnaam is, en houd daarna hele zinnen."""
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", collapse_ws(text)) if p.strip()]
+    while parts and _is_title_echo(parts[0], title):
+        parts.pop(0)
+    if not parts:
+        return ""
+    return fit_complete_sentences(" ".join(parts), max_len)
 
 
 def fit_complete_sentences(text: str, max_len: int) -> str:
@@ -469,15 +496,18 @@ def propose_description(
         if _invented_years(intro, source_blob):
             last_err = "jaartal dat niet in de bron staat"
             continue
-        if len(intro) > budget:
-            fitted = fit_complete_sentences(intro, budget)
-            if not fitted:
+        body_has_facts = len(plain) > 40
+        if len(intro) > budget or (body_has_facts and _is_title_echo(intro, shown_title)):
+            fitted = _without_title_echo(intro, budget, shown_title)
+            if fitted and not _is_title_echo(fitted, shown_title):
+                intro = fitted.rstrip(".")
+            elif body_has_facts:
                 last_err = (
                     f"te lang ({len(intro)} tekens, maximum is {budget}). "
-                    "Schrijf een kortere volledige zin, zonder woorden af te kappen."
+                    "Zet de feiten uit de brontekst in de eerste zin, korter dan het maximum. "
+                    "Herhaal niet alleen de productnaam."
                 )
                 continue
-            intro = fitted.rstrip(".")
         text = compose_description(intro, clause)
         if text and len(text) <= SEO_DESC_MAX and not mentions_size(text):
             return text, "ai"
