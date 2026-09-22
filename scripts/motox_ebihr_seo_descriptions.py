@@ -55,11 +55,15 @@ from modules.motox_shopify_cache import load_motox_env  # noqa: E402
 from modules.seo_completeness import SEO_DESC_MAX, SEO_TITLE_MAX, collapse_ws, strip_html  # noqa: E402
 
 _REQUEST_TIMEOUT = (15, 60)
-PROMPT_VERSION = "5"
+PROMPT_VERSION = "6"
 CACHE_PATH = ROOT / "cache" / "motox" / "ebihr_seo_descriptions.json"
 OEM_VENDORS = frozenset({"ktm", "husqvarna", "gasgas", "gas gas", "wp"})
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _ABBREV = re.compile(r"(?i)\bT/C\b|%")
+_ENGLISH_LEFT = re.compile(
+    r"(?i)\b(?:sheath|crystall|crystal|traditional|composed|handlebar|printed|"
+    r"thickness|material|polyurethane|inside|made)\b|\bback-"
+)
 # Kledingmaat (XL, maat 42). Een maat mét eenheid (24,5 cm, 0,5 mm) blijft staan.
 _SIZE = re.compile(
     r"(?i)(?:\s*[-–—,/|]\s*)?\b(?:size|maat|taille|pointure)\s*[:=]?\s*"
@@ -76,6 +80,7 @@ _SYSTEM = """Je schrijft het eerste deel van een Nederlandse SEO-meta-omschrijvi
 Regels:
 - Alleen feiten uit de aangeleverde velden. Verzin geen materialen, jaren of compatibiliteit.
 - Zet die feiten in de eerste zin. Gebruik de productnaam niet als aparte openingszin.
+- Vertaal de brontekst volledig naar het Nederlands. Laat geen Engelse woorden staan, behalve merknamen en type-aanduidingen uit de titel.
 - Geen kleding- of variantenmaat (S, M, L, XL, XXL, maat 42, size). Die wisselt per variant.
 - Technische maat die het artikel zelf is, zoals een cilinderdiameter in mm, mag wel.
 - Schrijf woorden voluit. Geen afkortingen en geen weglatingsteken. De zin moet in zijn geheel binnen het maximum passen; kap geen woord af.
@@ -272,13 +277,18 @@ def _norm_words(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
 
 
+_FILLER = frozenset(
+    {"voor", "van", "de", "het", "een", "met", "en", "in", "op", "uit", "bij", "aan", "te", "of"}
+)
+
+
 def _is_title_echo(sentence: str, title: str) -> bool:
-    """True als de zin alleen de productnaam herhaalt."""
+    """True als de zin alleen de productnaam herhaalt, eventueel met kleur of 'voor merk'."""
     words = _norm_words(sentence)
     title_words = _norm_words(title)
     if not words or not title_words:
         return False
-    extra = words - title_words - {"voor", "van", "de", "het", "een", "met", "en"}
+    extra = words - title_words - _FILLER
     return not extra and len(words & title_words) >= min(3, len(title_words))
 
 
@@ -496,9 +506,21 @@ def propose_description(
         if _invented_years(intro, source_blob):
             last_err = "jaartal dat niet in de bron staat"
             continue
+        copied = sorted(set(_ENGLISH_LEFT.findall(intro)))
+        if copied:
+            last_err = (
+                "Engelse woorden overgenomen; vertaal volledig naar het Nederlands: "
+                + ", ".join(copied)
+            )
+            continue
         body_has_facts = len(plain) > 40
-        if len(intro) > budget or (body_has_facts and _is_title_echo(intro, shown_title)):
-            fitted = _without_title_echo(intro, budget, shown_title)
+        use_clause = clause
+        fit_limit = budget
+        if len(intro) > budget and len(intro) <= SEO_DESC_MAX:
+            use_clause = ""
+            fit_limit = SEO_DESC_MAX
+        if len(intro) > fit_limit or (body_has_facts and _is_title_echo(intro, shown_title)):
+            fitted = _without_title_echo(intro, fit_limit, shown_title)
             if fitted and not _is_title_echo(fitted, shown_title):
                 intro = fitted.rstrip(".")
             elif body_has_facts:
@@ -508,8 +530,10 @@ def propose_description(
                     "Herhaal niet alleen de productnaam."
                 )
                 continue
-        text = compose_description(intro, clause)
-        if text and len(text) <= SEO_DESC_MAX and not mentions_size(text):
+        text = compose_description(intro, use_clause)
+        if not text and len(intro) + 1 <= SEO_DESC_MAX:
+            text = compose_description(intro, "")
+        if text and len(text) <= SEO_DESC_MAX and not mentions_size(text) and not _ENGLISH_LEFT.search(text):
             return text, "ai"
         last_err = "de zin past niet in zijn geheel"
     if last_err:
@@ -549,10 +573,30 @@ def _missing_alt(row: dict) -> bool:
     return any(not m["alt"] for m in row.get("media") or [])
 
 
+def _thin_description(row: dict) -> bool:
+    """Korte tekst die de bodyfeiten niet gebruikt, terwijl die er wel zijn."""
+    desc = row.get("seo_description") or ""
+    title = row.get("title") or ""
+    plain = collapse_ws(strip_html(row.get("body_html") or ""))
+    if not desc or len(plain) <= 40:
+        return False
+    if _is_title_echo(desc, title):
+        return True
+    if len(desc) >= 80:
+        return False
+    unused = (_norm_words(plain) - _FILLER) - _norm_words(desc) - _norm_words(title)
+    return len(unused) >= 3
+
+
 def _needs_seo(row: dict, overwrite: bool) -> bool:
     if overwrite:
         return True
-    return not row["seo_title"] or not row["seo_description"] or _missing_alt(row)
+    return (
+        not row["seo_title"]
+        or not row["seo_description"]
+        or _thin_description(row)
+        or _missing_alt(row)
+    )
 
 
 def iter_products(
@@ -712,7 +756,7 @@ def main() -> int:
         else:
             seo_title = product["seo_title"]
 
-        if product["seo_description"] and not args.overwrite:
+        if product["seo_description"] and not args.overwrite and not _thin_description(product):
             description = product["seo_description"]
             bron = "bestaand"
         else:
