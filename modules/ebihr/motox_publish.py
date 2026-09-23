@@ -14,6 +14,24 @@ from modules.motox_shopify_cache import _gql, _session, load_motox_env
 log = logging.getLogger("ebihr.motox_publish")
 
 
+def _mime_ext_from_magic(head: bytes) -> tuple[str, str] | None:
+    if head[:3] == b"\xff\xd8\xff":
+        return "image/jpeg", ".jpg"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png", ".png"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif", ".gif"
+    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    return None
+
+
+def _needs_image_rehost(url: str) -> bool:
+    """Bihr WebP URLs break Shopify remote fetch (wrong Content-Type / extension)."""
+    path = (url or "").split("?", 1)[0].lower()
+    return path.endswith(".webp")
+
+
 def _customs_input(hs_code: str | None, country: str | None) -> dict[str, str]:
     """Shopify InventoryItem-velden. Lege waarden worden niet meegestuurd."""
     out: dict[str, str] = {}
@@ -192,20 +210,42 @@ class MotoxAdmin:
         return pid, ""
 
     def attach_images(self, product_id: str, urls: list[str], *, dry_run: bool = False) -> str:
-        """Attach remote image URLs. Returns error string or empty."""
+        """
+        Attach images to a product. Returns error string or empty.
+
+        Bihr sometimes serves WebP as Content-Type ``application/webp`` (and/or
+        ``*.webp`` URLs). Shopify's remote fetch then fails with
+        "File extension doesn't match the format of the file". Those are
+        re-hosted via stagedUploadsCreate with a correct ``image/webp`` MIME.
+        """
         urls = [u for u in urls if u][:20]
         if not urls:
             return ""
         if dry_run:
             return ""
-        media = [
-            {"originalSource": u, "mediaContentType": "IMAGE"}
-            for u in urls
-        ]
+
+        # Drop prior FAILED media so backfill can retry cleanly.
+        self.delete_failed_media(product_id)
+
+        sources: list[str] = []
+        errors: list[str] = []
+        for i, src in enumerate(urls):
+            if _needs_image_rehost(src):
+                staged, err = self._rehost_image_url(src, index=i)
+                if staged:
+                    sources.append(staged)
+                else:
+                    errors.append(err or f"rehost_failed:{src[:80]}")
+            else:
+                sources.append(src)
+        if not sources:
+            return "; ".join(errors)[:300] or "no_images_after_rehost"
+
+        media = [{"originalSource": u, "mediaContentType": "IMAGE"} for u in sources]
         q = """
         mutation MotoxProductCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
           productCreateMedia(productId: $productId, media: $media) {
-            media { id }
+            media { id status }
             mediaUserErrors { field message code }
           }
         }
@@ -218,6 +258,148 @@ class MotoxAdmin:
         uerr = payload.get("mediaUserErrors") or []
         if uerr:
             return str(uerr)[:300]
+        if errors:
+            return f"partial:{'; '.join(errors)}"[:300]
+        return ""
+
+    def _rehost_image_url(self, src: str, *, index: int = 0) -> tuple[str | None, str]:
+        """Download remote image and staged-upload with MIME from magic bytes."""
+        try:
+            r = self.sess.get(
+                src,
+                timeout=60,
+                proxies={"http": None, "https": None},
+                headers={"User-Agent": "Motox-eBihr-Sync/1.0"},
+            )
+            r.raise_for_status()
+            data = r.content or b""
+        except Exception as e:
+            return None, f"download:{e}"[:200]
+        if len(data) < 16:
+            return None, "download:empty"
+
+        detected = _mime_ext_from_magic(data[:32])
+        if not detected:
+            return None, "download:unknown_image_type"
+        mime, ext = detected
+        # Prefer stem from URL path for a stable Shopify filename.
+        path = src.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1] or f"bihr-{index}"
+        stem = path.rsplit(".", 1)[0] if "." in path else path
+        filename = f"{stem}{ext}"
+
+        stage_q = """
+        mutation MotoxStagedUploads($input: [StagedUploadInput!]!) {
+          stagedUploadsCreate(input: $input) {
+            stagedTargets {
+              url
+              resourceUrl
+              parameters { name value }
+            }
+            userErrors { field message }
+          }
+        }
+        """
+        body = self.gql(
+            stage_q,
+            {
+                "input": [
+                    {
+                        "filename": filename,
+                        "mimeType": mime,
+                        "httpMethod": "POST",
+                        "resource": "PRODUCT_IMAGE",
+                        "fileSize": str(len(data)),
+                    }
+                ]
+            },
+        )
+        if body.get("errors"):
+            return None, str(body.get("errors"))[:200]
+        payload = ((body.get("data") or {}).get("stagedUploadsCreate")) or {}
+        uerr = payload.get("userErrors") or []
+        if uerr:
+            return None, str(uerr)[:200]
+        targets = payload.get("stagedTargets") or []
+        if not targets:
+            return None, "staged:no_target"
+        target = targets[0]
+        post_url = target.get("url") or ""
+        resource_url = target.get("resourceUrl") or ""
+        params = {
+            p["name"]: p["value"]
+            for p in (target.get("parameters") or [])
+            if p.get("name")
+        }
+        if not post_url or not resource_url:
+            return None, "staged:missing_urls"
+        try:
+            files = {"file": (filename, data, mime)}
+            pr = self.sess.post(
+                post_url,
+                data=params,
+                files=files,
+                timeout=120,
+                proxies={"http": None, "https": None},
+            )
+        except Exception as e:
+            return None, f"staged_post:{e}"[:200]
+        if pr.status_code not in (200, 201, 204):
+            return None, f"staged_post:{pr.status_code}"[:200]
+        return resource_url, ""
+
+    def delete_failed_media(self, product_id: str) -> str:
+        """Remove FAILED MediaImage nodes so backfill can retry. Returns error or ''."""
+        q = """
+        query MotoxFailedMedia($id: ID!) {
+          product(id: $id) {
+            media(first: 50) {
+              nodes {
+                id
+                ... on MediaImage { status }
+              }
+            }
+          }
+        }
+        """
+        body = self.gql(q, {"id": f"gid://shopify/Product/{product_id}"})
+        if body.get("errors"):
+            return str(body.get("errors"))[:200]
+        prod = ((body.get("data") or {}).get("product")) or {}
+        nodes = ((prod.get("media") or {}).get("nodes")) or []
+        failed_ids = [
+            n["id"]
+            for n in nodes
+            if isinstance(n, dict) and n.get("status") == "FAILED" and n.get("id")
+        ]
+        if not failed_ids:
+            return ""
+        dq = """
+        mutation MotoxDeleteMedia($productId: ID!, $mediaIds: [ID!]!) {
+          productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
+            deletedMediaIds
+            mediaUserErrors { field message code }
+          }
+        }
+        """
+        body = self.gql(
+            dq,
+            {
+                "productId": f"gid://shopify/Product/{product_id}",
+                "mediaIds": failed_ids,
+            },
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:200]
+        uerr = (((body.get("data") or {}).get("productDeleteMedia")) or {}).get(
+            "mediaUserErrors"
+        ) or []
+        if uerr:
+            return str(uerr)[:200]
+        log.info(
+            "Deleted %s FAILED media on product %s",
+            len(failed_ids),
+            product_id,
+        )
         return ""
 
     def update_variant_prices(
@@ -412,12 +594,17 @@ class MotoxAdmin:
         return ""
 
     def product_has_media(self, product_id: str) -> tuple[bool, str]:
-        """Live check: featuredMedia present. Returns (has_media, error)."""
+        """Live check: at least one READY image. FAILED-only counts as no media."""
         q = """
         query MotoxProductMedia($id: ID!) {
           product(id: $id) {
             featuredMedia { id }
-            media(first: 1) { nodes { id } }
+            media(first: 20) {
+              nodes {
+                id
+                ... on MediaImage { status }
+              }
+            }
           }
         }
         """
@@ -430,7 +617,16 @@ class MotoxAdmin:
         if prod.get("featuredMedia"):
             return True, ""
         nodes = ((prod.get("media") or {}).get("nodes")) or []
-        return bool(nodes), ""
+        for n in nodes:
+            if not isinstance(n, dict):
+                continue
+            status = (n.get("status") or "").upper()
+            if status in ("READY", "UPLOADED", "PROCESSING"):
+                return True, ""
+            if not status and n.get("id"):
+                # Non-MediaImage or status unavailable — treat as present.
+                return True, ""
+        return False, ""
 
     def set_status(self, product_id: str, status: str, *, dry_run: bool = False) -> str:
         """Zet productstatus (ACTIVE/DRAFT/ARCHIVED). Returns error or ''."""
