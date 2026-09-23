@@ -70,6 +70,10 @@ Haalt de nieuwste Bihr-lijst op en werkt Motox bij:
 
 Producten die niet in de Bihr-lijst staan, laat deze job met rust. Prijzen van KTM, Husqvarna, GasGas en WP volgen de ktm-shop via Synkro.
 
+### 04:30 — YMM-samenvatting
+
+Vult `ymm_summary` en de platte velden merk, model en bouwjaar vanuit `fits_on`, als die leeg zijn of niet meer kloppen. Een product zonder `fits_on` blijft leeg. In de winter valt dit om 03:30, omdat de planner op UTC staat.
+
 ### 05:45 — Categorieën
 
 Geeft een categorie aan producten die er nog geen hebben. Een categorie die al ingevuld is, blijft staan, ook als die niet de beste keuze is.

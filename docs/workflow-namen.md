@@ -35,6 +35,7 @@ Python-scripts houden hun bestaande bestandsnaam. Alleen de workflowbestanden zi
 - `motox_ebihr_sync.yml`
 - `motox_deactivate_products_without_image.yml`
 - `motox_shopify_gtin_fill.yml` — lege barcode uit e-bihr `BarCode`
+- `motox_ymm_derived_fill.yml` — `ymm_summary` en platte fits-velden vanuit `fits_on`
 - `motox_oem_price_sync.yml` — eenmalige prijsiinhaal, alleen handmatig
 
 Na een push naar `main` toont Actions de nieuwe namen. Bestaande run-historie blijft aan het oude workflowbestand hangen. De Supabase-scheduler pakt de nieuwe namen pas na migratie `035`.
