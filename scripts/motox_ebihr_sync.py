@@ -715,34 +715,41 @@ def main() -> int:
             f.write(
                 f"- customs existing: checked **{customs_checked}**, "
                 f"unchanged **{customs_unchanged}**, written **{customs_written}**, "
-                f"no source **{customs_no_source}** (errors {customs_errors})\n"
+                f"no source **{customs_no_source}** (errors {customs_errors})"
             )
+            if customs_errors:
+                f.write(" — customs errors are warnings (job stays green)\n")
+            else:
+                f.write("\n")
             f.write(f"- report: `{report_path}`\n")
 
     log.info("Summary: %s", summary)
     print(json.dumps(summary, indent=2))
     print(f"Report: {report_path}")
 
-    # Create failures are expected for odd Bihr option data; log + report but do
-    # not fail the job. Price / metafield / image / publish errors still fail apply.
+    # Create / douane / fitment: log + report, but do not fail the nightly job.
+    # Price / metafield-write / image / publish errors remain hard failures.
+    soft = []
     if create_errors:
+        soft.append(f"create={create_errors}")
+    if customs_errors:
+        soft.append(f"customs={customs_errors}")
+    if fitment_errors:
+        soft.append(f"fitment={fitment_errors}")
+    if soft:
         log.warning(
-            "Create errors: %s (non-fatal; see sync_report). "
-            "Price/meta/image/publish errors still fail the job.",
-            create_errors,
+            "Non-fatal sync issues (%s); see sync_report. Job stays green.",
+            ", ".join(soft),
         )
     hard_errors = (
         price_errors
         or meta_errors
-        or fitment_errors
-        or customs_errors
         or image_backfill_errors
         or publish_errors
     )
     if hard_errors:
         return 2 if not dry_run else 0
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

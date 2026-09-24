@@ -487,7 +487,11 @@ class MotoxAdmin:
         *,
         dry_run: bool = False,
     ) -> str:
-        """variant_customs: (variant_numeric_id, hs_code, country). Lege velden blijven staan."""
+        """variant_customs: (variant_numeric_id, hs_code, country). Lege velden blijven staan.
+
+        Bij een bulk-fout opnieuw per variant proberen, zodat één slechte HS/COO
+        niet de rest van het product blokkeert.
+        """
         variants = []
         for vid, hs_code, country in variant_customs:
             customs = _customs_input(hs_code, country)
@@ -503,28 +507,53 @@ class MotoxAdmin:
             return ""
         if dry_run:
             return ""
-        q = """
-        mutation MotoxVariantsBulkCustoms($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-            productVariants { id }
-            userErrors { field message }
-          }
-        }
-        """
-        body = self.gql(
-            q,
-            {
-                "productId": f"gid://shopify/Product/{product_id}",
-                "variants": variants,
-            },
-        )
-        if body.get("errors"):
-            return str(body.get("errors"))[:300]
-        payload = ((body.get("data") or {}).get("productVariantsBulkUpdate")) or {}
-        uerr = payload.get("userErrors") or []
-        if uerr:
-            return str(uerr)[:300]
-        return ""
+
+        def _bulk(chunk: list[dict]) -> str:
+            q = """
+            mutation MotoxVariantsBulkCustoms($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                productVariants { id }
+                userErrors { field message }
+              }
+            }
+            """
+            body = self.gql(
+                q,
+                {
+                    "productId": f"gid://shopify/Product/{product_id}",
+                    "variants": chunk,
+                },
+            )
+            if body.get("errors"):
+                return str(body.get("errors"))[:300]
+            payload = ((body.get("data") or {}).get("productVariantsBulkUpdate")) or {}
+            uerr = payload.get("userErrors") or []
+            if uerr:
+                return str(uerr)[:300]
+            return ""
+
+        err = _bulk(variants)
+        if not err:
+            return ""
+        if len(variants) == 1:
+            return err
+
+        # Fallback: write what we can; collect remaining errors.
+        failed: list[str] = []
+        for one in variants:
+            one_err = _bulk([one])
+            if one_err:
+                failed.append(f"{one['id'].rsplit('/', 1)[-1]}:{one_err}")
+            else:
+                time.sleep(0.05)
+        if not failed:
+            log.warning(
+                "Douane bulk fail op product %s, maar per-variant OK: %s",
+                product_id,
+                err,
+            )
+            return ""
+        return f"bulk:{err}; failed:{len(failed)}/{len(variants)} {'; '.join(failed)}"[:500]
 
     def set_ymm_metafields(
         self,
