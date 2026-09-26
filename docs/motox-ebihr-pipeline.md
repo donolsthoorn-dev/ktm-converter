@@ -14,6 +14,7 @@ Nachtelijke (of handmatige) job schrijft **direct naar Motox Shopify**:
 4. **Prijzen (delta):** alleen SKUs waar Bihr-prijs ≠ huidige Motox-prijs (uit cache); `--force-all-prices` voor alles
 5. **Metafields** `global.fits_on` (+ summary/year/make/model) op nieuwe producten, en op bestaande producten als de passendheid leeg is of afwijkt van VSE
 6. **Douane:** Bihr `CommodityCode` en `CountryOfOrigin` op nieuwe producten meteen, en op bestaande producten als de goederencode of het land van herkomst leeg is of afwijkt
+7. **Artikelnummers:** Bihr `OldPartNumber` en `SupplierPartNumber` op de variant (`custom.article_numbers`), een groeiende zoeklijst op het product (`custom.search_codes`) en tags `ref:<nummer>`. De SKU blijft het huidige `PartNumber`. De productpagina toont oud nummer, leverancierscode en EAN; de sitezoekfunctie vindt de `ref:`-tags. Een nummer dat Bihr later vervangt blijft in de zoeklijst staan.
 
 YMM-**app**/filter-CSV is **later** (lokaal); v1 dekt theme-metafields.
 

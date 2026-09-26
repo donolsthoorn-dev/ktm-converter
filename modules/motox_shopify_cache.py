@@ -12,6 +12,7 @@ Caches:
   cache/motox/shopify_sku_to_variant_id.json — sku -> variant id
   cache/motox/shopify_sku_to_price.json      — sku -> current Shopify price (string)
   cache/motox/shopify_sku_to_customs.json    — sku -> {hs, country}
+  cache/motox/shopify_sku_to_article.json    — sku -> article_numbers JSON
   cache/motox/shopify_handle_to_product_id.json — handle -> product id
 """
 
@@ -28,6 +29,7 @@ try:
 except ImportError as e:  # pragma: no cover
     raise SystemExit("Installeer requests: pip install requests") from e
 
+from modules.ebihr.article_numbers import is_ref_tag, parse_code_list
 from modules.env_loader import load_dotenv
 from modules.xml_loader import normalize_shopify_product_handle
 
@@ -39,6 +41,7 @@ SKU_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_sku_to_product_id.json"
 SKU_TO_VARIANT_ID_FILE = CACHE_DIR / "shopify_sku_to_variant_id.json"
 SKU_TO_PRICE_FILE = CACHE_DIR / "shopify_sku_to_price.json"
 SKU_TO_CUSTOMS_FILE = CACHE_DIR / "shopify_sku_to_customs.json"
+SKU_TO_ARTICLE_FILE = CACHE_DIR / "shopify_sku_to_article.json"
 HANDLE_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_handle_to_product_id.json"
 BULK_JSONL_FILE = CACHE_DIR / "shopify_products_bulk.jsonl"
 
@@ -55,7 +58,15 @@ _BULK_QUERY = """{
         featuredImage {
           id
         }
+        tags
         metafield(namespace: "global", key: "fits_on") {
+          namespace
+          key
+          value
+        }
+        searchCodes: metafield(namespace: "custom", key: "search_codes") {
+          namespace
+          key
           value
         }
         variants {
@@ -67,6 +78,11 @@ _BULK_QUERY = """{
               inventoryItem {
                 harmonizedSystemCode
                 countryCodeOfOrigin
+              }
+              articleNumbers: metafield(namespace: "custom", key: "article_numbers") {
+                namespace
+                key
+                value
               }
             }
           }
@@ -261,6 +277,21 @@ def _run_bulk(sess: requests.Session, gql_url: str, token: str) -> Path:
         poll_interval = min(poll_interval + 0.5, 15.0)
 
 
+def _ref_tags(tags: object) -> list[str]:
+    if isinstance(tags, str):
+        tags = [part.strip() for part in tags.split(",")]
+    if not isinstance(tags, list):
+        return []
+    return [str(tag) for tag in tags if is_ref_tag(tag)]
+
+
+def _inlined_metafield_value(obj: dict, alias: str) -> str:
+    raw = obj.get(alias)
+    if isinstance(raw, dict):
+        return str(raw.get("value") or "")
+    return ""
+
+
 def _fits_on_hash(value) -> str:
     """Stabiele hash van global.fits_on, ongeacht sleutelvolgorde."""
     if value is None or value == "":
@@ -300,6 +331,7 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
             parent = obj.get("__parentId")
             if gid.startswith("gid://shopify/Product/") and not parent:
                 feat = obj.get("featuredImage")
+                search_raw = _inlined_metafield_value(obj, "searchCodes")
                 products[gid] = {
                     "id": _gid_num(gid),
                     "handle": normalize_shopify_product_handle(
@@ -309,8 +341,19 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
                     "status": (obj.get("status") or "").strip().upper(),
                     "has_image": bool(feat and (feat.get("id") if isinstance(feat, dict) else feat)),
                     "fits_on_hash": _fits_on_hash((obj.get("metafield") or {}).get("value")),
+                    "search_codes": parse_code_list(search_raw),
+                    "ref_tags": _ref_tags(obj.get("tags")),
                     "skus": [],
                 }
+                continue
+            # Variant-artikelnummers als losse regel onder de variant.
+            if parent in variant_to_product and (obj.get("key") or "") == "article_numbers":
+                product_gid = variant_to_product[parent]
+                vid = _gid_num(parent)
+                for entry in products[product_gid]["skus"]:
+                    if entry.get("variant_id") == vid:
+                        entry["article"] = str(obj.get("value") or "")
+                        break
                 continue
             # Metafield kan als losse JSONL-regel terugkomen, alleen met value + parent.
             if (
@@ -319,9 +362,14 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
                 and "sku" not in obj
                 and not gid.startswith("gid://shopify/ProductVariant/")
             ):
-                hashed = _fits_on_hash(obj.get("value"))
-                if hashed:
-                    products[parent]["fits_on_hash"] = hashed
+                key = obj.get("key") or ""
+                if key == "search_codes":
+                    products[parent]["search_codes"] = parse_code_list(obj.get("value"))
+                    continue
+                if key in ("", "fits_on"):
+                    hashed = _fits_on_hash(obj.get("value"))
+                    if hashed:
+                        products[parent]["fits_on_hash"] = hashed
                 continue
             # Bulk JSONL variant rows often have only sku + __parentId (no id).
             is_variant = bool(parent) and (
@@ -340,6 +388,7 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
                             "hs": (inv.get("harmonizedSystemCode") or "").strip(),
                             "country": (inv.get("countryCodeOfOrigin") or "").strip(),
                             "customs_seen": "inventoryItem" in obj,
+                            "article": _inlined_metafield_value(obj, "articleNumbers"),
                         }
                     )
                 if gid:
@@ -368,6 +417,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     sku_to_vid: dict[str, str] = {}
     sku_to_price: dict[str, str] = {}
     sku_to_customs: dict[str, dict[str, str]] = {}
+    sku_to_article: dict[str, str] = {}
     handle_to_pid: dict[str, str] = {}
 
     for p in products.values():
@@ -380,6 +430,8 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                 "status": p.get("status") or "",
                 "has_image": bool(p.get("has_image")),
                 "fits_on_hash": p.get("fits_on_hash") or "",
+                "search_codes": list(p.get("search_codes") or []),
+                "ref_tags": list(p.get("ref_tags") or []),
             }
             handle_to_pid[handle] = pid
         for entry in p.get("skus") or []:
@@ -397,6 +449,9 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                         "hs": (entry.get("hs") or "").strip(),
                         "country": (entry.get("country") or "").strip(),
                     }
+                article = (entry.get("article") or "").strip()
+                if article:
+                    sku_to_article[s.upper()] = article
             if not s:
                 continue
             skus.add(s.upper())
@@ -434,6 +489,9 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     SKU_TO_CUSTOMS_FILE.write_text(
         json.dumps(sku_to_customs, ensure_ascii=False), encoding="utf-8"
     )
+    SKU_TO_ARTICLE_FILE.write_text(
+        json.dumps(sku_to_article, ensure_ascii=False), encoding="utf-8"
+    )
     HANDLE_TO_PRODUCT_ID_FILE.write_text(
         json.dumps(handle_to_pid, ensure_ascii=False), encoding="utf-8"
     )
@@ -445,6 +503,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
         "sku_to_customs": len(sku_to_customs),
+        "sku_to_article": len(sku_to_article),
         "handles": len(handle_to_pid),
         "cache_dir": str(CACHE_DIR),
     }
@@ -498,6 +557,7 @@ def load_motox_indexes() -> dict:
       sku_to_variant_id: dict[str, str]
       sku_to_price: dict[str, str]
       sku_to_customs: dict[str, dict]
+      sku_to_article: dict[str, str]
       handle_to_product_id: dict[str, str]
       summary: dict
     """
@@ -507,6 +567,7 @@ def load_motox_indexes() -> dict:
     sku_to_vid = _load_json(SKU_TO_VARIANT_ID_FILE, {})
     sku_to_price = _load_json(SKU_TO_PRICE_FILE, {})
     sku_to_customs = _load_json(SKU_TO_CUSTOMS_FILE, {})
+    sku_to_article = _load_json(SKU_TO_ARTICLE_FILE, {})
     handle_to_pid = _load_json(HANDLE_TO_PRODUCT_ID_FILE, {})
     if not handle_to_pid and products_index:
         handle_to_pid = {
@@ -527,6 +588,7 @@ def load_motox_indexes() -> dict:
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
         "sku_to_customs": len(sku_to_customs) if isinstance(sku_to_customs, dict) else 0,
+        "sku_to_article": len(sku_to_article) if isinstance(sku_to_article, dict) else 0,
         "handles": len(handles),
         "cache_dir": str(CACHE_DIR),
         "present": SKUS_FILE.is_file() and PRODUCTS_INDEX_FILE.is_file(),
@@ -539,6 +601,7 @@ def load_motox_indexes() -> dict:
         "sku_to_variant_id": sku_to_vid,
         "sku_to_price": sku_to_price,
         "sku_to_customs": sku_to_customs if isinstance(sku_to_customs, dict) else {},
+        "sku_to_article": sku_to_article if isinstance(sku_to_article, dict) else {},
         "handle_to_product_id": handle_to_pid,
         "summary": summary,
     }

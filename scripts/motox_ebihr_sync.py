@@ -6,6 +6,8 @@ fits_on gaat naar nieuwe producten én naar bestaande producten waar de
 passendheid leeg is of afwijkt van de VSE-data van deze run.
 Goederencode en land van herkomst uit Bihr gaan mee bij het aanmaken, en
 worden op bestaande producten bijgewerkt als ze leeg zijn of afwijken.
+Oud Bihr-nummer en leverancierscode gaan naar variant-metafields, een
+zoeklijst op het product, en ``ref:``-tags zodat de sitezoekfunctie ze vindt.
 
   # Dry-run tegen bestaande raw:
   python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run
@@ -44,6 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
+from modules.ebihr.article_numbers import plan_article_update  # noqa: E402
 from modules.ebihr.build_products import build_product_groups  # noqa: E402
 from modules.ebihr.build_ymm import build_ymm_from_raw  # noqa: E402
 from modules.ebihr.client import BihrClient  # noqa: E402
@@ -117,6 +120,24 @@ def _resolve_product_id(
     return ""
 
 
+def _article_plan(group: dict, products_index: dict, sku_to_article: dict, handle: str):
+    meta = products_index.get(handle) if isinstance(products_index.get(handle), dict) else {}
+    stored_by_sku: dict[str, str] = {}
+    for variant in group.get("variants") or []:
+        sku = (variant.get("sku") or "").strip()
+        if not sku:
+            continue
+        raw = sku_to_article.get(sku.upper()) or sku_to_article.get(sku) or ""
+        if raw:
+            stored_by_sku[sku.upper()] = raw
+    return plan_article_update(
+        group.get("variants") or [],
+        stored_codes=(meta or {}).get("search_codes") or [],
+        stored_by_sku=stored_by_sku,
+        stored_ref_tags=(meta or {}).get("ref_tags") or [],
+    )
+
+
 def _cache_has_image(products_index: dict, handle: str, pid: str) -> bool | None:
     """True/False if known from cache; None if field missing (old cache)."""
     meta = products_index.get(handle)
@@ -179,6 +200,12 @@ def main() -> int:
         and not args.skip_metafields
     )
     do_customs = not args.prices_only and not args.images_only and not args.create_only
+    do_articles = (
+        not args.prices_only
+        and not args.images_only
+        and not args.skip_metafields
+    )
+    do_articles_existing = do_articles and not args.create_only
 
     dry_run = not args.apply or args.dry_run
     if args.apply and args.dry_run:
@@ -194,7 +221,7 @@ def main() -> int:
         raise SystemExit("Geen raw-dir. Gebruik --fetch of --raw-dir.")
 
     log.info(
-        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s fitment=%s customs=%s",
+        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s fitment=%s customs=%s articles=%s",
         raw_dir,
         dry_run,
         do_create,
@@ -202,6 +229,7 @@ def main() -> int:
         do_prices,
         do_fitment,
         do_customs,
+        do_articles,
     )
 
     ymm = build_ymm_from_raw(raw_dir)
@@ -222,6 +250,7 @@ def main() -> int:
     sku_to_vid = idx.get("sku_to_variant_id") or {}
     sku_to_shop_price = idx.get("sku_to_price") or {}
     sku_to_customs = idx.get("sku_to_customs") or {}
+    sku_to_article = idx.get("sku_to_article") or {}
     products_index = idx.get("products_index") or {}
 
     admin = MotoxAdmin()
@@ -245,6 +274,16 @@ def main() -> int:
     customs_written = 0
     customs_no_source = 0
     customs_errors = 0
+    articles_checked = 0
+    articles_unchanged = 0
+    articles_written = 0
+    articles_errors = 0
+    articles_def_error = ""
+
+    if do_articles and not dry_run:
+        articles_def_error = admin.ensure_article_definitions()
+        if articles_def_error:
+            log.warning("Artikelnummer-definities: %s", articles_def_error)
     skipped_exists = 0
     skipped_no_image = 0
     images_backfilled = 0
@@ -291,6 +330,29 @@ def main() -> int:
                 }
             )
             log.info("Created %s → %s", handle, pid)
+
+            if do_articles:
+                article_plan = _article_plan(g, {}, {}, handle)
+                if article_plan:
+                    aerr = admin.apply_article_numbers(
+                        pid, article_plan, sku_to_vid, dry_run=dry_run
+                    )
+                    if aerr:
+                        articles_errors += 1
+                        report_rows.append(
+                            {"action": "articles", "handle": handle, "ok": "0", "detail": aerr}
+                        )
+                        log.warning("Artikelnummers fail %s: %s", handle, aerr)
+                    else:
+                        articles_written += 1
+                        report_rows.append(
+                            {
+                                "action": "articles",
+                                "handle": handle,
+                                "ok": "1",
+                                "detail": "created",
+                            }
+                        )
 
             if not args.skip_metafields:
                 tokens = [handle] + [v.get("sku") or "" for v in g["variants"]]
@@ -551,6 +613,47 @@ def main() -> int:
             customs_errors,
         )
 
+    # --- Oud nummer + leverancierscode op bestaande producten ---
+    if do_articles_existing:
+        for g in groups:
+            handle = normalize_shopify_product_handle(g["handle"]) or g["handle"]
+            skus = {(v.get("sku") or "").strip().upper() for v in g["variants"] if v.get("sku")}
+            if handle not in motox_handles and not (skus & motox_skus):
+                continue
+            articles_checked += 1
+            article_plan = _article_plan(g, products_index, sku_to_article, handle)
+            if not article_plan:
+                articles_unchanged += 1
+                continue
+            pid = _resolve_product_id(handle, skus, handle_to_pid, sku_to_pid)
+            if not pid:
+                continue
+            aerr = admin.apply_article_numbers(
+                pid, article_plan, sku_to_vid, dry_run=dry_run
+            )
+            if aerr:
+                articles_errors += 1
+                report_rows.append(
+                    {"action": "articles", "handle": handle, "ok": "0", "detail": aerr}
+                )
+                log.warning("Artikelnummers fail %s: %s", handle, aerr)
+                continue
+            articles_written += 1
+            report_rows.append(
+                {"action": "articles", "handle": handle, "ok": "1", "detail": "updated"}
+            )
+            if articles_written % 50 == 0:
+                log.info("Artikelnummers bijgewerkt: %s", articles_written)
+            if not dry_run:
+                time.sleep(0.15)
+        log.info(
+            "Artikelnummers: checked=%s unchanged=%s written=%s errors=%s",
+            articles_checked,
+            articles_unchanged,
+            articles_written,
+            articles_errors,
+        )
+
     # --- Price updates for existing (delta by default) ---
     if do_prices:
         use_delta = not args.force_all_prices
@@ -671,6 +774,11 @@ def main() -> int:
         "customs_written": customs_written,
         "customs_no_source": customs_no_source,
         "customs_errors": customs_errors,
+        "articles_checked": articles_checked,
+        "articles_unchanged": articles_unchanged,
+        "articles_written": articles_written,
+        "articles_errors": articles_errors,
+        "articles_def_error": articles_def_error,
         "build": build_stats,
     }
     out_dir = OUTPUT_ROOT / "sync"
@@ -721,6 +829,11 @@ def main() -> int:
                 f.write(" — customs errors are warnings (job stays green)\n")
             else:
                 f.write("\n")
+            f.write(
+                f"- article numbers: checked **{articles_checked}**, "
+                f"unchanged **{articles_unchanged}**, written **{articles_written}** "
+                f"(errors {articles_errors})\n"
+            )
             f.write(f"- report: `{report_path}`\n")
 
     log.info("Summary: %s", summary)
@@ -736,6 +849,8 @@ def main() -> int:
         soft.append(f"customs={customs_errors}")
     if fitment_errors:
         soft.append(f"fitment={fitment_errors}")
+    if articles_errors:
+        soft.append(f"articles={articles_errors}")
     if soft:
         log.warning(
             "Non-fatal sync issues (%s); see sync_report. Job stays green.",

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from modules.customs_mapping import normalize_country_code, normalize_hs_code
+from modules.ebihr.article_numbers import article_payload
 from modules.ebihr.constants import (
     EXCLUDED_BRANDS,
     HARDPART_CATEGORY_ALLOWLIST,
@@ -144,6 +145,12 @@ def _normalize_product(raw: dict, *, brand: str, group: str, family: str, segmen
         "segmentCode": segment_code,
         "htmlDescription": raw.get("HtmlDescription") or raw.get("htmlDescription") or "",
         "barCode": raw.get("BarCode") or raw.get("barCode") or "",
+        "oldPartNumber": str(
+            raw.get("OldPartNumber") or raw.get("oldPartNumber") or ""
+        ).strip(),
+        "supplierPartNumber": str(
+            raw.get("SupplierPartNumber") or raw.get("supplierPartNumber") or ""
+        ).strip(),
         "commodityCode": str(
             raw.get("CommodityCode") or raw.get("commodityCode") or ""
         ).strip(),
@@ -793,6 +800,11 @@ def build_product_groups(
                 {
                     "sku": pn,
                     "barcode": _barcode(var),
+                    "article_numbers": article_payload(
+                        pn,
+                        var.get("oldPartNumber"),
+                        var.get("supplierPartNumber"),
+                    ),
                     "hs_code": normalize_hs_code(var.get("commodityCode")) or "",
                     "country": normalize_country_code(var.get("countryOfOrigin")) or "",
                     "price": _price_incl(prices.get(pn), var),

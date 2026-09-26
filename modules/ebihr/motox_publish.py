@@ -622,6 +622,226 @@ class MotoxAdmin:
             return str(uerr)[:300]
         return ""
 
+    def ensure_article_definitions(self) -> str:
+        """Maak variant- en product-metafields leesbaar op de storefront."""
+        specs = (
+            ("PRODUCTVARIANT", "article_numbers", "json", "Artikelnummers"),
+            ("PRODUCT", "search_codes", "list.single_line_text_field", "Zoeknummers"),
+        )
+        q = """
+        query MotoxArticleDefs($owner: MetafieldOwnerType!, $namespace: String!, $key: String!) {
+          metafieldDefinitions(first: 1, ownerType: $owner, namespace: $namespace, key: $key) {
+            nodes { id access { storefront } }
+          }
+        }
+        """
+        create = """
+        mutation MotoxArticleDefCreate($definition: MetafieldDefinitionInput!) {
+          metafieldDefinitionCreate(definition: $definition) {
+            createdDefinition { id }
+            userErrors { field message code }
+          }
+        }
+        """
+        update = """
+        mutation MotoxArticleDefUpdate($definition: MetafieldDefinitionUpdateInput!) {
+          metafieldDefinitionUpdate(definition: $definition) {
+            updatedDefinition { id }
+            userErrors { field message code }
+          }
+        }
+        """
+        errors: list[str] = []
+        for owner, key, mtype, name in specs:
+            body = self.gql(q, {"owner": owner, "namespace": "custom", "key": key})
+            if body.get("errors"):
+                return str(body.get("errors"))[:300]
+            nodes = (
+                (((body.get("data") or {}).get("metafieldDefinitions")) or {}).get("nodes")
+                or []
+            )
+            if not nodes:
+                created = self.gql(
+                    create,
+                    {
+                        "definition": {
+                            "name": name,
+                            "namespace": "custom",
+                            "key": key,
+                            "type": mtype,
+                            "ownerType": owner,
+                            "access": {"storefront": "PUBLIC_READ"},
+                        }
+                    },
+                )
+                if created.get("errors"):
+                    errors.append(str(created.get("errors"))[:200])
+                    continue
+                uerr = (
+                    (((created.get("data") or {}).get("metafieldDefinitionCreate")) or {}).get(
+                        "userErrors"
+                    )
+                    or []
+                )
+                if uerr and not any((e.get("code") or "") == "TAKEN" for e in uerr):
+                    errors.append(str(uerr)[:200])
+                continue
+            access = ((nodes[0].get("access") or {}).get("storefront") or "").upper()
+            if access == "PUBLIC_READ":
+                continue
+            updated = self.gql(
+                update,
+                {
+                    "definition": {
+                        "namespace": "custom",
+                        "key": key,
+                        "ownerType": owner,
+                        "access": {"storefront": "PUBLIC_READ"},
+                    }
+                },
+            )
+            if updated.get("errors"):
+                errors.append(str(updated.get("errors"))[:200])
+                continue
+            uerr = (
+                (((updated.get("data") or {}).get("metafieldDefinitionUpdate")) or {}).get(
+                    "userErrors"
+                )
+                or []
+            )
+            if uerr:
+                errors.append(str(uerr)[:200])
+        return "; ".join(errors)[:300]
+
+    def variant_ids_for_product(self, product_id: str) -> dict[str, str]:
+        """sku → numeriek variant-id."""
+        q = """
+        query MotoxVariantSkus($id: ID!) {
+          product(id: $id) {
+            variants(first: 250) { nodes { id sku } }
+          }
+        }
+        """
+        body = self.gql(q, {"id": f"gid://shopify/Product/{product_id}"})
+        if body.get("errors"):
+            log.warning("Variant-ids %s: %s", product_id, str(body.get("errors"))[:200])
+            return {}
+        nodes = (
+            ((((body.get("data") or {}).get("product")) or {}).get("variants") or {}).get("nodes")
+            or []
+        )
+        out: dict[str, str] = {}
+        for node in nodes:
+            sku = (node.get("sku") or "").strip()
+            vid = (node.get("id") or "").rsplit("/", 1)[-1]
+            if sku and vid:
+                out[sku] = vid
+                out[sku.upper()] = vid
+        return out
+
+    def apply_article_numbers(
+        self,
+        product_id: str,
+        plan: dict,
+        sku_to_vid: dict[str, str],
+        *,
+        dry_run: bool = False,
+    ) -> str:
+        """Schrijf variant-labels, zoeklijst en ontbrekende ref-tags."""
+        if dry_run or not plan:
+            return ""
+        variant_json: dict[str, str] = plan.get("variants") or {}
+        search_codes = plan.get("search_codes")
+        tags = [t for t in (plan.get("tags") or []) if t]
+        if not variant_json and search_codes is None and not tags:
+            return ""
+
+        vids = dict(sku_to_vid)
+        if variant_json and any(
+            not (vids.get(sku) or vids.get(sku.upper())) for sku in variant_json
+        ):
+            vids.update(self.variant_ids_for_product(product_id))
+
+        metafields: list[dict] = []
+        missing_vids: list[str] = []
+        for sku, value in variant_json.items():
+            vid = (vids.get(sku) or vids.get(sku.upper()) or "").strip()
+            if not vid:
+                missing_vids.append(sku)
+                continue
+            metafields.append(
+                {
+                    "ownerId": f"gid://shopify/ProductVariant/{vid}",
+                    "namespace": "custom",
+                    "key": "article_numbers",
+                    "type": "json",
+                    "value": value,
+                }
+            )
+        if search_codes is not None:
+            metafields.append(
+                {
+                    "ownerId": f"gid://shopify/Product/{product_id}",
+                    "namespace": "custom",
+                    "key": "search_codes",
+                    "type": "list.single_line_text_field",
+                    "value": json.dumps(list(search_codes), ensure_ascii=False),
+                }
+            )
+        err = self._metafields_set(metafields)
+        tag_err = self._tags_add(product_id, tags)
+        parts = [p for p in (err, tag_err) if p]
+        if missing_vids:
+            parts.append(f"missing_variant:{','.join(missing_vids[:8])}")
+        return "; ".join(parts)[:500]
+
+    def _metafields_set(self, metafields: list[dict]) -> str:
+        if not metafields:
+            return ""
+        q = """
+        mutation MotoxMetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: $metafields) {
+            userErrors { field message code }
+          }
+        }
+        """
+        errors: list[str] = []
+        for i in range(0, len(metafields), 25):
+            chunk = metafields[i : i + 25]
+            body = self.gql(q, {"metafields": chunk})
+            if body.get("errors"):
+                errors.append(str(body.get("errors"))[:200])
+                continue
+            uerr = (((body.get("data") or {}).get("metafieldsSet")) or {}).get("userErrors") or []
+            if uerr:
+                errors.append(str(uerr)[:200])
+        return "; ".join(errors)[:300]
+
+    def _tags_add(self, product_id: str, tags: list[str]) -> str:
+        if not tags:
+            return ""
+        q = """
+        mutation MotoxTagsAdd($id: ID!, $tags: [String!]!) {
+          tagsAdd(id: $id, tags: $tags) {
+            userErrors { field message }
+          }
+        }
+        """
+        errors: list[str] = []
+        for i in range(0, len(tags), 40):
+            chunk = tags[i : i + 40]
+            body = self.gql(
+                q,
+                {"id": f"gid://shopify/Product/{product_id}", "tags": chunk},
+            )
+            if body.get("errors"):
+                errors.append(str(body.get("errors"))[:200])
+                continue
+            uerr = (((body.get("data") or {}).get("tagsAdd")) or {}).get("userErrors") or []
+            if uerr:
+                errors.append(str(uerr)[:200])
+        return "; ".join(errors)[:300]
+
     def product_has_media(self, product_id: str) -> tuple[bool, str]:
         """Live check: at least one READY image. FAILED-only counts as no media."""
         q = """
