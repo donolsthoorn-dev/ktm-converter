@@ -241,7 +241,7 @@ def upsert(admin: MotoxAdmin, row: dict[str, str], fields: list[str], existing: 
     else:
         variant["price"] = price or "0.00"
         variant["barcode"] = barcode
-        variant["inventoryPolicy"] = "DENY"
+        variant["inventoryPolicy"] = "CONTINUE"
         status = "DRAFT"
         product_id = None
     if weight:

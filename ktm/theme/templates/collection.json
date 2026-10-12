@@ -1,0 +1,263 @@
+{
+  "sections": {
+    "banner": {
+      "type": "main-collection-banner",
+      "settings": {
+        "show_collection_description": true,
+        "show_collection_image": true,
+        "color_scheme": "scheme-2"
+      }
+    },
+    "rich_text_LybqbC": {
+      "type": "rich-text",
+      "blocks": {
+        "heading_rgWjXj": {
+          "type": "heading",
+          "settings": {
+            "heading": "<strong>VIND DE SPECIFIEKE ONDERDELEN PER MODEL<\/strong>",
+            "heading_size": "h2"
+          }
+        },
+        "text_AihXQM": {
+          "type": "text",
+          "settings": {
+            "text": "<p>Selecteer jouw type, model en bouwjaar<\/p>"
+          }
+        }
+      },
+      "block_order": [
+        "heading_rgWjXj",
+        "text_AihXQM"
+      ],
+      "disabled": true,
+      "settings": {
+        "desktop_content_position": "center",
+        "content_alignment": "center",
+        "color_scheme": "scheme-5",
+        "full_width": true,
+        "padding_top": 24,
+        "padding_bottom": 12
+      }
+    },
+    "16542400485bb7158d": {
+      "type": "image-banner",
+      "blocks": {
+        "1654240048c68a727f-0": {
+          "type": "heading",
+          "disabled": true,
+          "settings": {
+            "heading": "Vaderdag cadeautjes ?",
+            "heading_size": "h1"
+          }
+        },
+        "1654240048c68a727f-1": {
+          "type": "text",
+          "disabled": true,
+          "settings": {
+            "text": "Klik Hier",
+            "text_style": "subtitle"
+          }
+        },
+        "1654240048c68a727f-2": {
+          "type": "buttons",
+          "settings": {
+            "button_label_1": "Klik Hier",
+            "button_link_1": "shopify:\/\/products\/spray-orange-150-ml",
+            "button_style_secondary_1": false,
+            "button_label_2": "",
+            "button_link_2": "",
+            "button_style_secondary_2": false
+          }
+        }
+      },
+      "block_order": [
+        "1654240048c68a727f-0",
+        "1654240048c68a727f-1",
+        "1654240048c68a727f-2"
+      ],
+      "disabled": true,
+      "settings": {
+        "image": "shopify:\/\/shop_images\/Orange_Digital_Marketing_Agency_Facebook_Cover_1000_x_250_px.png",
+        "image_overlay_opacity": 0,
+        "image_height": "small",
+        "desktop_content_position": "middle-left",
+        "show_text_box": false,
+        "desktop_content_alignment": "left",
+        "color_scheme": "accent-2",
+        "image_behavior": "none",
+        "mobile_content_alignment": "center",
+        "stack_images_on_mobile": false,
+        "show_text_below": true
+      }
+    },
+    "104060ae-fa6c-4d0a-b5d7-ed0cf7ba87d4": {
+      "type": "image-banner",
+      "disabled": true,
+      "settings": {
+        "image": "shopify:\/\/shop_images\/MODEL_SELECTOR_1_3.png",
+        "image_overlay_opacity": 0,
+        "image_height": "adapt",
+        "desktop_content_position": "middle-center",
+        "show_text_box": true,
+        "desktop_content_alignment": "center",
+        "color_scheme": "background-2",
+        "image_behavior": "none",
+        "mobile_content_alignment": "center",
+        "stack_images_on_mobile": true,
+        "show_text_below": true
+      }
+    },
+    "55d736a8-d0b5-46c4-9c39-f9b65d689366": {
+      "type": "image-banner",
+      "blocks": {
+        "template--15459985817781__55d736a8-d0b5-46c4-9c39-f9b65d689366-heading-1": {
+          "type": "heading",
+          "disabled": true,
+          "settings": {
+            "heading": "Image banner",
+            "heading_size": "h1"
+          }
+        },
+        "28d1fae5-7eb0-4048-99db-b36ec83805c4": {
+          "type": "buttons",
+          "settings": {
+            "button_label_1": "KLIK HIER",
+            "button_link_1": "shopify:\/\/collections\/speed-racing-team",
+            "button_style_secondary_1": false,
+            "button_label_2": "",
+            "button_link_2": "",
+            "button_style_secondary_2": false
+          }
+        }
+      },
+      "block_order": [
+        "template--15459985817781__55d736a8-d0b5-46c4-9c39-f9b65d689366-heading-1",
+        "28d1fae5-7eb0-4048-99db-b36ec83805c4"
+      ],
+      "disabled": true,
+      "settings": {
+        "image": "shopify:\/\/shop_images\/Speed_Racing_Team_1.png",
+        "image_overlay_opacity": 0,
+        "image_height": "small",
+        "desktop_content_position": "middle-center",
+        "show_text_box": false,
+        "desktop_content_alignment": "center",
+        "color_scheme": "background-1",
+        "image_behavior": "none",
+        "mobile_content_alignment": "center",
+        "stack_images_on_mobile": true,
+        "show_text_below": true
+      }
+    },
+    "product-grid": {
+      "type": "main-collection-product-grid",
+      "custom_css": [
+        "h3 {font-size: 1.6rem;}"
+      ],
+      "settings": {
+        "products_per_page": 35,
+        "columns_desktop": 5,
+        "color_scheme": "",
+        "image_ratio": "square",
+        "image_shape": "default",
+        "show_secondary_image": true,
+        "show_vendor": true,
+        "show_rating": false,
+        "quick_add": "none",
+        "enable_filtering": true,
+        "filter_type": "vertical",
+        "enable_sorting": true,
+        "columns_mobile": "2",
+        "padding_top": 36,
+        "padding_bottom": 36
+      }
+    },
+    "cde95fc4-a5eb-4efe-bc7c-6a7afdb27fd6": {
+      "type": "featured-collection",
+      "disabled": true,
+      "settings": {
+        "title": "Featured collection",
+        "heading_size": "h1",
+        "description": "",
+        "show_description": false,
+        "description_style": "body",
+        "collection": "oil-liquid",
+        "products_to_show": 4,
+        "columns_desktop": 4,
+        "full_width": false,
+        "show_view_all": true,
+        "view_all_style": "solid",
+        "enable_desktop_slider": false,
+        "color_scheme": "background-2",
+        "image_ratio": "adapt",
+        "image_shape": "default",
+        "show_secondary_image": true,
+        "show_vendor": false,
+        "show_rating": false,
+        "quick_add": "none",
+        "columns_mobile": "2",
+        "swipe_on_mobile": true,
+        "padding_top": 0,
+        "padding_bottom": 0
+      }
+    },
+    "collection_list_KymHtf": {
+      "type": "collection-list",
+      "blocks": {
+        "featured_collection_WwJ8ii": {
+          "type": "featured_collection",
+          "settings": {
+            "collection": "wp-apparel-and-accessories"
+          }
+        },
+        "featured_collection_WqTKar": {
+          "type": "featured_collection",
+          "settings": {
+            "collection": "wp-pro-components"
+          }
+        },
+        "featured_collection_AG77Xn": {
+          "type": "featured_collection",
+          "settings": {
+            "collection": "wp-retail-and-marketing"
+          }
+        },
+        "featured_collection_V8hUKt": {
+          "type": "featured_collection",
+          "settings": {
+            "collection": "wp-special-tools"
+          }
+        }
+      },
+      "block_order": [
+        "featured_collection_WwJ8ii",
+        "featured_collection_WqTKar",
+        "featured_collection_AG77Xn",
+        "featured_collection_V8hUKt"
+      ],
+      "disabled": true,
+      "settings": {
+        "title": "WP Parts",
+        "heading_size": "h1",
+        "image_ratio": "square",
+        "columns_desktop": 4,
+        "color_scheme": "",
+        "show_view_all": false,
+        "columns_mobile": "1",
+        "swipe_on_mobile": false,
+        "padding_top": 36,
+        "padding_bottom": 36
+      }
+    }
+  },
+  "order": [
+    "banner",
+    "rich_text_LybqbC",
+    "16542400485bb7158d",
+    "104060ae-fa6c-4d0a-b5d7-ed0cf7ba87d4",
+    "55d736a8-d0b5-46c4-9c39-f9b65d689366",
+    "product-grid",
+    "cde95fc4-a5eb-4efe-bc7c-6a7afdb27fd6",
+    "collection_list_KymHtf"
+  ]
+}

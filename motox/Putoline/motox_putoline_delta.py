@@ -383,7 +383,7 @@ def create_product(shop: Shopify, row: dict, price: Decimal, barcode: str, weigh
         "sku": sku,
         "price": f"{price:.2f}",
         "barcode": barcode,
-        "inventoryPolicy": "DENY",
+        "inventoryPolicy": "CONTINUE",
     }
     if weight is not None:
         variant["inventoryItem"] = {"measurement": {"weight": {"value": float(weight), "unit": "KILOGRAMS"}}}
