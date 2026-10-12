@@ -24,9 +24,16 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+
+try:
+    import requests
+except ImportError:
+    requests = None
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+
+from putoline_listing import listing_for
 from zoneinfo import ZoneInfo
 
 PROTECTED_SKUS = {"70630", "74016", "74026", "74036", "74089"}
@@ -160,22 +167,39 @@ class Shopify:
             raise RuntimeError("Shopify-gegevens ontbreken")
         self.url = f"https://{shop}/admin/api/{version}/graphql.json"
         self.token = token
+        self.session = requests.Session() if requests else None
+        if self.session:
+            self.session.trust_env = False
 
     def gql(self, query: str, variables: dict | None = None) -> dict:
-        payload = json.dumps({"query": query, "variables": variables or {}}).encode()
+        payload = {"query": query, "variables": variables or {}}
         last_error = ""
         for attempt in range(6):
-            request = urllib.request.Request(
-                self.url,
-                data=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Shopify-Access-Token": self.token,
-                },
-            )
             try:
-                with urllib.request.urlopen(request, timeout=60) as response:
-                    body = json.loads(response.read().decode())
+                if self.session:
+                    response = self.session.post(
+                        self.url,
+                        json=payload,
+                        headers={"X-Shopify-Access-Token": self.token},
+                        timeout=60,
+                    )
+                    if response.status_code in (429, 500, 502, 503, 504):
+                        time.sleep(2 + attempt * 2)
+                        last_error = f"HTTP {response.status_code}"
+                        continue
+                    response.raise_for_status()
+                    body = response.json()
+                else:
+                    request = urllib.request.Request(
+                        self.url,
+                        data=json.dumps(payload).encode(),
+                        headers={
+                            "Content-Type": "application/json",
+                            "X-Shopify-Access-Token": self.token,
+                        },
+                    )
+                    with urllib.request.urlopen(request, timeout=60) as response:
+                        body = json.loads(response.read().decode())
             except urllib.error.HTTPError as exc:
                 last_error = exc.read().decode("utf-8", "replace")[:300]
                 if exc.code in (429, 500, 502, 503, 504):
@@ -201,7 +225,13 @@ def putoline_variants(shop: Shopify) -> dict[str, dict]:
         pageInfo { hasNextPage endCursor }
         nodes {
           id
+          title
           status
+          productType
+          descriptionHtml
+          category { id fullName }
+          seo { title description }
+          media(first: 5) { nodes { id alt mediaContentType } }
           variants(first: 20) {
             nodes {
               id
@@ -228,7 +258,18 @@ def putoline_variants(shop: Shopify) -> dict[str, dict]:
                 weight = (((variant.get("inventoryItem") or {}).get("measurement") or {}).get("weight") or {}).get("value")
                 found[sku] = {
                     "product_id": product["id"],
+                    "title": product.get("title") or "",
                     "status": product.get("status"),
+                    "product_type": product.get("productType") or "",
+                    "body": product.get("descriptionHtml") or "",
+                    "category_id": ((product.get("category") or {}).get("id")) or "",
+                    "category_name": ((product.get("category") or {}).get("fullName")) or "",
+                    "seo_title": ((product.get("seo") or {}).get("title")) or "",
+                    "seo_description": ((product.get("seo") or {}).get("description")) or "",
+                    "images": [
+                        {"id": media.get("id"), "alt": media.get("alt") or "", "type": media.get("mediaContentType")}
+                        for media in ((product.get("media") or {}).get("nodes") or [])
+                    ],
                     "variant_id": variant["id"],
                     "price": variant.get("price"),
                     "barcode": variant.get("barcode") or "",
@@ -334,7 +375,9 @@ def stage_image(shop: Shopify, path: Path) -> str:
 def create_product(shop: Shopify, row: dict, price: Decimal, barcode: str, weight: Decimal | None, staged_image: str) -> str:
     sku = str(row.get("code") or "").strip()
     title = str(row.get("name") or sku).strip()
-    description = html.escape(str(row.get("desc_short") or "").strip())
+    raw_description = str(row.get("desc_short") or "").strip()
+    description = html.escape(raw_description)
+    listing = listing_for(title=title, product_type="", body_html=raw_description)
     variant: dict = {
         "optionValues": [{"optionName": "Title", "name": "Default Title"}],
         "sku": sku,
@@ -348,13 +391,16 @@ def create_product(shop: Shopify, row: dict, price: Decimal, barcode: str, weigh
         "title": title,
         "descriptionHtml": f"<p>{description}</p>" if description else "",
         "vendor": "Putoline",
+        "productType": listing.product_type,
+        "category": listing.category_id,
+        "seo": {"title": listing.seo_title, "description": listing.seo_description},
         "status": "ACTIVE",
         "tags": ["Putoline"],
         "productOptions": [{"name": "Title", "values": [{"name": "Default Title"}]}],
         "variants": [variant],
     }
     if staged_image:
-        product_input["files"] = [{"originalSource": staged_image, "contentType": "IMAGE", "alt": title[:250]}]
+        product_input["files"] = [{"originalSource": staged_image, "contentType": "IMAGE", "alt": listing.seo_title[:250]}]
     body = shop.gql(
         """
         mutation ($input: ProductSetInput!, $synchronous: Boolean!) {
@@ -405,9 +451,114 @@ def snapshot_map(rows: list[dict]) -> dict[str, dict]:
     return mapped
 
 
+def listing_plan(have: dict, *, overwrite: bool) -> tuple[dict, list[dict], object]:
+    proposal = listing_for(
+        title=have.get("title") or "",
+        product_type=have.get("product_type") or "",
+        body_html=have.get("body") or "",
+    )
+    product: dict = {}
+    if have.get("category_id") != proposal.category_id:
+        product["category"] = proposal.category_id
+    if (have.get("product_type") or "") != proposal.product_type:
+        product["productType"] = proposal.product_type
+    seo: dict = {}
+    if overwrite or not (have.get("seo_title") or "").strip():
+        if (have.get("seo_title") or "") != proposal.seo_title:
+            seo["title"] = proposal.seo_title
+    if overwrite or not (have.get("seo_description") or "").strip():
+        if (have.get("seo_description") or "") != proposal.seo_description:
+            seo["description"] = proposal.seo_description
+    if seo:
+        product["seo"] = seo
+    alts = []
+    for image in have.get("images") or []:
+        if image.get("type") != "IMAGE" or not image.get("id"):
+            continue
+        alt = image.get("alt") or ""
+        if alt == proposal.seo_title:
+            continue
+        if overwrite or not alt or alt == (have.get("title") or ""):
+            alts.append({"id": image["id"], "alt": proposal.seo_title[:250]})
+    return product, alts, proposal
+
+
+def write_listing(shop: Shopify, product_id: str, product: dict, alts: list[dict]) -> str:
+    if product:
+        body = shop.gql(
+            """
+            mutation ($product: ProductUpdateInput!) {
+              productUpdate(product: $product) {
+                userErrors { field message }
+              }
+            }
+            """,
+            {"product": {"id": product_id, **product}},
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        errors = (((body.get("data") or {}).get("productUpdate")) or {}).get("userErrors") or []
+        if errors:
+            return str(errors)[:300]
+    if alts:
+        body = shop.gql(
+            """
+            mutation ($productId: ID!, $media: [UpdateMediaInput!]!) {
+              productUpdateMedia(productId: $productId, media: $media) {
+                mediaUserErrors { field message }
+              }
+            }
+            """,
+            {"productId": product_id, "media": alts},
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        errors = (((body.get("data") or {}).get("productUpdateMedia")) or {}).get("mediaUserErrors") or []
+        if errors:
+            return str(errors)[:300]
+    return ""
+
+
+def sync_listings(shop: Shopify, existing: dict[str, dict], *, overwrite: bool, apply: bool) -> tuple[int, int]:
+    seen: set[str] = set()
+    changed = failed = 0
+    shown = 0
+    for sku, have in sorted(existing.items()):
+        if sku in PROTECTED_SKUS or have["product_id"] in seen:
+            continue
+        seen.add(have["product_id"])
+        product, alts, proposal = listing_plan(have, overwrite=overwrite)
+        if not product and not alts:
+            continue
+        changed += 1
+        if shown < 8:
+            shown += 1
+            bits = []
+            if "category" in product:
+                bits.append(f"categorie {have.get('category_name') or 'leeg'}")
+            if "productType" in product:
+                bits.append(f"type {product['productType']}")
+            if "seo" in product:
+                bits.append(f"seo {proposal.seo_title}")
+            print(f"{'schrijf' if apply else 'zou'} {sku} {have.get('title')} | {', '.join(bits)}", flush=True)
+            if "seo" in product:
+                print(f"  {proposal.seo_description}", flush=True)
+        if not apply:
+            continue
+        err = write_listing(shop, have["product_id"], product, alts)
+        if err:
+            print(f"FAIL listing {sku} {err}", flush=True)
+            failed += 1
+            changed -= 1
+        time.sleep(0.15)
+    print(f"listing {'geschreven' if apply else 'voorstel'} {changed} mislukt {failed}", flush=True)
+    return changed, failed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verwerk de Putoline-delta naar Motox")
     parser.add_argument("--apply", action="store_true", help="schrijf naar Shopify")
+    parser.add_argument("--listing", action="store_true", help="zet categorie en SEO op bestaande producten")
     args = parser.parse_args()
 
     # Cron staat op UTC. Beide mogelijke uren starten het script; alleen 02:15
@@ -434,6 +585,14 @@ def main() -> int:
         load_env(kroon_file)
     if motox_file:
         load_env(motox_file)
+
+    if args.listing:
+        shop = Shopify()
+        print("Motox-varianten ophalen", flush=True)
+        existing = putoline_variants(shop)
+        print(f"Motox vendor Putoline: {len(existing)}", flush=True)
+        _changed, failed = sync_listings(shop, existing, overwrite=True, apply=args.apply)
+        return 1 if failed else 0
 
     print("Assortiment ophalen", flush=True)
     rows = fetch_assortment()
@@ -520,6 +679,9 @@ def main() -> int:
                 print(f"FAIL {sku} gewicht {err}", flush=True)
                 failed += 1
 
+    listing_changed, listing_failed = sync_listings(shop, existing, overwrite=False, apply=args.apply)
+    failed += listing_failed
+
     if removed:
         print("Niet meer in het assortiment, niet aangepast: " + ", ".join(removed), flush=True)
     if stock_changed:
@@ -527,7 +689,8 @@ def main() -> int:
 
     summary = (
         f"delta prijs={price_n} ean={ean_n} gewicht={weight_n} "
-        f"nieuw={created_n} weg={len(removed)} voorraadindicatie={len(stock_changed)} mislukt={failed}"
+        f"nieuw={created_n} listing={listing_changed} weg={len(removed)} "
+        f"voorraadindicatie={len(stock_changed)} mislukt={failed}"
     )
     print(summary, flush=True)
     if args.apply and failed == 0:

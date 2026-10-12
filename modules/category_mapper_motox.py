@@ -85,8 +85,36 @@ SOFT_TYPE_FALLBACKS_MOTOX: dict[str, str] = {
     'transmissie': DRIVETRAIN,
 }
 
+# Putoline-soorten. Vloeistof, niet de onderdelengroep Engine Oil Circulation.
+_CARE = "Vehicles & Parts > Vehicle Parts & Accessories > Vehicle Maintenance, Care & Decor"
+_FLUIDS = f"{_CARE} > Vehicle Fluids"
+_PUTOLINE_OIL = f"{_FLUIDS} > Vehicle Motor Oil"
+_PUTOLINE_BRAKE = f"{_FLUIDS} > Vehicle Brake Fluid"
+_PUTOLINE_GEAR = f"{_FLUIDS} > Vehicle Transmission Fluid"
+_PUTOLINE_COOL = f"{_FLUIDS} > Vehicle Antifreeze"
+_PUTOLINE_FUEL = f"{_FLUIDS} > Vehicle Fuel System Cleaners"
+_PUTOLINE_CLEAN = f"{_CARE} > Vehicle Cleaning"
+_PUTOLINE_LUBE = "Hardware > Building Consumables > Lubricants"
+_PUTOLINE_GREASE = f"{_PUTOLINE_LUBE} > Grease"
+_PUTOLINE_BIKE = (
+    "Sporting Goods > Outdoor Recreation > Cycling > Bicycle Accessories > "
+    "Bicycle Tools > Bicycle Lubricants & Cleaners"
+)
+
 # Exacte Motox/e-bihr Types (lowercase keys).
 TYPE_EXACT_MOTOX: dict[str, str] = {
+    'brandstof additieven': _PUTOLINE_FUEL,
+    'fiets producten': _PUTOLINE_BIKE,
+    'kettingsmeermiddelen': _PUTOLINE_LUBE,
+    'koelvloeistoffen': _PUTOLINE_COOL,
+    'luchtfilter onderhoud': _PUTOLINE_CLEAN,
+    'reiniging': _PUTOLINE_CLEAN,
+    'remvloeistoffen': _PUTOLINE_BRAKE,
+    'transmissieoliën': _PUTOLINE_GEAR,
+    'tweetakt motoroliën': _PUTOLINE_OIL,
+    'vetten': _PUTOLINE_GREASE,
+    'viertakt motoroliën': _PUTOLINE_OIL,
+    'vork- en schokdemperoliën': _FLUIDS,
     'aandrijfriem beschermer': DRIVETRAIN,
     'aandrijfrubbers': DRIVETRAIN,
     'accessoires handvatten': GLOVES,

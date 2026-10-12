@@ -52,6 +52,7 @@ jobs:
           scp -i ~/.ssh/motox_putoline -o StrictHostKeyChecking=accept-new \
             motox/Putoline/motox_putoline_delta.py \
             motox/Putoline/motox_putoline_fetch.php \
+            motox/Putoline/putoline_listing.py \
             motoxshop@149.210.206.111:/home/motoxshop/Putoline/
           flag=""
           if [ "$APPLY" = "true" ]; then
