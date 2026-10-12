@@ -1,0 +1,26 @@
+{% comment %}
+  Vaste Nederlandse themateksten volgen de taal van de winkel.
+  Onbekende tekst blijft staan, zodat een eigen instelling niet wordt overschreven.
+{% endcomment %}
+{%- liquid
+  assign motox_text = text | strip
+  case motox_text
+    when 'Wellicht ook interessant', 'You may also like'
+      assign motox_text = 'motox.related_heading' | t
+    when 'Delen met een vriend', 'Share with a friend'
+      assign motox_text = 'motox.share' | t
+    when 'Producten die hier goed bij passen', 'Pairs well with'
+      assign motox_text = 'motox.complementary_heading' | t
+    when 'Adres', 'Address'
+      assign motox_text = 'motox.footer_address' | t
+    when 'Klantenservice', 'Customer service'
+      assign motox_text = 'motox.footer_service' | t
+    when 'Informatie', 'Information'
+      assign motox_text = 'motox.footer_info' | t
+  endcase
+-%}
+{%- if escape -%}
+  {{- motox_text | escape -}}
+{%- else -%}
+  {{- motox_text -}}
+{%- endif -%}

@@ -1,0 +1,10 @@
+{
+  "name": "ktm-garage",
+  "private": true,
+  "scripts": {
+    "dev": "echo Use shopify app deploy from this folder"
+  },
+  "devDependencies": {
+    "@shopify/cli": "^4.8.1"
+  }
+}

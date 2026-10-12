@@ -4,6 +4,7 @@
 
 Architectuur en technische context: **`PROJECT_CONTEXT_KTM.md`**.  
 Metafields/YMM-details: **`docs/metafields_manager_export.md`**, **`docs/zbh2bike_ymm.md`**.  
+Aanbevolen (EMPF/MUSS/ET): **`docs/empfart_complementary.md`**.  
 Shopify-env: **`docs/shopify_env.md`**. Caches: **`docs/shopify_cache_en_scheduling.md`**.
 
 ### Bij falende ETL / import (`main.py`)
@@ -91,6 +92,28 @@ De prijs-CSV’s in `input/` (o.a. 0140/0910/0150/1100) horen bij dezelfde bron 
 - Na **nieuwe** productimport in Shopify opnieuw draaien, anders ontbreken nieuwe SKU’s.
 
 **ETA-sync:** `python3 scripts/shopify_sync_eta_from_pricelist_csv.py` (optioneel `--dry-run`). Namespace/metafield: zie `.env` en `docs/shopify_env.md`.
+
+**Aanbevolen / complementary (CBEXPDN-relaties):**
+
+| XML `BEZIEHUNGSTYP` | Shopify metafield | UI |
+|---------------------|-------------------|-----|
+| `MUSSARTIKEL` + `EMPFART2ART` | `shopify--discovery--product_recommendation.complementary_products` | Side-grid “Bijbehorende of bijpassende producten” |
+| `ET2ARTIKEL` | `global.et_articles` | Zelfde side-grid (samengevoegd) |
+| — | related-products | Ongewijzigd (algoritme “WELLICHT OOK INTERESSANT”) |
+
+```bash
+# Pilot / één SKU
+python3 scripts/shopify_sync_empfart_complementary.py --dry-run --sku A62409960044
+python3 scripts/shopify_sync_empfart_complementary.py --sku A62409960044
+
+# Volledige catalogus (ktm-shop) — na XML-wijziging of eerste keer
+python3 scripts/shopify_sync_empfart_complementary.py --force-refresh-cache --force-write
+
+# Na import van nieuwe producten: cache verversen + sync
+python3 scripts/shopify_sync_empfart_complementary.py --force-refresh-cache --force-write
+```
+
+`--force-write` slaat de vergelijking met bestaande metafields over (sneller bij full sync). MUSS komt vóór EMPF; max 10 productrefs; ontbrekende/stale SKUs worden overgeslagen. Alleen ktm-shop (niet Motox). Module: `modules/empfart_complementary.py`.
 
 ---
 

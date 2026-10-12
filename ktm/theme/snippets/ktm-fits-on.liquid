@@ -1,0 +1,22 @@
+{%- comment -%}
+  Past-op-tabel uit global.fits_on. Wordt door ktm-product.js in de tab "Past op" gezet.
+{%- endcomment -%}
+{%- assign fits_on = product.metafields.global.fits_on.value | default: product.metafields.global.fits_on -%}
+{%- if fits_on != blank -%}
+  <script type="application/json" id="ktm-fits-on-data">{{ fits_on | json }}</script>
+  <div class="ymm-container product-fits" id="ktm-fits-on" hidden>
+    <h3>Past op deze modellen</h3>
+    <div class="table-responsive">
+      <table class="product-fits__table">
+        <thead>
+          <tr>
+            <th>Merk</th>
+            <th>Model</th>
+            <th>Bouwjaren</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+{%- endif -%}

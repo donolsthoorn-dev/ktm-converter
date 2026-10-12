@@ -73,6 +73,8 @@ def build_ymm_from_raw(raw_dir: Path) -> dict:
                 info = vehicles.get(vehicle_code)
                 if not info:
                     continue
+                if (info.get("UniverseName") or "").strip().upper() == "E-BIKE":
+                    continue
                 year = (info.get("VehicleYear") or "").strip()
                 make = (info.get("ManufacturerName") or "").strip()
                 model = (info.get("CommercialModelName") or "").strip()

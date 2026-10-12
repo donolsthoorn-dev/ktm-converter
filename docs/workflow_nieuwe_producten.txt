@@ -54,6 +54,13 @@ Stapsgewijs (vanaf projectroot)
    - YMM-app: bestand(en) uit output/ymm/ (bijv. ymm_APP_import_DELTA*.csv).
    - Metafields Manager: output/metafields/product_metafields_metafields_manager_delta.csv
 
+7) Complementary / ET (MUSS, EMPF, ET2ARTIKEL) → side-grid op PDP
+
+   python3 scripts/shopify_sync_empfart_complementary.py --force-refresh-cache --force-write
+
+   Nodig zodat nieuwe artikelen “Bijbehorende of bijpassende producten” tonen.
+   Zie docs/empfart_complementary.md.
+
 Handig: laatste delta-pad vinden (macOS/Linux)
 
    ls -t output/products/shopify_export_delta_*.csv | head -1
@@ -68,6 +75,7 @@ Samenvatting
   YMM              → export_product_ids_and_ymm.py met --delta-handles-csv + --refresh-shopify-cache
   Metafields       → export_product_metafields.py met dezelfde --delta-handles-csv
   Apps             → YMM-CSV + metafields-CSV uploaden
+  Complementary    → shopify_sync_empfart_complementary.py (--force-refresh-cache --force-write)
 
 Niet nodig in dit scenario (tenzij je alsnog ETA in Shopify wilt):
 

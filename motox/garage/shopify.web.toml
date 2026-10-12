@@ -1,0 +1,5 @@
+name = "Motox garage"
+roles = ["backend"]
+
+[commands]
+dev = "python3 -u dev_server.py"

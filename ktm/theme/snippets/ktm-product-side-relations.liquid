@@ -1,0 +1,172 @@
+{%- comment -%}
+  Rechts naast ktm-tabs: MUSS/EMPF + ET, samengevoegd.
+  Alleen producten met echte webshop-foto (geen Partstream-placeholders).
+{%- endcomment -%}
+
+{{ 'component-card.css' | asset_url | stylesheet_tag }}
+{{ 'component-price.css' | asset_url | stylesheet_tag }}
+{{ 'component-slider.css' | asset_url | stylesheet_tag }}
+
+{%- liquid
+  assign per_page = 3
+  assign max_items = 12
+  assign side_heading = 'Bijbehorende of bijpassende producten'
+
+  assign comp_list = product.metafields['shopify--discovery--product_recommendation'].complementary_products.value
+  assign et_list = product.metafields.global.et_articles.value
+
+  if comp_list != blank and et_list != blank
+    assign source_list = comp_list | concat: et_list
+  elsif comp_list != blank
+    assign source_list = comp_list
+  else
+    assign source_list = et_list
+  endif
+
+  assign mixed_count = 0
+  assign seen_ids = ','
+-%}
+
+{%- if source_list != blank -%}
+  {%- for rel_product in source_list -%}
+    {%- if rel_product == blank or rel_product.id == blank -%}
+      {%- continue -%}
+    {%- endif -%}
+    {%- if rel_product.type == 'Partstream' -%}
+      {%- continue -%}
+    {%- endif -%}
+    {%- if rel_product.featured_media == blank -%}
+      {%- continue -%}
+    {%- endif -%}
+    {%- assign img_url = rel_product.featured_media.preview_image | image_url: width: 200 -%}
+    {%- if img_url contains 'partstream' -%}
+      {%- continue -%}
+    {%- endif -%}
+    {%- assign id_token = rel_product.id | append: ',' -%}
+    {%- assign id_needle = ',' | append: id_token -%}
+    {%- if seen_ids contains id_needle -%}
+      {%- continue -%}
+    {%- endif -%}
+    {%- if mixed_count >= max_items -%}
+      {%- break -%}
+    {%- endif -%}
+    {%- assign seen_ids = seen_ids | append: id_token -%}
+    {%- assign mixed_count = mixed_count | plus: 1 -%}
+  {%- endfor -%}
+{%- endif -%}
+
+{%- if mixed_count > 0 -%}
+  {%- liquid
+    assign page_count = mixed_count | plus: per_page | minus: 1 | divided_by: per_page
+    if page_count < 1
+      assign page_count = 1
+    endif
+  -%}
+
+  <div class="ktm-tabs__tab ktm-side-relations__heading" role="heading" aria-level="2">{{ side_heading }}</div>
+
+  <div class="ktm-side-relations ktm-side-relations__block ktm-side-relations--mixed">
+    <slider-component class="slider-mobile-gutter ktm-side-relations__slider">
+      <div
+        id="Slider-ktm-mixed-{{ section.id }}"
+        class="ktm-side-relations__pages{% if page_count > 1 %} slider slider--everywhere{% endif %}"
+        role="list"
+      >
+        {%- for page_i in (1..page_count) -%}
+          {%- assign page_offset = page_i | minus: 1 | times: per_page -%}
+          <div
+            id="Slide-ktm-mixed-{{ section.id }}-{{ page_i }}"
+            class="ktm-side-relations__page{% if page_count > 1 %} slider__slide{% endif %}"
+            role="group"
+            {% if page_count > 1 %}
+              aria-label="{{ page_i }} {{ 'general.slider.of' | t }} {{ page_count }}"
+            {% endif %}
+          >
+            <ul class="ktm-side-relations__grid product-grid" role="list">
+              {% assign skip_card_product_styles = false %}
+              {% assign shown = 0 %}
+              {% assign idx = 0 %}
+              {% assign page_seen = ',' %}
+              {%- for rel_product in source_list -%}
+                {%- if rel_product == blank or rel_product.id == blank -%}
+                  {%- continue -%}
+                {%- endif -%}
+                {%- if rel_product.type == 'Partstream' -%}
+                  {%- continue -%}
+                {%- endif -%}
+                {%- if rel_product.featured_media == blank -%}
+                  {%- continue -%}
+                {%- endif -%}
+                {%- assign img_url = rel_product.featured_media.preview_image | image_url: width: 200 -%}
+                {%- if img_url contains 'partstream' -%}
+                  {%- continue -%}
+                {%- endif -%}
+
+                {%- assign id_token = rel_product.id | append: ',' -%}
+                {%- assign id_needle = ',' | append: id_token -%}
+                {%- if page_seen contains id_needle -%}
+                  {%- continue -%}
+                {%- endif -%}
+                {%- assign page_seen = page_seen | append: id_token -%}
+
+                {%- if idx < page_offset -%}
+                  {%- assign idx = idx | plus: 1 -%}
+                  {%- continue -%}
+                {%- endif -%}
+                {%- if shown >= per_page -%}
+                  {%- break -%}
+                {%- endif -%}
+                {%- if idx >= max_items -%}
+                  {%- break -%}
+                {%- endif -%}
+
+                <li class="ktm-side-relations__item">
+                  {% render 'card-product',
+                    card_product: rel_product,
+                    media_aspect_ratio: 'square',
+                    show_secondary_image: false,
+                    show_vendor: false,
+                    show_rating: false,
+                    extend_height: true,
+                    skip_styles: skip_card_product_styles,
+                    section_id: section.id,
+                    quick_add: 'none'
+                  %}
+                </li>
+                {%- assign skip_card_product_styles = true -%}
+                {%- assign shown = shown | plus: 1 -%}
+                {%- assign idx = idx | plus: 1 -%}
+              {%- endfor -%}
+            </ul>
+          </div>
+        {%- endfor -%}
+      </div>
+      {%- if page_count > 1 -%}
+        <div class="slider-buttons ktm-side-relations__buttons">
+          <button
+            type="button"
+            class="slider-button slider-button--prev"
+            name="previous"
+            aria-label="{{ 'general.slider.previous_slide' | t }}"
+          >
+            {% render 'icon-caret' %}
+          </button>
+          <div class="slider-counter caption">
+            <span class="slider-counter--current">1</span>
+            <span aria-hidden="true"> / </span>
+            <span class="visually-hidden">{{ 'general.slider.of' | t }}</span>
+            <span class="slider-counter--total">{{ page_count }}</span>
+          </div>
+          <button
+            type="button"
+            class="slider-button slider-button--next"
+            name="next"
+            aria-label="{{ 'general.slider.next_slide' | t }}"
+          >
+            {% render 'icon-caret' %}
+          </button>
+        </div>
+      {%- endif -%}
+    </slider-component>
+  </div>
+{%- endif -%}

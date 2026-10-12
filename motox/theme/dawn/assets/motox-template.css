@@ -1,0 +1,379 @@
+.collection {
+  
+  .card__media {
+    .media { 
+      background-color: white !important;
+      img {
+       object-fit: contain !important; 
+      }
+    }
+  }
+}
+
+.facets-container {
+  padding-top:0px !important;
+}
+.facets-wrapper {
+  /* styled in motox-collection.css */
+}
+.facets__summary-label {
+  color: var(--mx-text, #111111);
+}
+
+.collection-hero {
+  border-bottom: 1px solid var(--mx-border, #e5e5e5);
+}
+
+.header__menu-item {
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase !important;
+}
+
+.header-wrapper {
+  border-bottom: 1px solid var(--mx-border, #e5e5e5);
+  overflow: visible;
+}
+
+/*
+  Garage-strip wordt na <header> in .header-wrapper gezet.
+  Positioneer mega-menu t.o.v. de header (niet header+strip) en
+  laat het full-bleed over de rode balk heen vallen.
+*/
+.header-wrapper > .header,
+.header-wrapper .header {
+  position: relative;
+  z-index: 5;
+  overflow: visible;
+}
+
+.header-wrapper .mega-menu__content,
+.header-wrapper .header__submenu {
+  z-index: 6;
+}
+
+/* Header heeft page-width; menu uitbreken tot volledige viewport-breedte */
+.header-wrapper .mega-menu__content {
+  left: 0;
+  right: auto;
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(50% - 50vw);
+}
+
+.header-wrapper .mxg-strip,
+.mxg-strip {
+  position: relative;
+  z-index: 1;
+}
+
+/* Taalkeuze in header: witte tekst op donkere dropdown */
+.header-localization .disclosure__list-wrapper {
+  background-color: #1a1a1a;
+  border-color: rgba(255, 255, 255, 0.22);
+  z-index: 7;
+}
+
+.header-localization .disclosure__link,
+.header-localization .disclosure__link.link,
+.header-localization .disclosure__link.link--text {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.header-localization .disclosure__link:hover,
+.header-localization .disclosure__link:focus,
+.header-localization .disclosure__link:focus-visible,
+.header-localization .disclosure__link[aria-current='true'] {
+  color: #ffffff !important;
+}
+
+.header-localization .disclosure__link .icon-checkmark {
+  color: #ffffff;
+}
+
+.product-form__submit {
+  background-color: var(--mx-green, #00a900) !important;
+  border: none !important;
+}
+
+.product-form__submit:hover:not([disabled]) {
+  background-color: var(--mx-green-dark, #008f00) !important;
+}
+
+}
+@media screen and (min-width: 990px) {
+  .product--large:not(.product--no-media) .product__media-wrapper {
+    max-width: 65%;
+    width: calc(65% - var(--grid-desktop-horizontal-spacing) / 2);
+  }
+
+  .product--large:not(.product--no-media) .product__info-wrapper {
+    padding: 0 0 0 4rem;
+    max-width: 35%;
+    width: calc(35% - var(--grid-desktop-horizontal-spacing) / 2);
+  }
+
+  .product--large:not(.product--no-media).product--right .product__info-wrapper {
+    padding: 0 4rem 0 0;
+  }
+
+  .product--medium:not(.product--no-media) .product__media-wrapper,
+  .product--small:not(.product--no-media) .product__info-wrapper {
+    max-width: 65% !important;
+    width: calc(65% - var(--grid-desktop-horizontal-spacing) / 2);
+  }
+
+  .product--medium:not(.product--no-media) .product__info-wrapper,
+  .product--small:not(.product--no-media) .product__media-wrapper {
+    max-width: 35% !important;
+    width: calc(35% - var(--grid-desktop-horizontal-spacing) / 2);
+  }
+}
+
+.motofilters-form {
+    background: #c9290a !important;
+    padding: 20px;
+    margin:0px;
+}
+
+.ymm-container .table-responsive {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  padding: 0;
+  border-collapse: collapse;
+  border: 0;
+}
+
+.ymm-container .table-responsive th,
+.ymm-container .table-responsive td {
+  padding: 14px 16px;
+  text-align: left;
+  border: 0;
+}
+
+.ymm-container .table-responsive thead th {
+  background: #f3f3f3;
+  font-weight: 700;
+}
+
+.ymm-container .table-responsive tbody tr:nth-child(odd) td {
+  background: #ffffff;
+}
+
+.ymm-container .table-responsive tbody tr:nth-child(even) td {
+  background: #f3f3f3;
+}
+
+/* Broodkruimel in de rode motorstrook */
+.motox-crumbs {
+  display: none;
+}
+
+/* Motor + wijzigen altijd in beeld; breadcrumb vangt alle druk op */
+.mxg-strip {
+  overflow: hidden;
+}
+
+.mxg-strip .mxg-lead {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.mxg-strip .mxg-action,
+.mxg-strip .mxg-action.is-edit {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.mxg-strip > .motox-crumbs {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin-right: 1.6rem;
+  overflow: hidden;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.mxg-strip > .motox-crumbs[hidden],
+.mxg-strip > .motox-crumbs.is-hidden {
+  display: none !important;
+}
+
+.mxg-strip > .motox-crumbs ol {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.mxg-strip > .motox-crumbs li {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.mxg-strip > .motox-crumbs li + li::before {
+  content: "›";
+  flex: 0 0 auto;
+  margin: 0 0.45rem;
+  color: #fff;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.mxg-strip > .motox-crumbs li.is-collapse {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.mxg-strip > .motox-crumbs li.is-collapse::before {
+  /* behoud scheidingstekens */
+}
+
+.mxg-strip > .motox-crumbs li:first-child {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.mxg-strip > .motox-crumbs li:last-child {
+  flex: 1 1 auto;
+  min-width: 2.4rem;
+  overflow: hidden;
+}
+
+.mxg-strip > .motox-crumbs a,
+.mxg-strip > .motox-crumbs span {
+  color: #fff;
+  text-decoration: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mxg-strip > .motox-crumbs li.is-collapse > a,
+.mxg-strip > .motox-crumbs li.is-collapse > span {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.mxg-strip > .motox-crumbs a:hover,
+.mxg-strip > .motox-crumbs a:hover span {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+}
+
+.mxg-strip > .motox-crumbs a:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Middelbreed: kortere lead → meer ruimte voor crumbs + wijzigen */
+@media screen and (max-width: 1100px) {
+  .mxg-strip .mxg-prompt,
+  .mxg-strip .mxg-arrows {
+    display: none !important;
+  }
+}
+
+/* —— Mobiel: geen breadcrumbs, strip netjes inklappen —— */
+@media screen and (max-width: 749px) {
+  .mxg-strip > .motox-crumbs,
+  .motox-crumbs {
+    display: none !important;
+  }
+
+  .mxg-strip {
+    justify-content: flex-start !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 1rem !important;
+    padding: 1.2rem 1.4rem !important;
+    min-height: 4.8rem !important;
+  }
+
+  .mxg-strip .mxg-lead {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    gap: 0.8rem !important;
+    min-height: 4.4rem !important;
+    align-items: center !important;
+  }
+
+  /* Lange prefix weg → ruimte voor motor + wijzigen; behalve korte mobiele prefix */
+  .mxg-strip .mxg-prompt,
+  .mxg-strip .mxg-arrows,
+  .mxg-strip .mxg-bike-year {
+    display: none !important;
+  }
+
+  .mxg-strip.is-set .mxg-prompt {
+    display: block !important;
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+    font-size: 1.55rem !important;
+    font-weight: 700 !important;
+    line-height: 1.3 !important;
+  }
+
+  .mxg-strip .mxg-bike {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .mxg-strip .mxg-bike-name {
+    display: block !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 1.55rem !important;
+    font-weight: 700 !important;
+    line-height: 1.3 !important;
+  }
+
+  .mxg-strip .mxg-action,
+  .mxg-strip .mxg-action.is-edit {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    font-size: 1.5rem !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+    min-height: 4.4rem !important;
+    padding: 1rem 0.6rem !important;
+    margin: -0.4rem 0 !important;
+    margin-left: 0.4rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+
+  .mxg-strip .mxg-action:not(.is-edit) {
+    white-space: normal !important;
+    text-align: left !important;
+    line-height: 1.25 !important;
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+  }
+}

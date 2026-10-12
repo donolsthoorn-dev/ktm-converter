@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Motox garage preview</title>
+  <link rel="stylesheet" href="/assets/garage.css">
+  <style>
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; background: #fafafa; }
+    .shop-header { display: flex; align-items: center; gap: 24px; padding: 14px 28px; background: #fff; border-bottom: 1px solid #eee; }
+    .logo { font-weight: 800; letter-spacing: 0.08em; }
+    nav { display: flex; gap: 16px; color: #444; font-size: 14px; }
+    .header__icons { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .icon-btn { width: 36px; height: 36px; border: 0; background: transparent; font-size: 18px; }
+    main { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+    .product { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; background: #fff; padding: 24px; }
+    .photo { background: #d9d9d9; min-height: 280px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .tools { display: flex; gap: 8px; margin-top: 24px; }
+    .tools button, .tools a { font: inherit; padding: 8px 12px; }
+    @media (max-width: 700px) { .product { grid-template-columns: 1fr; } nav { display: none; } }
+  </style>
+</head>
+<body>
+  <header class="shop-header">
+    <div class="logo">MOTOX</div>
+    <nav>
+      <span>Onderdelen</span>
+      <span>Merken</span>
+      <span>Kleding</span>
+    </nav>
+    <div class="header__icons">
+      <button class="icon-btn" type="button" aria-label="Account">👤</button>
+      <button class="icon-btn" type="button" aria-label="Verlanglijst">♡</button>
+      <button class="icon-btn" type="button" aria-label="Winkelwagen">🛒</button>
+    </div>
+  </header>
+  <main>
+    <article class="product">
+      <div class="photo"></div>
+      <div data-motox-pdp>
+        <p>Plastics &amp; Stickers</p>
+        <h1>Acerbis kettinggeleider</h1>
+      </div>
+    </article>
+    <div class="tools">
+      <button type="button" id="fit-yes">Toon passend product</button>
+      <button type="button" id="fit-no">Toon ander product</button>
+      <a id="login-link" href="?in=1">Inloggen simuleren</a>
+    </div>
+  </main>
+  <script type="application/json" id="motox-garage-config">
+    {
+      "loggedIn": false,
+      "proxyPath": "/proxy",
+      "product": {
+        "id": 1,
+        "fitsOn": { "KTM": { "105 SX": ["2011", "2010"] } }
+      }
+    }
+  </script>
+  <script>
+    (function () {
+      var node = document.getElementById("motox-garage-config");
+      var cfg = JSON.parse(node.textContent);
+      if (new URLSearchParams(location.search).get("in") === "1") cfg.loggedIn = true;
+      document.cookie = cfg.loggedIn
+        ? "mxg_preview=1; Path=/"
+        : "mxg_preview=; Path=/; Max-Age=0";
+      node.textContent = JSON.stringify(cfg);
+      document.getElementById("login-link").textContent = cfg.loggedIn
+        ? "Ingelogd (simulatie)"
+        : "Inloggen simuleren";
+      if (cfg.loggedIn) document.getElementById("login-link").setAttribute("href", "/preview");
+    })();
+  </script>
+  <script src="/assets/garage.js"></script>
+  <script>
+    document.getElementById("fit-yes").addEventListener("click", function () {
+      window.MotoxGarage.setProduct({
+        id: 1,
+        fitsOn: { KTM: { "105 SX": ["2011", "2010"] } }
+      });
+    });
+    document.getElementById("fit-no").addEventListener("click", function () {
+      window.MotoxGarage.setProduct({
+        id: 2,
+        fitsOn: { HUSQVARNA: { "FE 450": ["2024"] } }
+      });
+    });
+  </script>
+</body>
+</html>

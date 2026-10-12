@@ -20,7 +20,7 @@ Maakt een kopie van de ktm-shop, zodat de prijsjob later kan zien wat er verande
 
 ### 04:00 — Producten verbergen of weer tonen
 
-Verbergt een product als het geen bruikbare prijs heeft, als alles uitverkocht is, of als de leverancier het niet meer levert en er ook in de shop geen voorraad is. Zet het weer zichtbaar als dat niet meer zo is. Ligt er van één uitvoering nog voorraad, dan blijft het product zichtbaar.
+Verbergt een product als geen enkele uitvoering een bruikbare prijs heeft, als alles uitverkocht is, of als de leverancier het niet meer levert en er ook in de shop geen voorraad is. Eén uitvoering zonder prijs blijft van de productpagina af en is niet te bestellen; de andere uitvoeringen blijven te koop. Zet het product weer zichtbaar als dat niet meer zo is. Ligt er van één uitvoering nog voorraad, dan blijft het product zichtbaar.
 
 ### 04:30 — Op de webshop zetten
 
@@ -50,6 +50,10 @@ Dezelfde controle als om 00:15. Ook om 12:15 en 18:15.
 
 Werkt bij op welke motor een product past, als dat veranderd is. Maximaal 500 producten.
 
+### 06:45 — KTM garage-filter
+
+Bouwt de motorlijst en de compacte fitment-index opnieuw uit Supabase (`canonical_product_fits_on`) en deployt die naar Vercel (`ktm-garage`). Zo blijven nieuwe onderdelen in het motorfilter zichtbaar. Workflow: `ktm_garage_fitment_deploy.yml`. Vereist secret `VERCEL_TOKEN`.
+
 ## Motox
 
 ### 02:15 — Putoline
@@ -75,6 +79,7 @@ Haalt de nieuwste Bihr-lijst op en werkt Motox bij:
 
 - nieuwe producten uit die lijst aanmaken, inclusief goederencode en land van herkomst als Bihr die heeft
 - prijzen aanpassen als ze afwijken
+- doorverkopen (inventory policy) bijwerken als Bihr wel/geen voorraad meldt (Shopify-aantal blijft meestal 0)
 - een foto toevoegen als die er nog niet is
 - bijwerken op welke motor een onderdeel past, als dat leeg is of niet meer klopt
 - goederencode en land van herkomst bijwerken als die leeg zijn of niet meer kloppen

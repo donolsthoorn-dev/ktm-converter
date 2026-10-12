@@ -1,0 +1,231 @@
+/* Motox desktop mega-menu — hiërarchie + kolommen per menu (Dawn 15)
+   Scope: min-width 990px. Mobiel/drawer ongewijzigd. */
+
+@media screen and (min-width: 990px) {
+  /* —— Paneel —— */
+  .header-wrapper .mega-menu__content {
+    background: #111111 !important;
+    background-color: #111111 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* Inner grid: gecentreerd, max ~1280px — default 4 kolommen */
+  .header-wrapper .mega-menu__list,
+  .header-wrapper .mega-menu__list.page-width {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    column-gap: 48px;
+    row-gap: 38px;
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 38px 28px 42px;
+    list-style: none;
+  }
+
+  /* Kolomaantal per hoofdmenu (hoger specificiteit dan .page-width) */
+  .header-wrapper .mega-menu__list.mega-menu__list--offroad,
+  .header-wrapper .mega-menu__list.mega-menu__list--atv,
+  .header-wrapper .mega-menu__list.mega-menu__list--werkplaats,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--offroad,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--atv,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--werkplaats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .header-wrapper .mega-menu__list.mega-menu__list--fiets,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--fiets,
+  .header-wrapper .mega-menu__list.mega-menu__list--gear,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--gear {
+    /* Zelfde container + 4-kolomsraster als Offroad/ATV/Werkplaats;
+       2 kolommen vullen de eerste twee slots → gelijke linkeruitlijning */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .header-wrapper .mega-menu__column {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  /* —— Hoofdsectie (grijs, uppercase) —— */
+  .header-wrapper .mega-menu__section-title {
+    margin: 0 0 1.4rem;
+    padding: 0;
+    font-family: Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #777777;
+    line-height: 1.3;
+  }
+
+  .header-wrapper .mega-menu__column > .mega-menu__section-title:not(:first-child) {
+    margin-top: 3.8rem;
+  }
+
+  /* —— Subcategorieblok —— */
+  .header-wrapper .mega-menu__group {
+    margin: 0 0 3.2rem;
+  }
+
+  .header-wrapper .mega-menu__column > .mega-menu__group:last-child {
+    margin-bottom: 0;
+  }
+
+  .header-wrapper .mega-menu__group-links {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* —— Subcategorie (wit + rode lijn) —— */
+  .header-wrapper .mega-menu__link--level-2 {
+    display: block;
+    font-family: Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    font-weight: 750;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #ffffff !important;
+    text-decoration: none !important;
+    white-space: normal;
+    margin: 0;
+    padding: 0;
+    transform: none !important;
+  }
+
+  .header-wrapper a.mega-menu__link--level-2:hover,
+  .header-wrapper a.mega-menu__link--level-2:focus,
+  .header-wrapper a.mega-menu__link--level-2.mega-menu__link--active {
+    color: #ffffff !important;
+    text-decoration: none !important;
+    transform: none !important;
+  }
+
+  .header-wrapper .mega-menu__link--level-2::after {
+    content: '';
+    display: block;
+    width: 28px;
+    height: 2px;
+    background: #e62b0a;
+    margin-top: 7px;
+    margin-bottom: 10px;
+  }
+
+  /* —— Links —— */
+  .header-wrapper .mega-menu__group-links .mega-menu__link,
+  .header-wrapper .mega-menu__list > li > ul .mega-menu__link {
+    display: block;
+    font-family: Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #bdbdbd !important;
+    text-decoration: none !important;
+    padding: 0;
+    margin: 0 0 7px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    transition: color 0.15s ease;
+  }
+
+  .header-wrapper .mega-menu__group-links li:last-child .mega-menu__link,
+  .header-wrapper .mega-menu__list > li > ul li:last-child .mega-menu__link {
+    margin-bottom: 0;
+  }
+
+  .header-wrapper .mega-menu__group-links .mega-menu__link:hover,
+  .header-wrapper .mega-menu__group-links .mega-menu__link:focus-visible,
+  .header-wrapper .mega-menu__list > li > ul .mega-menu__link:hover,
+  .header-wrapper .mega-menu__list > li > ul .mega-menu__link:focus-visible {
+    color: #ffffff !important;
+    text-decoration: none !important;
+    transform: none;
+    background: transparent;
+  }
+
+  .header-wrapper .mega-menu__group-links .mega-menu__link--active,
+  .header-wrapper .mega-menu__list > li > ul .mega-menu__link--active {
+    color: #ffffff !important;
+  }
+
+  /* Fallback condensed */
+  .header-wrapper .mega-menu__list--condensed {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .header-wrapper .mega-menu__list--condensed .mega-menu__link,
+  .header-wrapper .mega-menu__list--condensed .mega-menu__link--level-2 {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: normal;
+    color: #bdbdbd !important;
+    padding: 0;
+    margin: 0 0 7px;
+  }
+
+  .header-wrapper .mega-menu__list--condensed .mega-menu__link--level-2::after {
+    display: none;
+  }
+
+  /* —— Actief hoofdmenu-item (open) —— */
+  .header-wrapper .mega-menu[open] > .header__menu-item,
+  .header-wrapper .mega-menu[open] > .header__menu-item span,
+  .header-wrapper details.mega-menu[open] > .header__menu-item .header__active-menu-item {
+    color: #ffffff !important;
+    text-decoration: none !important;
+  }
+
+  .header-wrapper .mega-menu[open] > .header__menu-item span {
+    border-bottom: 2px solid #e62b0a;
+    padding-bottom: 0.2rem;
+    text-underline-offset: 0;
+  }
+
+  .header-wrapper .mega-menu[open] > .header__menu-item:hover span {
+    text-decoration: none !important;
+  }
+}
+
+@media screen and (min-width: 990px) and (max-width: 1199px) {
+  .header-wrapper .mega-menu__list,
+  .header-wrapper .mega-menu__list.page-width,
+  .header-wrapper .mega-menu__list.mega-menu__list--offroad,
+  .header-wrapper .mega-menu__list.mega-menu__list--atv,
+  .header-wrapper .mega-menu__list.mega-menu__list--werkplaats,
+  .header-wrapper .mega-menu__list.mega-menu__list--fiets,
+  .header-wrapper .mega-menu__list.mega-menu__list--gear,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--offroad,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--atv,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--werkplaats,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--fiets,
+  .header-wrapper .mega-menu__list.page-width.mega-menu__list--gear,
+  .header-wrapper .mega-menu__list--condensed {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 36px;
+    row-gap: 32px;
+    padding: 32px 24px 36px;
+    max-width: 1280px;
+  }
+}

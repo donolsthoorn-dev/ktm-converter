@@ -1,0 +1,205 @@
+/* Motox zoekmodal + predictive search — leesbaar wit paneel */
+
+/* Header + zoek boven producttabs (zelfde z-index: 3 schildert tabs over resultaten) */
+.section-header:has(details[open]),
+.shopify-section-header-sticky:has(details[open]) {
+  z-index: 40 !important;
+}
+
+.header details[open] > .search-modal,
+.header .search-modal,
+.search-modal.modal__content,
+.search-modal.gradient {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  /* Force light scheme tokens inside modal */
+  --color-background: 255, 255, 255;
+  --color-foreground: 17, 17, 17;
+  --color-link: 201, 41, 10;
+  --color-button: 201, 41, 10;
+  --color-button-text: 255, 255, 255;
+  overflow: visible !important;
+  z-index: 40;
+}
+
+.header details[open] .search-modal__content {
+  overflow: visible !important;
+  align-items: flex-start !important;
+  padding-top: 1.6rem !important;
+  padding-bottom: 1.6rem !important;
+}
+
+.search-modal__content,
+.search-modal__form,
+.search-modal .field,
+.search-modal .field__input,
+.search-modal .search__input,
+.search-modal input[type='search'] {
+  color: #111111 !important;
+}
+
+.search-modal .field__input,
+.search-modal .search__input.field__input {
+  background: #ffffff !important;
+  color: #111111 !important;
+  border-color: rgba(17, 17, 17, 0.2) !important;
+  box-shadow: none !important;
+}
+
+.search-modal .field__input::placeholder,
+.search-modal .search__input::placeholder {
+  color: #777777 !important;
+  opacity: 1;
+}
+
+.search-modal .field__label,
+.search-modal .field__input:focus ~ .field__label,
+.search-modal .field__input:not(:placeholder-shown) ~ .field__label {
+  color: #666666 !important;
+}
+
+.search-modal .search__button,
+.search-modal .reset__button,
+.search-modal .modal__close-button,
+.search-modal .modal__close-button .icon,
+.search-modal .search__button .icon,
+.search-modal .reset__button .icon {
+  color: #111111 !important;
+}
+
+.search-modal .modal__close-button:hover,
+.search-modal .search__button:hover {
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+/* Predictive results dropdown */
+.header .predictive-search,
+.search-modal .predictive-search,
+.predictive-search.predictive-search--header {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border-color: rgba(17, 17, 17, 0.12) !important;
+  color: #111111 !important;
+  --color-background: 255, 255, 255;
+  --color-foreground: 17, 17, 17;
+  --color-link: 201, 41, 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* Blijf onder de header en boven page-content (tabs/recommendations) */
+  max-height: min(55vh, calc(100dvh - 16rem)) !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  isolation: isolate;
+  z-index: 41;
+}
+
+.predictive-search__search-for-button {
+  position: sticky;
+  bottom: 0;
+  margin: 0;
+  padding: 1rem 2rem;
+  background: #ffffff !important;
+  border-top: 0.1rem solid rgba(17, 17, 17, 0.08);
+  box-shadow: 0 -1.2rem 1.2rem #ffffff;
+  z-index: 2;
+}
+
+.predictive-search__heading {
+  color: #222222 !important;
+  border-bottom-color: rgba(17, 17, 17, 0.1) !important;
+}
+
+.predictive-search__item,
+.predictive-search__item-heading,
+.predictive-search__item-content,
+.predictive-search__item-vendor,
+.predictive-search .price,
+.predictive-search .price-item {
+  color: #111111 !important;
+}
+
+.predictive-search__item-vendor,
+.predictive-search .price,
+.predictive-search .price-item {
+  color: #666666 !important;
+}
+
+.predictive-search__item-query-result mark {
+  color: var(--motox-brand-red, #c9290a) !important;
+  background: transparent !important;
+  font-weight: 700;
+}
+
+.predictive-search__list-item[aria-selected='true'] > *,
+.predictive-search__list-item:hover > *,
+.predictive-search__item[aria-selected='true'],
+.predictive-search__item:hover {
+  color: #111111 !important;
+  background-color: #f5f5f5 !important;
+}
+
+.predictive-search__list-item:hover .predictive-search__item-heading,
+.predictive-search__list-item[aria-selected='true'] .predictive-search__item-heading {
+  color: var(--motox-brand-red, #c9290a) !important;
+  text-decoration: none !important;
+}
+
+.predictive-search__item--term,
+.predictive-search__item--term span,
+.predictive-search__search-for-button,
+.predictive-search a.predictive-search__item--term {
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+.predictive-search__item--term:hover,
+.predictive-search__item--term:hover span {
+  color: var(--motox-brand-red-dark, #a02008) !important;
+}
+
+.predictive-search__item--term .icon-arrow {
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+/* Merkenlogo rechts in predictive search-rijen */
+.predictive-search__item--link-with-thumbnail {
+  grid-template-columns: 5rem minmax(0, 1fr) auto !important;
+  grid-template-areas: 'product-image product-content product-vendor-logo' !important;
+  align-items: center;
+}
+
+.predictive-search__vendor-logo {
+  grid-area: product-vendor-logo;
+  display: block;
+  height: 2.8rem;
+  width: auto;
+  max-width: 8rem;
+  object-fit: contain;
+  object-position: right center;
+  flex-shrink: 0;
+  margin-left: 1.2rem;
+  background: #fff;
+}
+
+@media screen and (max-width: 749px) {
+  .predictive-search__vendor-logo {
+    height: 2.2rem;
+    max-width: 6rem;
+    margin-left: 0.8rem;
+  }
+}
+
+.predictive-search .spinner,
+.predictive-search__loading-state {
+  color: #111111 !important;
+}
+
+/* Zoekresultatenpagina (main search) */
+.template-search .predictive-search,
+main .predictive-search--search-template {
+  background: #ffffff !important;
+  color: #111111 !important;
+  --color-background: 255, 255, 255;
+  --color-foreground: 17, 17, 17;
+  --color-link: 201, 41, 10;
+}

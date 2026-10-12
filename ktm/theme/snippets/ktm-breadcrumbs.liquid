@@ -1,0 +1,564 @@
+{% comment %}
+  Broodkruimel voor de rode motorstrook.
+  Kom je via /collections/…/products/…, dan is die collectie leidend —
+  behalve brede “ALL”-collecties (KTM ALL, All Products, …): dan liever
+  een specifiekere collectie (bijv. Seats) uit menu of product.
+{% endcomment %}
+{%- liquid
+  assign crumb_collection = nil
+  assign crumb_source = ''
+  assign crumb_menu = linklists['main-menu']
+  assign crumb_skip = '|all|frontpage|all-products|ktm|ultimate-search-bestseller-collection-do-not-delete|'
+
+  if request.page_type == 'collection'
+    assign crumb_collection = collection
+    assign crumb_source = 'collection'
+  elsif request.page_type == 'product'
+    assign url_collection = nil
+    if collection != blank
+      assign url_skip_needle = '|' | append: collection.handle | append: '|'
+      assign url_title_up = collection.title | upcase
+      if crumb_skip contains url_skip_needle or url_title_up contains ' ALL' or url_title_up == 'ALL'
+        assign url_collection = nil
+      else
+        assign url_collection = collection
+      endif
+    endif
+
+    if url_collection != blank
+      assign crumb_collection = url_collection
+      assign crumb_source = 'url'
+    else
+      assign crumb_source = 'guess'
+      assign owned = '|'
+      for pc in product.collections
+        assign skip_needle = '|' | append: pc.handle | append: '|'
+        assign pc_title_up = pc.title | upcase
+        if crumb_skip contains skip_needle or pc_title_up contains ' ALL' or pc_title_up == 'ALL'
+          continue
+        endif
+        assign owned = owned | append: pc.handle | append: '|'
+      endfor
+      assign best_depth = 0
+      assign best_handle = ''
+      for link in crumb_menu.links
+        assign h = ''
+        if link.type == 'collection_link' and link.object != blank
+          assign h = link.object.handle
+        endif
+        if h == blank and link.url contains '/collections/'
+          assign h = link.url | split: '/collections/' | last | split: '/' | first | split: '?' | first | split: '#' | first
+        endif
+        assign needle = '|' | append: h | append: '|'
+        if h != blank and owned contains needle and best_depth < 1
+          assign best_depth = 1
+          assign best_handle = h
+        endif
+        for child in link.links
+          assign h = ''
+          if child.type == 'collection_link' and child.object != blank
+            assign h = child.object.handle
+          endif
+          if h == blank and child.url contains '/collections/'
+            assign h = child.url | split: '/collections/' | last | split: '/' | first | split: '?' | first | split: '#' | first
+          endif
+          assign needle = '|' | append: h | append: '|'
+          if h != blank and owned contains needle and best_depth < 2
+            assign best_depth = 2
+            assign best_handle = h
+          endif
+          for grand in child.links
+            assign h = ''
+            if grand.type == 'collection_link' and grand.object != blank
+              assign h = grand.object.handle
+            endif
+            if h == blank and grand.url contains '/collections/'
+              assign h = grand.url | split: '/collections/' | last | split: '/' | first | split: '?' | first | split: '#' | first
+            endif
+            assign needle = '|' | append: h | append: '|'
+            if h != blank and owned contains needle and best_depth < 3
+              assign best_depth = 3
+              assign best_handle = h
+            endif
+          endfor
+        endfor
+      endfor
+      if best_handle != blank
+        for pc in product.collections
+          if pc.handle == best_handle
+            assign crumb_collection = pc
+            break
+          endif
+        endfor
+      endif
+      if crumb_collection == blank
+        for pc in product.collections
+          assign skip_needle = '|' | append: pc.handle | append: '|'
+          assign pc_title_up = pc.title | upcase
+          if crumb_skip contains skip_needle or pc_title_up contains ' ALL' or pc_title_up == 'ALL'
+            continue
+          endif
+          assign crumb_collection = pc
+          break
+        endfor
+      endif
+    endif
+  endif
+
+  assign p1_title = ''
+  assign p1_url = ''
+  assign p2_title = ''
+  assign p2_url = ''
+  if crumb_collection != blank
+    assign trail_found = false
+    assign want = crumb_collection.handle
+    for link in crumb_menu.links
+      unless trail_found
+        assign h = ''
+        if link.type == 'collection_link' and link.object != blank
+          assign h = link.object.handle
+        endif
+        if h == blank and link.url contains '/collections/'
+          assign h = link.url | split: '/collections/' | last | split: '/' | first | split: '?' | first | split: '#' | first
+        endif
+        if h == want
+          assign trail_found = true
+        else
+          for child in link.links
+            unless trail_found
+              assign h = ''
+              if child.type == 'collection_link' and child.object != blank
+                assign h = child.object.handle
+              endif
+              if h == blank and child.url contains '/collections/'
+                assign h = child.url | split: '/collections/' | last | split: '/' | first | split: '?' | first | split: '#' | first
+              endif
+              if h == want
+                assign p1_title = link.title
+                assign p1_url = link.url
+                assign trail_found = true
+              else
+                for grand in child.links
+                  unless trail_found
+                    assign h = ''
+                    if grand.type == 'collection_link' and grand.object != blank
+                      assign h = grand.object.handle
+                    endif
+                    if h == blank and grand.url contains '/collections/'
+                      assign h = grand.url | split: '/collections/' | last | split: '/' | first | split: '?' | first | split: '#' | first
+                    endif
+                    if h == want
+                      assign p1_title = link.title
+                      assign p1_url = link.url
+                      assign p2_title = child.title
+                      assign p2_url = child.url
+                      assign trail_found = true
+                    endif
+                  endunless
+                endfor
+              endif
+            endunless
+          endfor
+        endif
+      endunless
+    endfor
+  endif
+
+  assign p1_key = p1_title | downcase | replace: ' ', '' | replace: '-', ''
+  assign p2_key = p2_title | downcase | replace: ' ', '' | replace: '-', ''
+  assign p1_open = false
+  assign p2_open = false
+  if p1_title != blank
+    if p1_url == blank or p1_url == '#' or p1_url == '/#'
+      assign p1_open = true
+    endif
+  endif
+  if p2_title != blank
+    if p2_url == blank or p2_url == '#' or p2_url == '/#'
+      assign p2_open = true
+    endif
+  endif
+  if p1_open or p2_open
+    for scan in crumb_menu.links
+      assign scan_url = scan.url
+      assign scan_real = false
+      if scan_url != blank and scan_url != '#' and scan_url != '/#' and scan_url contains '/collections/'
+        assign scan_real = true
+      endif
+      if scan_real
+        assign scan_key = scan.title | downcase | replace: ' ', '' | replace: '-', ''
+        assign scan_obj = ''
+        if scan.type == 'collection_link' and scan.object != blank
+          assign scan_obj = scan.object.title | downcase | replace: ' ', '' | replace: '-', ''
+        endif
+        if p1_open
+          if scan_key == p1_key or scan_obj == p1_key
+            assign p1_url = scan_url
+            assign p1_open = false
+          endif
+        endif
+        if p2_open
+          if scan_key == p2_key or scan_obj == p2_key
+            assign p2_url = scan_url
+            assign p2_open = false
+          endif
+        endif
+      endif
+      for scan_child in scan.links
+        assign scan_url = scan_child.url
+        assign scan_real = false
+        if scan_url != blank and scan_url != '#' and scan_url != '/#' and scan_url contains '/collections/'
+          assign scan_real = true
+        endif
+        if scan_real
+          assign scan_key = scan_child.title | downcase | replace: ' ', '' | replace: '-', ''
+          assign scan_obj = ''
+          if scan_child.type == 'collection_link' and scan_child.object != blank
+            assign scan_obj = scan_child.object.title | downcase | replace: ' ', '' | replace: '-', ''
+          endif
+          if p1_open
+            if scan_key == p1_key or scan_obj == p1_key
+              assign p1_url = scan_url
+              assign p1_open = false
+            endif
+          endif
+          if p2_open
+            if scan_key == p2_key or scan_obj == p2_key
+              assign p2_url = scan_url
+              assign p2_open = false
+            endif
+          endif
+        endif
+        for scan_grand in scan_child.links
+          assign scan_url = scan_grand.url
+          assign scan_real = false
+          if scan_url != blank and scan_url != '#' and scan_url != '/#' and scan_url contains '/collections/'
+            assign scan_real = true
+          endif
+          if scan_real
+            assign scan_key = scan_grand.title | downcase | replace: ' ', '' | replace: '-', ''
+            assign scan_obj = ''
+            if scan_grand.type == 'collection_link' and scan_grand.object != blank
+              assign scan_obj = scan_grand.object.title | downcase | replace: ' ', '' | replace: '-', ''
+            endif
+            if p1_open
+              if scan_key == p1_key or scan_obj == p1_key
+                assign p1_url = scan_url
+                assign p1_open = false
+              endif
+            endif
+            if p2_open
+              if scan_key == p2_key or scan_obj == p2_key
+                assign p2_url = scan_url
+                assign p2_open = false
+              endif
+            endif
+          endif
+        endfor
+      endfor
+    endfor
+  endif
+-%}
+{%- if crumb_source != blank -%}
+  <nav
+    class="ktm-crumbs"
+    aria-label="Broodkruimel"
+    data-source="{{ crumb_source }}"
+    {% if request.page_type == 'product' %}
+      data-product-title="{{ product.title | escape }}"
+    {% endif %}
+  >
+    <ol>
+      <li>
+        <a href="{{ routes.root_url }}"><span>Home</span></a>
+      </li>
+      {%- if p1_title != blank -%}
+        <li>
+          {%- if p1_url != blank and p1_url != '#' and p1_url != '/#' -%}
+            <a href="{{ p1_url }}"><span>{{ p1_title | escape }}</span></a>
+          {%- else -%}
+            <span>{{ p1_title | escape }}</span>
+          {%- endif -%}
+        </li>
+      {%- endif -%}
+      {%- if p2_title != blank -%}
+        <li>
+          {%- if p2_url != blank and p2_url != '#' and p2_url != '/#' -%}
+            <a href="{{ p2_url }}"><span>{{ p2_title | escape }}</span></a>
+          {%- else -%}
+            <span>{{ p2_title | escape }}</span>
+          {%- endif -%}
+        </li>
+      {%- endif -%}
+      {%- if crumb_collection != blank -%}
+        <li{% if request.page_type == 'collection' %} aria-current="page"{% endif %}>
+          {%- if request.page_type == 'product' -%}
+            <a href="{{ crumb_collection.url }}"><span>{{ crumb_collection.title | escape }}</span></a>
+          {%- else -%}
+            <span>{{ crumb_collection.title | escape }}</span>
+          {%- endif -%}
+        </li>
+      {%- endif -%}
+      {%- if request.page_type == 'product' -%}
+        <li aria-current="page">
+          <span>{{ product.title | escape }}</span>
+        </li>
+      {%- endif -%}
+    </ol>
+  </nav>
+  <script>
+    (function () {
+      var nav = document.querySelector(".ktm-crumbs");
+      if (!nav || nav.dataset.ktmBound === "1") return;
+      nav.dataset.ktmBound = "1";
+      var KEY = "ktm-crumb-trail";
+      var docked = false;
+      var barShown = false;
+
+      function collectionPath(pathname) {
+        var path = String(pathname || "").replace(/\/$/, "");
+        if (!/^\/collections\/[^/]+$/.test(path)) return "";
+        return path;
+      }
+
+      function remember() {
+        if (!document.body.classList.contains("template-collection")) return;
+        var path = collectionPath(location.pathname);
+        if (!path) return;
+        try {
+          sessionStorage.setItem(KEY, JSON.stringify({ path: path, html: nav.innerHTML }));
+        } catch (err) {}
+      }
+
+      function readTrail() {
+        try {
+          return JSON.parse(sessionStorage.getItem(KEY) || "null");
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function cameFrom(path) {
+        if (!path || !document.referrer) return false;
+        try {
+          var ref = new URL(document.referrer);
+          return ref.origin === location.origin && collectionPath(ref.pathname) === path;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function appendProduct(list) {
+        var title = nav.getAttribute("data-product-title");
+        if (!title || !list) return;
+        var item = document.createElement("li");
+        item.setAttribute("aria-current", "page");
+        var label = document.createElement("span");
+        label.textContent = title;
+        item.appendChild(label);
+        list.appendChild(item);
+      }
+
+      function linkCurrent(list, href) {
+        var current = list.querySelector("[aria-current='page']");
+        if (!current) return;
+        var label = current.textContent.trim();
+        var link = document.createElement("a");
+        link.href = href;
+        var span = document.createElement("span");
+        span.textContent = label;
+        link.appendChild(span);
+        current.textContent = "";
+        current.appendChild(link);
+        current.removeAttribute("aria-current");
+      }
+
+      function useTrail(html, href) {
+        nav.innerHTML = html;
+        var list = nav.querySelector("ol");
+        if (!list) return;
+        linkCurrent(list, href);
+        appendProduct(list);
+        nav.setAttribute("data-source", "referrer");
+      }
+
+      function useCollection(title, href) {
+        var list = nav.querySelector("ol");
+        if (!list) return;
+        var home = list.querySelector("li");
+        list.textContent = "";
+        if (home) list.appendChild(home);
+        var item = document.createElement("li");
+        var link = document.createElement("a");
+        link.href = href;
+        var span = document.createElement("span");
+        span.textContent = title;
+        link.appendChild(span);
+        item.appendChild(link);
+        list.appendChild(item);
+        appendProduct(list);
+        nav.setAttribute("data-source", "referrer");
+      }
+
+      function referrerPath() {
+        if (nav.getAttribute("data-source") !== "guess") return "";
+        if (!document.body.classList.contains("template-product") || !document.referrer) return "";
+        try {
+          var ref = new URL(document.referrer);
+          if (ref.origin !== location.origin) return "";
+          return collectionPath(ref.pathname);
+        } catch (err) {
+          return "";
+        }
+      }
+
+      remember();
+
+      var from = referrerPath();
+      var stored = from ? readTrail() : null;
+      if (from && stored && stored.path === from && stored.html && cameFrom(from)) {
+        useTrail(stored.html, from);
+      } else if (from && nav.getAttribute("data-source") === "guess") {
+        fetch(from + ".json", { credentials: "same-origin" })
+          .then(function (response) {
+            if (!response.ok) throw new Error("collection");
+            return response.json();
+          })
+          .then(function (payload) {
+            var title = payload && payload.collection && payload.collection.title;
+            if (title) useCollection(title, from);
+          })
+          .catch(function () {});
+      }
+
+      function showBarFallback() {
+        if (docked || barShown) return;
+        if (nav.parentNode && nav.parentNode.classList && nav.parentNode.classList.contains("mxg-strip")) return;
+        barShown = true;
+        nav.classList.add("ktm-crumbs--bar");
+        nav.hidden = false;
+        var header = document.querySelector("header");
+        if (header) header.insertAdjacentElement("afterend", nav);
+        else document.body.insertBefore(nav, document.body.firstChild);
+      }
+
+      function dock() {
+        if (docked) return true;
+        var strip = document.querySelector(".mxg-strip");
+        if (!strip) return false;
+        docked = true;
+        nav.classList.remove("ktm-crumbs--bar");
+        nav.classList.add("is-docked");
+        nav.hidden = false;
+        strip.classList.add("mxg-strip--crumbs");
+        if (nav.parentNode !== strip) strip.insertBefore(nav, strip.firstChild);
+        fitCrumbs();
+        return true;
+      }
+
+      function crumbLabel(li) {
+        var span = li.querySelector("span");
+        return span || li;
+      }
+
+      function rememberLabels(list) {
+        Array.prototype.forEach.call(list.children, function (li) {
+          if (li.dataset.ktmLabel != null) return;
+          var node = crumbLabel(li);
+          li.dataset.ktmLabel = node.textContent || "";
+          if (li.querySelector("a")) {
+            li.dataset.ktmHref = li.querySelector("a").getAttribute("href") || "";
+          }
+        });
+      }
+
+      function restoreLabels(list) {
+        Array.prototype.forEach.call(list.children, function (li) {
+          li.hidden = false;
+          li.classList.remove("is-collapse");
+          var label = li.dataset.ktmLabel;
+          if (label == null) return;
+          var href = li.dataset.ktmHref;
+          li.textContent = "";
+          if (href) {
+            var link = document.createElement("a");
+            link.href = href;
+            var span = document.createElement("span");
+            span.textContent = label;
+            link.appendChild(span);
+            li.appendChild(link);
+          } else {
+            var only = document.createElement("span");
+            only.textContent = label;
+            li.appendChild(only);
+          }
+        });
+      }
+
+      function stripOverflows(strip) {
+        return strip.scrollWidth > strip.clientWidth + 1;
+      }
+
+      function fitCrumbs() {
+        if (window.matchMedia && window.matchMedia("(max-width: 749px)").matches) {
+          nav.hidden = false;
+          nav.classList.remove("is-hidden");
+          return;
+        }
+        var strip = nav.parentNode;
+        if (!strip || !strip.classList.contains("mxg-strip")) return;
+        var list = nav.querySelector("ol");
+        if (!list || !list.children.length) return;
+
+        nav.hidden = false;
+        nav.classList.remove("is-hidden");
+        rememberLabels(list);
+        restoreLabels(list);
+
+        if (!stripOverflows(strip)) return;
+
+        var items = Array.prototype.slice.call(list.children);
+        /* Middelste stappen inklappen naar ../.. (van binnen naar buiten) */
+        for (var i = items.length - 2; i >= 1; i--) {
+          if (!stripOverflows(strip)) break;
+          var li = items[i];
+          if (li.classList.contains("is-collapse")) continue;
+          li.classList.add("is-collapse");
+          li.textContent = "";
+          var dots = document.createElement("span");
+          dots.textContent = "..";
+          dots.setAttribute("aria-hidden", "true");
+          if (li.dataset.ktmHref) {
+            var link = document.createElement("a");
+            link.href = li.dataset.ktmHref;
+            link.setAttribute("aria-label", li.dataset.ktmLabel || "..");
+            link.appendChild(dots);
+            li.appendChild(link);
+          } else {
+            li.appendChild(dots);
+          }
+        }
+
+        if (!stripOverflows(strip)) return;
+
+        /* Nog te lang: breadcrumb helemaal weg — wijzigen blijft */
+        nav.hidden = true;
+        nav.classList.add("is-hidden");
+      }
+
+      /* Geen MutationObserver: die lus hangde de shop.
+         Toon eerst fallback, dock daarna met korte polls. */
+      showBarFallback();
+      var tries = 0;
+      function tryDock() {
+        tries += 1;
+        if (dock() || tries > 20) return;
+        window.setTimeout(tryDock, 250);
+      }
+      tryDock();
+      window.addEventListener("resize", function () {
+        if (docked) fitCrumbs();
+      });
+    })();
+  </script>
+{%- endif -%}

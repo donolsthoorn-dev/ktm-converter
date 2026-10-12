@@ -1,0 +1,28 @@
+{
+  "garage": {
+    "strip_empty": "Parts for your motorcycle",
+    "strip_set": "Choose motorcycle",
+    "strip_set_mobile": "Choose your motorcycle for matching parts",
+    "strip_for": "Your selected motorcycle:",
+    "strip_for_mobile": "Selected motorcycle:",
+    "strip_switch": "change",
+    "dialog_title": "Which motorcycle are you looking for?",
+    "dialog_sub": "We remember it on this device. If you are logged in, it is also saved on your account.",
+    "make": "Make",
+    "model": "Model",
+    "year": "Year",
+    "pick": "Make a choice",
+    "save": "Use this motorcycle",
+    "close": "Close",
+    "saved": "Your garage, choose a motorcycle to activate",
+    "remove": "Remove",
+    "empty": "You have not saved a motorcycle yet.",
+    "fits": "This fits the selected motorcycle:",
+    "no_fit": "This is for a different motorcycle than your",
+    "catalog_missing": "The motorcycle list is unavailable right now.",
+    "limit": "You can save 20 motorcycles.",
+    "filter_label": "Show only parts for",
+    "filter_empty": "No parts for your",
+    "filter_unavailable": "The motorcycle filter is unavailable right now."
+  }
+}

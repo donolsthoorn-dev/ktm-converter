@@ -1,0 +1,28 @@
+{
+  "garage": {
+    "strip_empty": "Onderdelen voor jouw motor",
+    "strip_set": "Motor kiezen",
+    "strip_set_mobile": "Kies jouw motor voor bijpassende onderdelen",
+    "strip_for": "Jouw geselecteerde motor:",
+    "strip_for_mobile": "Gekozen motor:",
+    "strip_switch": "wijzigen",
+    "dialog_title": "Voor welke motor zoek je?",
+    "dialog_sub": "We onthouden hem op dit apparaat. Ben je ingelogd, dan staat hij ook bij je account.",
+    "make": "Merk",
+    "model": "Model",
+    "year": "Bouwjaar",
+    "pick": "Maak een keuze",
+    "save": "Deze motor gebruiken",
+    "close": "Sluiten",
+    "saved": "Jouw garage, kies een motorfiets om te activeren",
+    "remove": "Weghalen",
+    "empty": "Je hebt nog geen motor vastgezet.",
+    "fits": "Dit past de geselecteerde motor:",
+    "no_fit": "Dit is voor een andere motor dan je",
+    "catalog_missing": "De motorenlijst is even niet beschikbaar.",
+    "limit": "Je kunt 20 motoren bewaren.",
+    "filter_label": "Toon alleen onderdelen voor",
+    "filter_empty": "Geen onderdelen voor je",
+    "filter_unavailable": "Het motorfilter is even niet beschikbaar."
+  }
+}

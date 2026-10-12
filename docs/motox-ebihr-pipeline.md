@@ -12,9 +12,10 @@ Nachtelijke (of handmatige) job schrijft **direct naar Motox Shopify**:
 2. New-only producten **aanmaken** (met images) + publiceren op **alle sales channels**
 3. Bestaande producten **zonder afbeelding**: images backfill als Bihr ze nu wel heeft, daarna opnieuw publiceren op alle kanalen
 4. **Prijzen (delta):** alleen SKUs waar Bihr-prijs ≠ huidige Motox-prijs (uit cache); `--force-all-prices` voor alles
-5. **Metafields** `global.fits_on` (+ summary/year/make/model) op nieuwe producten, en op bestaande producten als de passendheid leeg is of afwijkt van VSE
-6. **Douane:** Bihr `CommodityCode` en `CountryOfOrigin` op nieuwe producten meteen, en op bestaande producten als de goederencode of het land van herkomst leeg is of afwijkt
-7. **Artikelnummers:** Bihr `OldPartNumber` en `SupplierPartNumber` op de variant (`custom.article_numbers`), een groeiende zoeklijst op het product (`custom.search_codes`) en tags `ref:<nummer>`. De SKU blijft het huidige `PartNumber`. De productpagina toont oud nummer, leverancierscode en EAN; de sitezoekfunctie vindt de `ref:`-tags. Een nummer dat Bihr later vervangt blijft in de zoeklijst staan.
+5. **Inventory policy (delta):** Bihr stock `Value` → Shopify `inventoryPolicy` (`CONTINUE` bij Value>0, `DENY` bij 0). Alleen SKUs met Bihr-stocksignaal; delta t.o.v. Motox-cache. Motox-qty blijft meestal 0 — verkoopbaarheid hangt af van doorverkopen. `--force-all-stock-policies` / `--stock-policy-only` beschikbaar
+6. **Metafields** `global.fits_on` (+ summary/year/make/model) op nieuwe producten, en op bestaande producten als de passendheid leeg is of afwijkt van VSE
+7. **Douane:** Bihr `CommodityCode` en `CountryOfOrigin` op nieuwe producten meteen, en op bestaande producten als de goederencode of het land van herkomst leeg is of afwijkt
+8. **Artikelnummers:** Bihr `OldPartNumber` en `SupplierPartNumber` op de variant (`custom.article_numbers`), een groeiende zoeklijst op het product (`custom.search_codes`) en tags `ref:<nummer>`. De SKU blijft het huidige `PartNumber`. De productpagina toont oud nummer, leverancierscode en EAN; de sitezoekfunctie vindt de `ref:`-tags. Een nummer dat Bihr later vervangt blijft in de zoeklijst staan.
 
 YMM-**app**/filter-CSV is **later** (lokaal); v1 dekt theme-metafields.
 
@@ -27,8 +28,11 @@ python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run --
 # Lokaal apply
 python3 scripts/motox_ebihr_sync.py --fetch --apply
 
-# Alleen prijzen (delta t.o.v. Motox-cache)
+# Alleen prijzen (delta t.o.v. Motox-cache) + stock policy
 python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --prices-only
+
+# Alleen inventory policy (doorverkopen) vanaf Bihr-stock
+python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --stock-policy-only
 
 # Alle prijzen forceren (geen delta)
 python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --prices-only --force-all-prices

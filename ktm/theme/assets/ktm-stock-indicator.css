@@ -1,0 +1,32 @@
+.ktm-stock-indicator {
+    position: relative;
+    font-size: 1.25rem;
+    line-height: 1.35;
+    font-weight: 500;
+    padding-left: 1.7rem;
+    margin-top: 0.35rem;
+    color: #444;
+}
+
+.ktm-stock-indicator:before {
+    position: absolute;
+    left: 0;
+    top: 0.25rem;
+    width: 1rem;
+    height: 1rem;
+    content: '';
+    display: block;
+    border-radius: 2px;
+}
+
+.ktm-stock-indicator-not-available:before{
+    background: #eb8c34
+}
+
+.ktm-stock-indicator-available:before {
+    background: #28c732
+}
+
+.ktm-stock-indicator-sold-out:before {
+    background: #c72828
+}

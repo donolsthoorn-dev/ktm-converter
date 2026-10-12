@@ -187,6 +187,18 @@ python3 scripts/shopify_sync_from_pricelist_csv.py
 
 ---
 
+## Complementary / ET-relaties (MUSS, EMPF, ET) — ktm-shop
+
+Na **nieuwe** of gewijzigde producten in Shopify (CSV-import uit `main.py`), synchrooniseer CBEXPDN-relaties naar metafields (side-grid op de PDP):
+
+```bash
+python3 scripts/shopify_sync_empfart_complementary.py --force-refresh-cache --force-write
+```
+
+Dit vult `complementary_products` (MUSS+EMPF) en `global.et_articles` (ET). Zonder deze stap blijven nieuwe artikelen zonder “Bijbehorende of bijpassende producten”. Details: [`empfart_complementary.md`](empfart_complementary.md).
+
+---
+
 ## Automatisch (hoef je niet bij elke productronde)
 
 | Wat | Waar |

@@ -1,0 +1,23 @@
+# Koppel dit bestand aan de Motox-app met: cd motox/garage && shopify app config link
+name = "Motox garage"
+handle = "motox-garage"
+client_id = "fa6d911c5c3a18babf75247fbd0acd84"
+application_url = "https://motox-garage.vercel.app"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[webhooks]
+api_version = "2026-10"
+
+[access_scopes]
+scopes = "read_customers,write_customers,read_products"
+
+[auth]
+redirect_urls = [ "https://motox-garage.vercel.app/api/auth" ]
+
+[app_proxy]
+url = "https://motox-garage.vercel.app/proxy"
+prefix = "apps"
+subpath = "garage"

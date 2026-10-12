@@ -1,0 +1,1200 @@
+/* Motox collectiepagina — scoped op .motox-collection-section (body heeft geen template-collection class) */
+:root {
+  --motox-page-bg: var(--mx-background, #f7f7f7);
+  --motox-tile: #ffffff;
+  --motox-filter-accent: var(--mx-green, #00a900);
+  --motox-filter-line: var(--mx-border, #e5e5e5);
+  --motox-filter-text: var(--mx-text, #111111);
+  --motox-brand-red: #c9290a;
+  --motox-tile-radius: 10px;
+  --motox-tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* —— Grijs canvas —— */
+.motox-collection-section,
+.motox-collection-section.gradient,
+.motox-collection-section[class*='color-'],
+.motox-facets-layout,
+.motox-facets-layout .product-grid-container,
+.motox-facets-layout #ProductGridContainer {
+  background: var(--motox-page-bg) !important;
+  background-color: var(--motox-page-bg) !important;
+  background-image: none !important;
+  --color-background: 247, 247, 247 !important;
+  --gradient-background: var(--motox-page-bg) !important;
+}
+
+/* Banner erboven ook grijs houden waar mogelijk */
+.collection-hero,
+.collection-hero__inner,
+.collection-hero__text-wrapper {
+  background: var(--motox-page-bg) !important;
+  --color-background: 247, 247, 247 !important;
+}
+
+/* Collapsible collectie-info: H1 + zwart ⓘ, platte tekst (geen kaart) */
+.collection-hero--collapsible .collection-hero__inner {
+  display: block;
+  padding-top: 1.2rem;
+  padding-bottom: 0.4rem;
+}
+
+.collection-hero__heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1.2rem;
+}
+
+.collection-hero--collapsible .collection-hero__title {
+  margin: 0;
+  display: inline;
+  font-size: 3rem;
+  line-height: 1.1;
+}
+
+@media screen and (min-width: 750px) {
+  .collection-hero--collapsible .collection-hero__title {
+    font-size: 4rem;
+  }
+}
+
+.collection-hero__info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.8rem;
+  height: 1.8rem;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid #1a1a1a;
+  border-radius: 50%;
+  background: transparent;
+  color: #1a1a1a;
+  cursor: pointer;
+  line-height: 0;
+  vertical-align: middle;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.collection-hero__info-btn:hover,
+.collection-hero__info-btn[aria-expanded='true'] {
+  color: #000000;
+  border-color: #000000;
+  background: transparent;
+}
+
+.collection-hero__info-btn:focus-visible {
+  outline: 2px solid #1a1a1a;
+  outline-offset: 2px;
+}
+
+.collection-hero__info-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.collection-hero__info-icon svg {
+  display: block;
+}
+
+@media screen and (max-width: 749px) {
+  .collection-hero__info-btn {
+    width: 1.6rem;
+    height: 1.6rem;
+  }
+}
+
+.collection-hero__info-panel {
+  max-width: 90rem; /* ~900px */
+  margin: 0 0 2.6rem;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition:
+    opacity 0.2s ease,
+    max-height 0.22s ease;
+  pointer-events: none;
+}
+
+.collection-hero__info-panel.is-open {
+  opacity: 1;
+  max-height: 80rem;
+  pointer-events: auto;
+}
+
+.collection-hero__info-panel[hidden] {
+  display: none !important;
+}
+
+.collection-hero__info-panel.is-open[hidden] {
+  display: block !important;
+}
+
+.collection-hero__info-panel-inner {
+  position: relative;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.collection-hero__info-panel .collection-hero__description,
+.collection-hero__info-panel .collection-hero__description p {
+  margin: 0;
+  max-width: 90rem;
+  font-family: var(--mx-font, Manrope, sans-serif);
+  font-size: 1.5rem;
+  font-weight: 450;
+  line-height: 1.6;
+  color: #444444;
+  text-align: left;
+}
+
+.collection-hero__info-panel .collection-hero__description p + p {
+  margin-top: 0.85em;
+}
+
+@media screen and (max-width: 749px) {
+  .collection-hero__heading-row {
+    margin-bottom: 1rem;
+  }
+
+  .collection-hero__info-panel {
+    margin-bottom: 2.2rem;
+  }
+
+  .collection-hero__info-panel .collection-hero__description,
+  .collection-hero__info-panel .collection-hero__description p {
+    font-size: 1.5rem;
+    line-height: 1.55;
+  }
+}
+
+/* —— Layout: filter links vanaf top; rechts toolbar dan producten —— */
+@media screen and (min-width: 750px) {
+  .facets-vertical.motox-facets-layout {
+    display: grid !important;
+    grid-template-columns: 26rem minmax(0, 1fr) !important;
+    /* auto = toolbar height only; without this, the tall filters rowspan
+       inflates row 1 and pushes products down when the grid is short */
+    grid-template-rows: auto 1fr !important;
+    grid-template-areas:
+      'filters toolbar'
+      'filters products' !important;
+    column-gap: 1.6rem !important;
+    row-gap: 1rem !important;
+    align-items: start !important;
+  }
+
+  .motox-facets-layout > .motox-collection-toolbar,
+  .motox-facets-layout > facet-filters-form.facets-vertical-sort {
+    grid-area: toolbar !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    align-self: start !important;
+  }
+
+  .motox-facets-layout > .motox-collection-toolbar .facets-vertical-form,
+  .motox-facets-layout .facets-vertical-form {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 1rem 1.6rem !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 3.8rem;
+  }
+
+  .motox-facets-layout .product-count-vertical {
+    order: -1 !important;
+    flex: 0 1 auto !important;
+    min-width: 0 !important;
+    max-width: 14rem !important;
+    margin: 0 !important;
+    margin-left: 0 !important;
+    padding: 0 !important;
+    position: static !important;
+    font-size: 1.25rem !important;
+    font-weight: 500 !important;
+    color: var(--mx-text-secondary, #666666) !important;
+    background: transparent !important;
+    overflow: hidden !important;
+  }
+
+  .motox-facets-layout .product-count-vertical .product-count__text,
+  .motox-facets-layout .product-count-vertical #ProductCountDesktop {
+    display: block !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .motox-facets-layout .facet-filters.sorting {
+    display: flex !important;
+    align-items: center !important;
+    gap: 1.2rem !important;
+    margin: 0 0 0 auto !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  .motox-facets-layout .facet-filters__field {
+    display: flex !important;
+    align-items: center !important;
+    gap: 1.2rem !important;
+  }
+
+  .motox-facets-layout .facet-filters__label {
+    margin: 0 !important;
+    padding-right: 0.4rem !important;
+    font-size: 1.3rem !important;
+    font-weight: 500 !important;
+    color: var(--mx-text-secondary, #666666) !important;
+    white-space: nowrap;
+  }
+
+  .motox-facets-layout .facet-filters__field .select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .motox-facets-layout .facet-filters__sort,
+  .motox-facets-layout .select__select {
+    min-width: 22rem;
+    min-height: 3.8rem !important;
+    height: 3.8rem !important;
+    padding: 0 3.6rem 0 1.4rem !important;
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+    border-radius: var(--motox-tile-radius) !important;
+    background: #fff !important;
+    box-shadow: var(--motox-tile-shadow);
+    font-size: 1.3rem !important;
+  }
+
+  .motox-facets-layout .facet-filters__sort + .icon-caret,
+  .motox-facets-layout .facet-filters__field .select .icon-caret {
+    right: 1.4rem !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 1rem !important;
+    height: auto !important;
+    pointer-events: none;
+  }
+
+  .motox-facets-layout .facet-filters button {
+    display: none !important;
+  }
+
+  .motox-facets-layout > aside,
+  .motox-facets-layout > #main-collection-filters {
+    grid-area: filters !important;
+    align-self: start !important;
+    margin: 0 !important;
+    padding: 1.6rem 1.6rem 1.2rem !important;
+    width: 100% !important;
+    max-width: 26rem !important;
+    box-sizing: border-box !important;
+    background: #fff !important;
+    border: 1px solid rgba(0, 0, 0, 0.06) !important;
+    border-radius: var(--motox-tile-radius) !important;
+    box-shadow: var(--motox-tile-shadow) !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    min-width: 0 !important;
+  }
+
+  .motox-facets-layout > .product-grid-container,
+  .motox-facets-layout > #ProductGridContainer {
+    grid-area: products !important;
+    align-self: start !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    background: transparent !important;
+  }
+}
+
+/* —— Exact 5 kolommen (Dawn grid = flexbox!) —— */
+@media screen and (min-width: 990px) {
+  #product-grid.grid--5-col-desktop,
+  .motox-collection-section #product-grid {
+    display: flex !important;
+    flex-wrap: wrap !important;
+  }
+
+  .motox-collection-section #product-grid .grid__item,
+  #product-grid.grid--5-col-desktop .grid__item {
+    flex: 0 0 auto !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    width: calc(20% - var(--grid-desktop-horizontal-spacing) * 4 / 5) !important;
+    max-width: calc(20% - var(--grid-desktop-horizontal-spacing) * 4 / 5) !important;
+  }
+}
+
+@media screen and (min-width: 750px) and (max-width: 989px) {
+  .motox-collection-section #product-grid .grid__item {
+    flex: 0 0 auto !important;
+    flex-grow: 0 !important;
+    width: calc(33.33% - var(--grid-desktop-horizontal-spacing) * 2 / 3) !important;
+    max-width: calc(33.33% - var(--grid-desktop-horizontal-spacing) * 2 / 3) !important;
+  }
+}
+
+/* —— Producttegels overal (collectie, related, uitgelichte collectie, search) —— */
+.product-grid {
+  column-gap: var(--grid-desktop-horizontal-spacing, 0.8rem) !important;
+  row-gap: 1.2rem !important;
+  align-items: stretch !important;
+}
+
+.product-grid .grid__item,
+.product-grid .slider__slide {
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-self: stretch !important;
+  height: auto !important;
+}
+
+.product-grid .card-wrapper,
+.product-grid .card {
+  background: #fff !important;
+  background-color: #fff !important;
+  border-radius: var(--motox-tile-radius) !important;
+  box-shadow: var(--motox-tile-shadow);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  height: 100% !important;
+  width: 100%;
+  flex: 1 1 auto;
+  display: flex !important;
+  flex-direction: column !important;
+  --color-background: 255, 255, 255 !important;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+.product-grid .card-wrapper:hover,
+.product-grid .card:hover,
+.product-grid .grid__item:hover .card-wrapper,
+.product-grid .grid__item:hover .card {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+
+.product-grid .card--standard .card__inner,
+.product-grid .card__media,
+.product-grid .media {
+  background: #fff !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+/* Verberg dubbele titel boven de afbeelding (Dawn card__inner) */
+.product-grid .card--standard .card__inner > .card__content,
+.product-grid .card--standard.card--media .card__inner .card__information,
+.product-grid .card--card.card--media .card__inner .card__information {
+  display: none !important;
+}
+
+/* Vendor + prijs onderaan, uitgelijnd over de rij */
+.product-grid .card > .card__content {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  padding: 1rem 1.2rem 1.2rem !important;
+}
+
+.product-grid .card > .card__content .card__information {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  padding: 0 !important;
+  height: 100%;
+}
+
+.product-grid .card-information {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+}
+
+.product-grid .card-information__footer {
+  margin-top: auto !important;
+  padding-top: 0.8rem !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 0.8rem !important;
+}
+
+.product-grid .card-information__footer-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Merkenlogo rechtsonder op de tegel (naast prijs) */
+.product-grid .motox-card-vendor-logo,
+#product-grid .motox-card-vendor-logo {
+  display: block;
+  flex: 0 0 auto;
+  height: 2.4rem;
+  width: auto;
+  max-width: 7.5rem;
+  object-fit: contain;
+  object-position: right bottom;
+  pointer-events: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+/* Vendornaam boven prijs weg zodra logo geladen is */
+.product-grid .motox-card--has-vendor-logo .card__vendor,
+#product-grid .motox-card--has-vendor-logo .card__vendor,
+.product-grid .motox-card--has-vendor-logo .card-information__footer .card__vendor,
+#product-grid .motox-card--has-vendor-logo .card-information__footer .card__vendor {
+  display: none !important;
+}
+
+@media screen and (max-width: 749px) {
+  .product-grid .motox-card-vendor-logo,
+  #product-grid .motox-card-vendor-logo {
+    height: 2rem;
+    max-width: 6rem;
+  }
+}
+
+/* Fallback zonder footer-wrapper (oude cards / andere snippers) */
+.product-grid .card-information > .caption-with-letter-spacing {
+  margin-top: auto !important;
+  padding-top: 0.8rem !important;
+}
+.product-grid .card-information > .price:first-child,
+.product-grid .card-information > .card__ymm + .price {
+  margin-top: auto !important;
+  padding-top: 0.8rem !important;
+}
+.product-grid .card-information__footer .caption-with-letter-spacing,
+.product-grid .card-information__footer .price {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+.product-grid .badge {
+  border-radius: 999px !important;
+  padding: 0.35rem 0.75rem !important;
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+  background: var(--motox-filter-accent) !important;
+  color: #fff !important;
+  border: 0 !important;
+}
+
+.product-grid .card__ymm {
+  margin: 0.35rem 0 0 !important;
+  font-size: 1.2rem !important;
+  line-height: 1.4 !important;
+  font-weight: 450 !important;
+  color: var(--mx-text-secondary, #666666) !important;
+}
+
+/* Sectie-achtergrond grijs bij productgrids buiten de collectiepagina */
+.motox-related-section,
+.motox-related-section.gradient,
+.motox-featured-collection,
+.motox-featured-collection.gradient,
+.related-products {
+  background: var(--motox-page-bg) !important;
+  --color-background: 247, 247, 247 !important;
+}
+
+.collection .product-grid,
+.related-products .product-grid {
+  margin: 0 !important;
+}
+
+/* Mobiel: altijd 2 producttegels naast elkaar (collectie + related) */
+@media screen and (max-width: 749px) {
+  .product-grid,
+  #product-grid,
+  .related-products .product-grid,
+  .motox-related-section .product-grid,
+  .motox-featured-collection .product-grid,
+  .collection .product-grid {
+    column-gap: var(--grid-mobile-horizontal-spacing, 0.8rem) !important;
+    row-gap: 1rem !important;
+  }
+
+  .product-grid .grid__item,
+  #product-grid .grid__item,
+  .related-products .product-grid .grid__item,
+  .motox-related-section .product-grid .grid__item,
+  .motox-featured-collection .product-grid .grid__item,
+  .collection .product-grid .grid__item,
+  .grid.product-grid .grid__item {
+    width: calc(50% - var(--grid-mobile-horizontal-spacing, 0.8rem) / 2) !important;
+    max-width: calc(50% - var(--grid-mobile-horizontal-spacing, 0.8rem) / 2) !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+  }
+}
+
+/* Garage-motorvinkje zichtbaar in de toolbar */
+.motox-facets-layout .mxg-filter-toggle {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.6rem;
+  order: -2;
+  margin: 0 !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1.3rem !important;
+  font-weight: 650 !important;
+  color: var(--mx-text, #111111) !important;
+  white-space: nowrap;
+}
+
+.motox-facets-layout .mxg-filter-toggle[hidden] {
+  display: none !important;
+}
+
+.motox-facets-layout .mxg-filter-toggle input {
+  width: 1.6rem;
+  height: 1.6rem;
+  accent-color: var(--motox-filter-accent);
+  flex: 0 0 auto;
+}
+
+/* —— Filter accordion —— */
+.motox-facets-layout .facets__heading--vertical,
+.motox-facets-layout .facets__heading {
+  display: flex !important;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 !important;
+  padding: 0 0 0.85rem !important;
+  border-bottom: 1px solid var(--motox-filter-line) !important;
+  font-size: 1.4rem !important;
+  font-weight: 700 !important;
+  color: #222222 !important;
+}
+
+.motox-facets-wissen {
+  margin-left: auto;
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: var(--motox-filter-text);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  white-space: nowrap;
+}
+
+/* Actieve filters: strakke chips i.p.v. ronde pills */
+.motox-facets-layout .active-facets.active-facets-desktop {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 0.5rem !important;
+  margin: 0.8rem 0 0.4rem !important;
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+@media screen and (min-width: 750px) {
+  .motox-facets-layout .active-facets-mobile,
+  .motox-facets-layout .facets-container > .active-facets-mobile {
+    display: none !important;
+  }
+}
+
+.motox-facets-layout .active-facets facet-remove,
+.motox-facets-layout .active-facets-vertical-filter {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.motox-facets-layout .active-facets__button {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  text-decoration: none !important;
+}
+
+.motox-facets-layout span.active-facets__button-inner,
+.motox-facets-layout .active-facets__button-inner,
+.motox-facets-layout .active-facets__button-inner.button,
+.motox-facets-layout .active-facets__button-inner.button--tertiary {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+  padding: 0.55rem 0.8rem !important;
+  border-radius: 6px !important;
+  background: #f3f3f3 !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  color: #111 !important;
+  font-size: 1.25rem !important;
+  font-weight: 500 !important;
+  line-height: 1.3 !important;
+  overflow: hidden !important;
+}
+
+.motox-facets-layout .active-facets__button-inner:before,
+.motox-facets-layout .active-facets__button-inner:after {
+  display: none !important;
+  content: none !important;
+}
+
+.motox-facets-layout .active-facets__button-label {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+}
+
+.motox-facets-layout .active-facets__button:hover .active-facets__button-inner,
+.motox-facets-layout .active-facets__button--light .active-facets__button-inner,
+.motox-facets-layout .active-facets__button--light:hover .active-facets__button-inner {
+  background: #ebebeb !important;
+  box-shadow: none !important;
+}
+
+.motox-facets-layout .active-facets__button svg,
+.motox-facets-layout .active-facets__button-inner svg {
+  position: static !important;
+  flex: 0 0 auto !important;
+  width: 1.1rem !important;
+  height: 1.1rem !important;
+  margin: 0 !important;
+  transform: none !important;
+  opacity: 0.55;
+}
+
+.motox-facets-layout .active-facets__button:hover svg {
+  opacity: 0.9;
+}
+
+.motox-facets-layout .active-facets__button-wrapper {
+  display: none !important;
+}
+
+.motox-facets-layout .facets__disclosure-vertical {
+  margin: 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--motox-filter-line) !important;
+  background: transparent !important;
+}
+
+  .motox-facets-layout .facets__summary {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.95rem 0 !important;
+  margin: 0 !important;
+  font-size: 1.4rem !important;
+  font-weight: 700 !important;
+  color: var(--motox-filter-text) !important;
+  list-style: none;
+  cursor: pointer;
+  background: transparent !important;
+}
+
+.motox-facets-layout .facets__summary::-webkit-details-marker,
+.motox-facets-layout .facets__summary .icon-caret,
+.motox-facets-layout .facets__summary > .svg-wrapper,
+.motox-facets-layout .facets__summary .facets__selected {
+  display: none !important;
+}
+
+.motox-facets-layout .facets__summary::after {
+  content: '+';
+  flex: 0 0 1.2rem;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: #333;
+}
+
+.motox-facets-layout .facets__disclosure-vertical[open] > .facets__summary::after {
+  content: '−';
+  font-size: 1.6rem;
+}
+
+.motox-facets-layout .facets__display-vertical {
+  padding: 0 0 0.85rem !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.motox-facets-layout .facet-checkbox {
+  position: relative;
+  display: flex !important;
+  align-items: flex-start;
+  padding: 0.4rem 0 0.4rem 2.2rem !important;
+  margin: 0 !important;
+  font-size: 1.3rem !important;
+  color: var(--motox-filter-text) !important;
+  cursor: pointer;
+  background: transparent !important;
+}
+
+.motox-facets-layout .facet-checkbox > svg,
+.motox-facets-layout .facet-checkbox > .svg-wrapper {
+  display: none !important;
+}
+
+.motox-facets-layout .facet-checkbox > input[type='checkbox'] {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0.45rem !important;
+  width: 1.4rem !important;
+  height: 1.4rem !important;
+  margin: 0 !important;
+  opacity: 1 !important;
+  z-index: 2 !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: 1.5px solid #b5b5b5 !important;
+  border-radius: 2px !important;
+  background: #fff !important;
+  cursor: pointer;
+}
+
+.motox-facets-layout .facet-checkbox > input[type='checkbox']:checked {
+  background-color: var(--motox-filter-accent) !important;
+  border-color: var(--motox-filter-accent) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.2' d='M2.5 7.5l3 3 6-7'/%3E%3C/svg%3E") !important;
+  background-size: 0.95rem 0.95rem !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+}
+
+/* Prijs: schuifbalk (zelfde als KTM), Motox-groen */
+.ktm-price-fields {
+  display: none;
+}
+
+.ktm-price-slider,
+.ktm-price-slider__readout {
+  display: none;
+}
+
+.motox-facets-layout .facets__header-vertical {
+  display: none !important;
+}
+
+.motox-facets-layout .facets__price,
+.motox-facets-layout price-range.facets__price {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 0.55rem !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 0 0.8rem !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.motox-facets-layout .ktm-price-slider {
+  display: block !important;
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: 2.8rem !important;
+  margin: 0.2rem 0 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.motox-facets-layout .ktm-price-slider__rail,
+.motox-facets-layout .ktm-price-slider__fill {
+  display: block !important;
+  position: absolute !important;
+  top: 50% !important;
+  z-index: 1 !important;
+  height: 0.45rem !important;
+  border-radius: 999px !important;
+  transform: translateY(-50%) !important;
+  pointer-events: none !important;
+}
+
+.motox-facets-layout .ktm-price-slider__rail {
+  left: 0 !important;
+  right: 0 !important;
+  width: auto !important;
+  background: #cfcfcf !important;
+}
+
+.motox-facets-layout .ktm-price-slider__fill {
+  left: var(--ktm-range-min, 0%) !important;
+  right: calc(100% - var(--ktm-range-max, 100%)) !important;
+  width: auto !important;
+  background: var(--motox-filter-accent, #00a900) !important;
+}
+
+.motox-facets-layout .ktm-price-slider__input {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  z-index: 2 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 2.8rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: transparent !important;
+  accent-color: transparent !important;
+  pointer-events: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+}
+
+.motox-facets-layout .ktm-price-slider__input--min {
+  z-index: 3 !important;
+}
+
+.motox-facets-layout .ktm-price-slider__input--max {
+  z-index: 4 !important;
+}
+
+.motox-facets-layout .ktm-price-slider__input::-webkit-slider-runnable-track {
+  height: 0.45rem !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.motox-facets-layout .ktm-price-slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 5 !important;
+  width: 1.8rem !important;
+  height: 1.8rem !important;
+  margin-top: -0.68rem !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  border: 2px solid var(--motox-filter-accent, #00a900) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18) !important;
+  cursor: pointer;
+}
+
+.motox-facets-layout .ktm-price-slider__input::-moz-range-track {
+  height: 0.45rem !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.motox-facets-layout .ktm-price-slider__input::-moz-range-thumb {
+  pointer-events: auto !important;
+  width: 1.8rem !important;
+  height: 1.8rem !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  border: 2px solid var(--motox-filter-accent, #00a900) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18) !important;
+  cursor: pointer;
+}
+
+.motox-facets-layout .ktm-price-slider__readout {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: baseline !important;
+  gap: 0.6rem !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  font-size: 1.15rem !important;
+  line-height: 1.3 !important;
+  color: #111 !important;
+}
+
+.motox-facets-layout .ktm-price-slider__readout span,
+.motox-facets-layout .ktm-price-slider__readout [data-ktm-price-min],
+.motox-facets-layout .ktm-price-slider__readout [data-ktm-price-max] {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+  font-size: 1.15rem !important;
+  line-height: 1.3 !important;
+  color: #111 !important;
+}
+
+.motox-facets-layout .ktm-price-slider__readout [data-ktm-price-max] {
+  text-align: right !important;
+  margin-left: auto !important;
+}
+
+.motox-facets-layout .ktm-price-fields {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  border: 0 !important;
+  display: block !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.motox-facets-layout .facets-wrapper,
+.motox-facets-layout .facets-wrap-vertical,
+.motox-facets-layout .facets__form-vertical {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Mobiel: “Alles verwijderen” alleen zinvol + groter lettertype */
+.active-facets-mobile .active-facets__button-wrapper[hidden] {
+  display: none !important;
+}
+
+.active-facets-mobile .active-facets__button-remove,
+.active-facets-mobile .active-facets__button-remove span {
+  font-size: 1.4rem !important;
+  font-weight: 650 !important;
+  line-height: 1.4 !important;
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+.active-facets-mobile facet-remove:only-child {
+  display: none !important;
+}
+
+/* Lege garage-filter: duidelijke CTA */
+.mxg-filter-empty {
+  list-style: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 1.6rem 0.4rem 2rem !important;
+  text-align: left;
+}
+
+.mxg-filter-empty__text,
+.mxg-filter-empty {
+  font-size: 1.5rem !important;
+  font-weight: 650 !important;
+  color: #111 !important;
+  line-height: 1.45 !important;
+}
+
+.mxg-show-all {
+  display: inline-block;
+  margin-top: 1.2rem;
+  padding: 0.85rem 1.4rem;
+  border: 0;
+  border-radius: 4px;
+  background: var(--motox-brand-red, #c9290a);
+  color: #fff !important;
+  font-family: inherit;
+  font-size: 1.35rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mxg-show-all:hover {
+  background: #a02008;
+}
+
+/* —— Mobiel: filterbalk + actieve chips netjes, géén overlap over producten —— */
+@media screen and (max-width: 749px) {
+  .motox-collection-section .facets-container,
+  .motox-facets-layout .facets-container,
+  .facets-vertical.motox-facets-layout .facets-container {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.8rem !important;
+    padding: 0.4rem 0 1.2rem !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .motox-collection-section .facets-container > *,
+  .motox-facets-layout .facets-container > * {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .motox-collection-section .mobile-facets__wrapper,
+  .motox-collection-section .product-count {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .motox-collection-section .product-count {
+    justify-content: flex-end !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+  }
+
+  .motox-collection-section .product-count__text,
+  .motox-collection-section #ProductCount {
+    white-space: nowrap !important;
+    font-size: 1.3rem !important;
+  }
+
+  .motox-collection-section .active-facets-mobile,
+  .motox-facets-layout .active-facets-mobile,
+  .facets-container > .active-facets-mobile {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 0 1.4rem !important;
+    padding: 0 !important;
+    position: relative !important;
+    z-index: 1 !important;
+    float: none !important;
+  }
+
+  .motox-collection-section .active-facets-mobile facet-remove,
+  .motox-collection-section .active-facets-mobile .active-facets__button {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+
+  .motox-collection-section .active-facets-mobile .active-facets__button-inner,
+  .motox-collection-section .active-facets-mobile span.active-facets__button-inner {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    padding: 0.6rem 2.6rem 0.6rem 0.9rem !important;
+    border-radius: 6px !important;
+    background: #f3f3f3 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    color: #111 !important;
+    font-size: 1.25rem !important;
+    font-weight: 500 !important;
+    line-height: 1.3 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .motox-collection-section .active-facets-mobile .active-facets__button svg {
+    position: absolute !important;
+    right: 0.85rem !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 1.1rem !important;
+    height: 1.1rem !important;
+    margin: 0 !important;
+    opacity: 0.55;
+  }
+
+  .motox-collection-section #ProductGridContainer,
+  .motox-collection-section .product-grid-container {
+    clear: both !important;
+    margin-top: 0.4rem !important;
+    position: relative !important;
+    z-index: 0 !important;
+  }
+
+  .mxg-filter-toggle {
+    display: flex !important;
+    flex-wrap: wrap;
+    width: 100%;
+    margin: 0.8rem 0 0.4rem !important;
+    font-size: 1.3rem !important;
+    font-weight: 650 !important;
+    white-space: normal !important;
+  }
+
+  #ProductGridContainer > .mxg-filter-toggle {
+    margin: 0 0 1rem !important;
+    padding: 0 0.5rem;
+    box-sizing: border-box;
+  }
+
+  .facets-container > .mxg-filter-toggle {
+    order: -1;
+  }
+}

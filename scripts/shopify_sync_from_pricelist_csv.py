@@ -19,9 +19,13 @@ StockAvailable, …):
                      modules/price_markup.py)
   - ArticleStatus  → variant-signaal; deze flow zet producten niet meer naar draft.
                      Product-draft gebeurt in een apart script.
-  - Variant policy  → hybride regel: `DENY` bij `ArticleStatus=80` of `StockAvailable=0`;
-                     anders `CONTINUE` bij `StockAvailable=1/2` of niet-80 status
-  - Productstatus   → `DRAFT` bij status 80 of `StockAvailable=0`; `ACTIVE` bij andere status + stock 1/2
+  - Variant policy  → hybride regel: `DENY` bij `ArticleStatus=80`, `StockAvailable=0`
+                     of verkoopprijs <= 0 (behalve service-SKU's in
+                     config.ZERO_PRICE_ACTIVE_ALLOWED_SKUS); anders `CONTINUE`
+                     bij `StockAvailable=1/2` of niet-80 status
+  - Productstatus   → `DRAFT` bij status 80 of `StockAvailable=0`; `ACTIVE` bij andere status + stock 1/2.
+                     Een SKU met prijs <= 0 stemt niet mee voor ACTIVE (het product blijft
+                     actief zolang een andere uitvoering wel een prijs heeft).
 
 Variant-SKU → lijst (variant_id, product_id) uit cache (alle dubbele SKU’s; geen live variant-fetch per run):
   python3 scripts/shopify_refresh_variant_cache.py
@@ -69,7 +73,7 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from config import VAT_MULTIPLIER  # noqa: E402
+from config import VAT_MULTIPLIER, ZERO_PRICE_ACTIVE_ALLOWED_SKUS  # noqa: E402
 from modules.brand_config import (  # noqa: E402
     PRICELIST_CSV_MERGE_ORDER,
     resolve_pricelist_csv_path,
@@ -78,6 +82,7 @@ from modules.brand_config import (  # noqa: E402
 from modules.pricing_loader import (  # noqa: E402
     detect_0150_csv_delimiter,
     normalize_gtin,
+    normalize_sku_key,
     shopify_variant_lookup_keys,
     variant_pairs_for_pricelist_sku,
 )
@@ -230,6 +235,37 @@ def _derive_inventory_policy(article_status: str, stock_code: int | None) -> str
     return None
 
 
+def _price_incl_blocks_sale(price_incl: str | None) -> bool:
+    """True als de berekende incl-btw-prijs ontbreekt als getal of <= 0 is."""
+    if price_incl is None:
+        return False
+    try:
+        return float(price_incl) <= 0.0
+    except (TypeError, ValueError):
+        return True
+
+
+def apply_zero_price_variant_rules(
+    sku: str,
+    price_incl: str | None,
+    inventory_policy: str | None,
+    product_status: str | None,
+    published: bool | None,
+) -> tuple[str | None, str | None, bool | None]:
+    """Prijs <= 0: variant niet verkopen, en niet meetellen als reden om het product ACTIVE te zetten.
+
+    Service-SKU's in ZERO_PRICE_ACTIVE_ALLOWED_SKUS blijven ongemoeid.
+    """
+    if not _price_incl_blocks_sale(price_incl):
+        return inventory_policy, product_status, published
+    if normalize_sku_key(sku) in ZERO_PRICE_ACTIVE_ALLOWED_SKUS:
+        return inventory_policy, product_status, published
+    if product_status == "ACTIVE":
+        product_status = None
+        published = None
+    return "DENY", product_status, published
+
+
 def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
     """
     Per SKU (uppercase): eta_iso (None = metafield wissen), price_incl (None = geen prijsupdate),
@@ -304,6 +340,13 @@ def read_pricelist_csv_desired(csv_path: Path, today: date) -> dict[str, dict]:
                         # Inventory policy kan nog steeds uit StockAvailable komen.
                         product_status = None
                         published = None
+                    inventory_policy, product_status, published = apply_zero_price_variant_rules(
+                        sku,
+                        price_incl,
+                        inventory_policy,
+                        product_status,
+                        published,
+                    )
                     gtin_val = ""
                     if gtin_col is not None and gtin_col < len(row):
                         gtin_val = normalize_gtin(row[gtin_col])
@@ -1085,8 +1128,9 @@ def resolve_desired_product_status_by_product_id(
 ) -> dict[str, str]:
     """
     Productstatus per Shopify-product-id:
-    - ACTIVE zodra minimaal één gekoppelde SKU ACTIVE voorstelt (niet-80, voorraad 1/2)
+    - ACTIVE zodra minimaal één gekoppelde SKU ACTIVE voorstelt (niet-80, voorraad 1/2, prijs > 0)
     - DRAFT wanneer alle gekoppelde SKU's DRAFT voorstellen (status 80 of StockAvailable=0)
+    - een SKU met prijs <= 0 stemt niet voor ACTIVE
     - geen entry = geen productstatus-mutatie via deze resolver
     """
     active_by_pid: dict[str, bool] = {}

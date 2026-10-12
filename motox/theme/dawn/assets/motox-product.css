@@ -100,14 +100,15 @@
     color: var(--mx-text-secondary, #666666);
   }
 
+  /* Bihr CDN logos are ~128×64 — show near-native, no pre-rendered canvas */
   .motox-vendor img {
     display: block;
-    height: auto !important;
-    max-height: 6rem !important;
+    height: 5.6rem !important;
     width: auto !important;
-    max-width: 28rem !important;
+    max-width: 18rem !important;
     object-fit: contain;
     object-position: left center;
+    background: #fff;
   }
 
   .motox-brand-row {
@@ -180,22 +181,27 @@
   }
 
   product-info {
-    --motox-qty: 13rem;
-    --motox-qty-gap: 1rem;
+    --motox-qty-gap: 0.8rem;
   }
 
   .product-form__buttons {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 2fr;
     align-items: stretch;
     gap: var(--motox-qty-gap);
-    width: 100%;
-    max-width: none;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .product-form__buttons > :not(.product-form__quantity):not(.product-form__submit) {
+    grid-column: 1 / -1;
   }
 
   .product-form__buttons .product-form__quantity {
     margin: 0;
-    flex: 0 0 var(--motox-qty);
+    max-width: none;
     min-width: 0;
+    width: auto;
   }
 
   .product-form__buttons .quantity__label,
@@ -218,7 +224,6 @@
 
   .product-form__buttons .product-form__submit {
     margin: 0;
-    flex: 1 1 0;
     width: auto;
     min-width: 0;
     min-height: 4.8rem;
@@ -254,8 +259,12 @@
 
   .motox-tabs {
     position: relative;
-    z-index: 3;
-    margin: 3rem auto 1rem;
+    z-index: auto;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 3rem 0 1rem;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 
   .motox-tabs__list {
@@ -308,6 +317,22 @@
     color: var(--mx-text-body, #444444);
   }
 
+  .motox-frame-sizes {
+    max-width: 1110px;
+  }
+
+  .motox-frame-sizes__note {
+    margin: 0 0 1.2rem;
+    font-size: var(--mx-body-size, 1.5rem);
+    color: var(--mx-text-secondary, #666666);
+  }
+
+  .motox-frame-sizes__img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
   pickup-availability {
     display: none !important;
   }
@@ -347,8 +372,8 @@
     border: 0;
     border-collapse: collapse;
     border-spacing: 0;
+    display: block;
     width: 100%;
-    table-layout: fixed;
     margin: 0;
     background: transparent;
     font-size: var(--mx-meta, 1.25rem);
@@ -356,6 +381,16 @@
     line-height: 1.5;
     letter-spacing: 0;
     color: var(--mx-text-secondary, #666666);
+  }
+
+  .motox-article-table tbody {
+    display: block;
+  }
+
+  .motox-article-table tr {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    column-gap: var(--motox-qty-gap, 0.8rem);
   }
 
   .motox-article-table th,
@@ -368,10 +403,12 @@
     letter-spacing: 0;
     text-align: left;
     vertical-align: baseline;
+    width: auto;
+    min-width: 0;
   }
 
   .motox-article-table th {
-    width: calc(var(--motox-qty, 13rem) + var(--motox-qty-gap, 1rem));
+    max-width: none;
     padding-right: 0;
     white-space: nowrap;
     font-weight: var(--mx-weight-meta, 500);
@@ -699,8 +736,8 @@
     }
 
     .motox-vendor img {
-      max-height: 5rem !important;
-      max-width: 20rem !important;
+      height: 4.8rem !important;
+      max-width: 14rem !important;
     }
 
     .motox-brand-row {
@@ -746,19 +783,19 @@
     }
 
     product-info {
-      --motox-qty: 11rem;
       --motox-qty-gap: 0.8rem;
     }
 
     .product-form__buttons {
-      flex-direction: row;
+      display: grid !important;
+      grid-template-columns: 1fr 2fr;
       align-items: stretch;
       gap: var(--motox-qty-gap);
     }
 
     .product-form__buttons .product-form__quantity {
-      flex: 0 0 var(--motox-qty);
-      max-width: none;
+      max-width: none !important;
+      width: auto !important;
     }
 
     .product-form__buttons .product-form__submit {
@@ -784,7 +821,7 @@
     .motox-trust {
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 0;
-      margin: 1.6rem 0 0.2rem;
+      margin: 4.8rem 0 0;
     }
 
     .motox-trust__item {
@@ -820,7 +857,9 @@
     }
 
     .motox-tabs {
-      margin: 2rem auto 1rem;
+      margin: 0 0 1rem;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
     }
 
     .motox-tabs__list {
@@ -838,7 +877,12 @@
       flex: 0 0 auto;
       white-space: nowrap;
       padding: 1rem 0;
-      font-size: 1.4rem;
+      font-size: 1.8rem !important;
+    }
+
+    #motox-tab-gift,
+    #motox-panel-gift {
+      display: none !important;
     }
 
     .motox-tabs__panel {

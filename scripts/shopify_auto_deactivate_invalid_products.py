@@ -3,15 +3,17 @@
 Periodieke publicatiecheck op productniveau (Shopify):
 
 - Zet product op DRAFT als:
-  1) minstens één variant geen geldige prijs heeft (> 0), behalve service-SKU's in
-     config.ZERO_PRICE_ACTIVE_ALLOWED_SKUS (prijs 0 is daar bewust), of
+  1) elke variant (behalve service-SKU's in config.ZERO_PRICE_ACTIVE_ALLOWED_SKUS)
+     geen geldige prijs heeft (> 0). Eén variant op 0 laat het product actief;
+     die variant wordt niet verkocht via de voorraadregel en staat niet in het theme, of
   2) alle varianten uitverkocht zijn (inventoryPolicy=DENY en quantity<=0), of
   3) strict-regel: alle Shopify-varianten hebben CSV-match, overal ArticleStatus=80 en geen voorraad, of
   4) ERP StockAvailable=0 op alle varianten én ook geen voorraad in Shopify (qty<=0).
   Niet deactiveren wanneer minstens één variant voorraad > 0 heeft in Shopify.
 - Zet product terug op ACTIVE als:
   - product nu DRAFT staat, alle varianten CSV-match hebben, strict-regel niet meer geldt,
-    en het product niet volledig uitverkocht is en niet overal ERP StockAvailable=0 heeft.
+    het product niet volledig uitverkocht is, niet overal ERP StockAvailable=0 heeft,
+    en niet elke variant prijs 0 heeft.
 
 Standaard is dry-run (alleen rapporteren). Voeg --apply toe om echt te wijzigen.
 
@@ -215,6 +217,22 @@ def _product_exempt_from_auto_deactivate(variants: list[dict]) -> bool:
     return False
 
 
+def _all_priced_variants_missing_price(variants: list[dict]) -> bool:
+    """True als elke niet-servicevariant prijs <= 0 of leeg heeft.
+
+    Eén variant mét prijs houdt het product actief. Een product dat alleen uit
+    service-SKU's bestaat, valt hier buiten (die zijn apart vrijgesteld).
+    """
+    subject = [
+        v
+        for v in variants
+        if normalize_sku_key(v.get("sku")) not in config.ZERO_PRICE_ACTIVE_ALLOWED_SKUS
+    ]
+    if not subject:
+        return False
+    return all(_variant_price_bad(v.get("price")) for v in subject)
+
+
 def _evaluate_product(
     product: dict,
     variants: list[dict],
@@ -222,7 +240,7 @@ def _evaluate_product(
     stock_by_sku: dict[str, int],
 ) -> dict:
     current_status = (product.get("status") or "").strip().upper()
-    has_bad_price = any(_variant_price_bad(v.get("price")) for v in variants)
+    has_bad_price = _all_priced_variants_missing_price(variants)
     all_sold_out = product_all_variants_sold_out(variants)
     all_no_stock = product_all_variants_shopify_no_stock(variants)
     erp_all_stock_zero = product_all_variants_erp_stock_zero(variants, stock_by_sku)
@@ -253,6 +271,7 @@ def _evaluate_product(
         and all_variants_have_csv_status
         and not status80_no_stock_strict
         and not unavailable
+        and not has_bad_price
     )
 
     exempt = _product_exempt_from_auto_deactivate(variants)

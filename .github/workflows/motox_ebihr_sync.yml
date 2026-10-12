@@ -1,7 +1,10 @@
-# Motox e-bihr: Bihr V3+VSE → Shopify create + price updates + fits_on metafields.
+# Motox e-bihr: Bihr V3+VSE → Shopify create + price updates + stock policy + fits_on.
 # fits_on ook op bestaande producten, als die leeg is of afwijkt van VSE.
 # Goederencode en land van herkomst gaan mee bij aanmaken, en worden
 # op bestaande producten bijgewerkt als ze leeg zijn of afwijken.
+# Bihr-stock Value → Shopify inventoryPolicy (CONTINUE/DENY) op bestaande
+# varianten (delta); Shopify-qty blijft meestal 0.
+# Discontinued bij Bihr: niet publiceren, en een live product op draft zetten.
 #
 # Secrets:
 #   BIHR_USERNAME, BIHR_PASSWORD
@@ -39,6 +42,7 @@ on:
           - all
           - create_only
           - prices_only
+          - stock_policy_only
           - images_only
         default: all
       max_create:
@@ -47,6 +51,10 @@ on:
         default: "0"
       max_price_updates:
         description: "Max producten voor price-update (0 = alle)"
+        required: false
+        default: "0"
+      max_stock_policy_updates:
+        description: "Max producten voor inventoryPolicy-update (0 = alle)"
         required: false
         default: "0"
       max_image_backfill:
@@ -73,6 +81,7 @@ jobs:
       MODE: ${{ github.event.inputs.mode || 'all' }}
       MAX_CREATE: ${{ github.event.inputs.max_create || '0' }}
       MAX_PRICE: ${{ github.event.inputs.max_price_updates || '0' }}
+      MAX_STOCK_POLICY: ${{ github.event.inputs.max_stock_policy_updates || '0' }}
       MAX_IMAGE_BACKFILL: ${{ github.event.inputs.max_image_backfill || '0' }}
     steps:
       - uses: actions/checkout@v6
@@ -128,6 +137,8 @@ jobs:
             ARGS+=(--create-only)
           elif [[ "${MODE}" == "prices_only" ]]; then
             ARGS+=(--prices-only)
+          elif [[ "${MODE}" == "stock_policy_only" ]]; then
+            ARGS+=(--stock-policy-only)
           elif [[ "${MODE}" == "images_only" ]]; then
             ARGS+=(--images-only)
           fi
@@ -136,6 +147,9 @@ jobs:
           fi
           if [[ "${MAX_PRICE}" != "0" ]]; then
             ARGS+=(--max-price-updates "${MAX_PRICE}")
+          fi
+          if [[ "${MAX_STOCK_POLICY}" != "0" ]]; then
+            ARGS+=(--max-stock-policy-updates "${MAX_STOCK_POLICY}")
           fi
           if [[ "${MAX_IMAGE_BACKFILL}" != "0" ]]; then
             ARGS+=(--max-image-backfill "${MAX_IMAGE_BACKFILL}")

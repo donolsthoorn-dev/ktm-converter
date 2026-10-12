@@ -470,6 +470,27 @@ def _generic_partnumber(product: dict) -> str | None:
     return None
 
 
+# "Aantal tanden" is de variant-as (46 tanden). Het cataloguskenmerk
+# herhaalt hetzelfde getal onder een andere naam en mag geen tweede optie worden.
+TOOTH_VARIATION_NAME = "aantal tanden"
+TOOTH_ATTRIBUTE_DUPLICATES = frozenset(
+    {
+        "aantal tanden achtertandwiel",
+        "aantal tanden voortandwiel",
+    }
+)
+
+# Variant-assen voor maat. Het cataloguskenmerk herhaalt hetzelfde getal
+# onder een andere naam (broek: US maat, schoen: Schoenmaat).
+SIZE_VARIATION_NAMES = frozenset({"size", "shoes size"})
+SIZE_ATTRIBUTE_DUPLICATES = frozenset({"us maat", "schoenmaat"})
+
+# "Kleuren" is de tweekleur-variant (Zwart / groen). "Kleur" herhaalt die
+# combinatie als los kenmerk en mag geen tweede optie worden.
+BICOLOR_VARIATION_NAME = "kleuren"
+BICOLOR_ATTRIBUTE_DUPLICATES = frozenset({"kleur"})
+
+
 def _variation_attrs(product: dict) -> dict[str, str]:
     """Map option name → value from genericProduct.variations."""
     gp = product.get("genericProduct") or product.get("GenericProduct") or {}
@@ -544,6 +565,19 @@ def _stock_policy(stock_row: dict | None, product: dict) -> str:
     if level.lower() in ("outofstock", "out_of_stock", "unavailable"):
         return "deny"
     return "continue"
+
+
+def inventory_policy_from_bihr_stock(stock_row: dict | None) -> str | None:
+    """
+    Shopify inventoryPolicy (CONTINUE/DENY) uit een Bihr stock-row.
+
+    None als er geen Bihr-stocksignaal is (dan geen update op bestaande producten).
+    Value > 0 → CONTINUE (doorverkopen aan; Motox qty blijft vaak 0).
+    Value == 0 → DENY.
+    """
+    if stock_row is None:
+        return None
+    return _stock_policy(stock_row, {}).upper()
 
 
 def _qty(product: dict, stock_row: dict | None) -> str:
@@ -634,6 +668,12 @@ def _unique_option_names(variants: list[dict]) -> list[str]:
         for name, vals in unique.items()
         if len(vals) > 1 or (n > 1 and 0 < present.get(name, 0) < n)
     ]
+    if any(name.lower() == TOOTH_VARIATION_NAME for name in names):
+        names = [name for name in names if name.lower() not in TOOTH_ATTRIBUTE_DUPLICATES]
+    if any(name.lower() in SIZE_VARIATION_NAMES for name in names):
+        names = [name for name in names if name.lower() not in SIZE_ATTRIBUTE_DUPLICATES]
+    if any(name.lower() == BICOLOR_VARIATION_NAME for name in names):
+        names = [name for name in names if name.lower() not in BICOLOR_ATTRIBUTE_DUPLICATES]
     for color_key in ("Kleur", "Kleuren", "Color", "Colour"):
         if color_key in names:
             names.insert(0, names.pop(names.index(color_key)))
@@ -790,7 +830,13 @@ def build_product_groups(
             for url in _picture_urls(v):
                 if url not in all_images:
                     all_images.append(url)
-        published = brand.lower() != "leatt" and len(all_images) > 0
+        discontinued_flags = [bool(var.get("isDiscontinued")) for var in variants_raw]
+        all_discontinued = bool(discontinued_flags) and all(discontinued_flags)
+        published = (
+            brand.lower() != "leatt"
+            and len(all_images) > 0
+            and not all_discontinued
+        )
         variants_out = []
         for var in variants_raw:
             pn = _part_number(var)
@@ -826,6 +872,7 @@ def build_product_groups(
                 "body_html": body,
                 "product_type": ptype,
                 "published": published,
+                "discontinued": all_discontinued,
                 "option_names": option_names,
                 "images": all_images,
                 "variants": variants_out,

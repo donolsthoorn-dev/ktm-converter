@@ -441,6 +441,54 @@ class MotoxAdmin:
             return str(uerr)[:300]
         return ""
 
+    def update_variant_inventory_policies(
+        self,
+        product_id: str,
+        variant_id_policies: list[tuple[str, str]],
+        *,
+        dry_run: bool = False,
+    ) -> str:
+        """variant_id_policies: list of (variant_numeric_id, CONTINUE|DENY). Returns error or ''."""
+        if not variant_id_policies:
+            return ""
+        if dry_run:
+            return ""
+        q = """
+        mutation MotoxVariantsBulkPolicy($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            productVariants { id }
+            userErrors { field message }
+          }
+        }
+        """
+        variants = []
+        for vid, policy in variant_id_policies:
+            pol = (policy or "").strip().upper()
+            if pol not in ("CONTINUE", "DENY"):
+                continue
+            variants.append(
+                {
+                    "id": f"gid://shopify/ProductVariant/{vid}",
+                    "inventoryPolicy": pol,
+                }
+            )
+        if not variants:
+            return ""
+        body = self.gql(
+            q,
+            {
+                "productId": f"gid://shopify/Product/{product_id}",
+                "variants": variants,
+            },
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        payload = ((body.get("data") or {}).get("productVariantsBulkUpdate")) or {}
+        uerr = payload.get("userErrors") or []
+        if uerr:
+            return str(uerr)[:300]
+        return ""
+
     def update_variant_barcodes(
         self,
         product_id: str,

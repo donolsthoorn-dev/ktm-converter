@@ -422,3 +422,11 @@ jobs:
           DISPATCH_LOG_ID: ${{ env.DISPATCH_LOG_ID }}
         run: python scripts/shopify_apply_from_pricelist_staging.py --scope "${{ env.APPLY_SCOPE }}"
 
+      - name: Sync beschikbaarheid metafield
+        if: env.RUN_MODE == 'apply'
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+        run: python scripts/shopify_sync_beschikbaarheid.py
+

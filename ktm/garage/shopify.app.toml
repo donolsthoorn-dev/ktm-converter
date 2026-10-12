@@ -1,0 +1,23 @@
+# Koppel dit bestand aan KTM garage met: cd ktm/garage && shopify app config link
+name = "KTM garage"
+handle = "motofilter-ktm"
+client_id = "68123f7453be415fe8f1a290685f3705"
+application_url = "https://ktmshop-garage.vercel.app"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[webhooks]
+api_version = "2026-10"
+
+[access_scopes]
+scopes = "read_customers,write_customers,read_products"
+
+[auth]
+redirect_urls = [ "https://ktmshop-garage.vercel.app/api/auth" ]
+
+[app_proxy]
+url = "https://ktmshop-garage.vercel.app/proxy"
+prefix = "apps"
+subpath = "garage"

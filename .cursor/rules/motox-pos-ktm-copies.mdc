@@ -1,0 +1,14 @@
+---
+description: KTM-producten in Motox die alleen via Synkro/POS bestaan hebben geen YMM
+alwaysApply: true
+---
+
+# Motox POS-kopieën van KTM
+
+ktm-shop.nl is de OEM-winkel. Motox (`ktm-shop-nederland`) is de winkel met POS. Synkro kloont KTM-producten naar Motox voor de kassa (tag `synkro-clone-ktm-shop-nederland`, voorraad op locatie Winkelvoorraad POS).
+
+Die POS-kopieën staan in Motox alleen vanwege de kassa. Een leeg `global.ymm_summary` en een ontbrekend `global.fits_on` is daar verwacht. Voorbeeld: Air filter panel 125-500 (EXC, SX, XC) 16-19 (handle `7900600300028`) is actief in Motox, vendor KTM, en heeft daar geen van beide metafields, terwijl ktm-shop.nl `ymm_summary` wel heeft (`KTM 125-500 (EXC, SX, XC) 2016-2019`).
+
+- Behandel dat gat niet als een bug of als missend Motox-fitment.
+- YMM (`fits_on`, `ymm_summary`) hoort bij het Motox-assortiment dat hier fitment krijgt (e-Bihr, motofilter). Die waarde wordt niet vanaf ktm-shop.nl op de POS-kopie gezet.
+- Prijzen van deze KTM/Husqvarna/GasGas/WP-kopieën volgen ktm-shop.nl via Synkro. De e-Bihr-webshop houdt zijn eigen prijs.

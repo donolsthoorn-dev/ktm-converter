@@ -1,0 +1,94 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
+{
+  "sections": {
+    "16499559645abd637f": {
+      "type": "image-with-text",
+      "blocks": {
+        "16499559644ac394ad-0": {
+          "type": "heading",
+          "settings": {
+            "heading": "wij zijn onderweg!",
+            "heading_size": "h1"
+          }
+        },
+        "16499559644ac394ad-1": {
+          "type": "text",
+          "settings": {
+            "text": "<p>Zodra wij een bestelling binnen krijgen gaan wij aan de slag. We leveren direct uit voorraad of we laten de artikelen vanuit KTM onze kant komen.</p><p></p><p>Lees hieronder verder ....</p>",
+            "text_style": "body"
+          }
+        },
+        "16499559644ac394ad-2": {
+          "type": "button",
+          "disabled": true,
+          "settings": {
+            "button_label": "Button label",
+            "button_link": "",
+            "button_style_secondary": false
+          }
+        }
+      },
+      "block_order": [
+        "16499559644ac394ad-0",
+        "16499559644ac394ad-1",
+        "16499559644ac394ad-2"
+      ],
+      "disabled": true,
+      "settings": {
+        "image": "shopify://shop_images/KTM_FAN_PACKAGE_Symbol.jpg",
+        "height": "adapt",
+        "desktop_image_width": "medium",
+        "layout": "image_first",
+        "desktop_content_position": "top",
+        "desktop_content_alignment": "left",
+        "content_layout": "no-overlap",
+        "section_color_scheme": "",
+        "color_scheme": "background-1",
+        "image_behavior": "none",
+        "mobile_content_alignment": "left",
+        "padding_top": 36,
+        "padding_bottom": 36
+      }
+    },
+    "main": {
+      "type": "main-page",
+      "custom_css": [
+        "h1 {font-size: 40px;}"
+      ],
+      "settings": {
+        "padding_top": 80,
+        "padding_bottom": 0
+      }
+    },
+    "featured_blog_Kcx7rh": {
+      "type": "featured-blog",
+      "settings": {
+        "heading": "Blogposts",
+        "heading_size": "h1",
+        "blog": "",
+        "post_limit": 4,
+        "columns_desktop": 4,
+        "color_scheme": "",
+        "show_image": true,
+        "show_date": true,
+        "show_author": false,
+        "show_view_all": true,
+        "padding_top": 36,
+        "padding_bottom": 36
+      }
+    }
+  },
+  "order": [
+    "16499559645abd637f",
+    "main",
+    "featured_blog_Kcx7rh"
+  ]
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Motox e-bihr sync: Bihr V3+VSE → Shopify create + image backfill + prices + fits_on.
+Motox e-bihr sync: Bihr V3+VSE → Shopify create + image backfill + prices +
+inventory policy + fits_on.
 
 fits_on gaat naar nieuwe producten én naar bestaande producten waar de
 passendheid leeg is of afwijkt van de VSE-data van deze run.
@@ -8,6 +9,9 @@ Goederencode en land van herkomst uit Bihr gaan mee bij het aanmaken, en
 worden op bestaande producten bijgewerkt als ze leeg zijn of afwijken.
 Oud Bihr-nummer en leverancierscode gaan naar variant-metafields, een
 zoeklijst op het product, en ``ref:``-tags zodat de sitezoekfunctie ze vindt.
+Bihr-stock (Value) → Shopify ``inventoryPolicy`` (CONTINUE/DENY) op bestaande
+varianten: delta t.o.v. Motox-cache. Shopify-qty blijft meestal 0; verkoopbaarheid
+hangt af van doorverkopen (CONTINUE).
 
   # Dry-run tegen bestaande raw:
   python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run
@@ -21,6 +25,9 @@ zoeklijst op het product, en ``ref:``-tags zodat de sitezoekfunctie ze vindt.
   # Alleen prijzen (geen creates / image-backfill):
   python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --prices-only
 
+  # Alleen inventory policy (doorverkopen) vanaf Bihr-stock:
+  python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --stock-policy-only
+
   # Alleen creates (geen price / image-backfill):
   python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --create-only
 
@@ -29,6 +36,9 @@ zoeklijst op het product, en ``ref:``-tags zodat de sitezoekfunctie ze vindt.
 
 Prijzen: standaard alleen delta (Bihr ≠ huidige Motox-prijs uit cache).
   --force-all-prices  schrijft alle matched prijzen opnieuw (oude gedrag)
+
+Inventory policy: standaard delta (Bihr-stock ≠ Motox-cache CONTINUE/DENY).
+  --force-all-stock-policies  schrijft alle matched policies opnieuw
 """
 
 from __future__ import annotations
@@ -47,7 +57,14 @@ sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
 from modules.ebihr.article_numbers import plan_article_update  # noqa: E402
-from modules.ebihr.build_products import build_product_groups  # noqa: E402
+from modules.ebihr.build_products import (  # noqa: E402
+    build_product_groups,
+    inventory_policy_from_bihr_stock,
+)
+from modules.ebihr.discontinued import (  # noqa: E402
+    discontinued_part_numbers,
+    select_fully_discontinued,
+)
 from modules.ebihr.build_ymm import build_ymm_from_raw  # noqa: E402
 from modules.ebihr.client import BihrClient  # noqa: E402
 from modules.ebihr.constants import OUTPUT_ROOT, RAW_ROOT  # noqa: E402
@@ -82,6 +99,11 @@ def _normalize_price(value: str | None) -> str:
         return f"{float(raw):.2f}"
     except ValueError:
         return raw
+
+
+def _normalize_inventory_policy(value: str | None) -> str:
+    pol = (value or "").strip().upper()
+    return pol if pol in ("CONTINUE", "DENY") else ""
 
 
 def _latest_raw() -> Path | None:
@@ -156,7 +178,12 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="Schrijf naar Shopify")
     ap.add_argument("--dry-run", action="store_true", help="Geen Shopify-writes (default zonder --apply)")
     ap.add_argument("--create-only", action="store_true", help="Alleen nieuwe producten")
-    ap.add_argument("--prices-only", action="store_true", help="Alleen prijs-updates")
+    ap.add_argument("--prices-only", action="store_true", help="Alleen prijs-updates (+ stock policy)")
+    ap.add_argument(
+        "--stock-policy-only",
+        action="store_true",
+        help="Alleen inventoryPolicy (doorverkopen) vanaf Bihr-stock",
+    )
     ap.add_argument(
         "--images-only",
         action="store_true",
@@ -172,6 +199,12 @@ def main() -> int:
     ap.add_argument("--max-create", type=int, default=0, help="Max nieuwe producten (0=all)")
     ap.add_argument("--max-price-updates", type=int, default=0, help="Max producten met price-update (0=all)")
     ap.add_argument(
+        "--max-stock-policy-updates",
+        type=int,
+        default=0,
+        help="Max producten met inventoryPolicy-update (0=all)",
+    )
+    ap.add_argument(
         "--max-image-backfill",
         type=int,
         default=0,
@@ -182,27 +215,64 @@ def main() -> int:
         action="store_true",
         help="Alle matched prijzen schrijven (geen delta t.o.v. Motox-cache)",
     )
+    ap.add_argument(
+        "--force-all-stock-policies",
+        action="store_true",
+        help="Alle matched inventory policies schrijven (geen delta t.o.v. Motox-cache)",
+    )
     ap.add_argument("--refresh-cache", action="store_true", default=True)
     ap.add_argument("--no-refresh-cache", action="store_true")
     args = ap.parse_args()
 
-    mode_n = sum(bool(x) for x in (args.create_only, args.prices_only, args.images_only))
+    mode_n = sum(
+        bool(x)
+        for x in (
+            args.create_only,
+            args.prices_only,
+            args.images_only,
+            args.stock_policy_only,
+        )
+    )
     if mode_n > 1:
-        raise SystemExit("Kies één van --create-only / --prices-only / --images-only")
+        raise SystemExit(
+            "Kies één van --create-only / --prices-only / --stock-policy-only / --images-only"
+        )
 
-    do_create = not args.prices_only and not args.images_only
-    do_image_backfill = not args.prices_only and not args.create_only
-    do_prices = not args.create_only and not args.images_only
+    do_create = (
+        not args.prices_only
+        and not args.images_only
+        and not args.stock_policy_only
+    )
+    do_image_backfill = (
+        not args.prices_only
+        and not args.create_only
+        and not args.stock_policy_only
+    )
+    do_prices = (
+        not args.create_only
+        and not args.images_only
+        and not args.stock_policy_only
+    )
+    # Stock policy: full sync, prices-only, of stock-policy-only (niet create/images).
+    do_stock_policy = not args.create_only and not args.images_only
     do_fitment = (
         not args.prices_only
         and not args.images_only
         and not args.create_only
+        and not args.stock_policy_only
         and not args.skip_metafields
     )
-    do_customs = not args.prices_only and not args.images_only and not args.create_only
+    do_customs = (
+        not args.prices_only
+        and not args.images_only
+        and not args.create_only
+        and not args.stock_policy_only
+    )
+    do_draft = do_customs
     do_articles = (
         not args.prices_only
         and not args.images_only
+        and not args.stock_policy_only
         and not args.skip_metafields
     )
     do_articles_existing = do_articles and not args.create_only
@@ -221,21 +291,24 @@ def main() -> int:
         raise SystemExit("Geen raw-dir. Gebruik --fetch of --raw-dir.")
 
     log.info(
-        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s fitment=%s customs=%s articles=%s",
+        "Raw: %s | dry_run=%s | create=%s image_backfill=%s prices=%s stock_policy=%s "
+        "fitment=%s customs=%s draft=%s articles=%s",
         raw_dir,
         dry_run,
         do_create,
         do_image_backfill,
         do_prices,
+        do_stock_policy,
         do_fitment,
         do_customs,
+        do_draft,
         do_articles,
     )
 
     ymm = build_ymm_from_raw(raw_dir)
     fits_map = ymm["fits_on"]
     offroad = ymm["offroad_partnumbers"]
-    groups, prices, _stocks, build_stats = build_product_groups(
+    groups, prices, stocks, build_stats = build_product_groups(
         raw_dir, offroad_partnumbers=offroad
     )
     log.info("Build stats: %s", build_stats)
@@ -249,6 +322,7 @@ def main() -> int:
     sku_to_pid = idx["sku_to_product_id"]
     sku_to_vid = idx.get("sku_to_variant_id") or {}
     sku_to_shop_price = idx.get("sku_to_price") or {}
+    sku_to_shop_policy = idx.get("sku_to_inventory_policy") or {}
     sku_to_customs = idx.get("sku_to_customs") or {}
     sku_to_article = idx.get("sku_to_article") or {}
     products_index = idx.get("products_index") or {}
@@ -262,6 +336,12 @@ def main() -> int:
     price_checked = 0
     price_unchanged = 0
     price_products_written = 0
+    stock_policy_updated = 0
+    stock_policy_errors = 0
+    stock_policy_checked = 0
+    stock_policy_unchanged = 0
+    stock_policy_products_written = 0
+    stock_policy_skipped_no_bihr = 0
     meta_set = 0
     meta_errors = 0
     fitment_checked = 0
@@ -274,6 +354,17 @@ def main() -> int:
     customs_written = 0
     customs_no_source = 0
     customs_errors = 0
+    skipped_exists = 0
+    skipped_no_image = 0
+    images_backfilled = 0
+    image_backfill_errors = 0
+    publish_ok = 0
+    publish_errors = 0
+    skipped_already_has_image = 0
+    skipped_no_bihr_image = 0
+    drafted = 0
+    draft_errors = 0
+    draft_targets = 0
     articles_checked = 0
     articles_unchanged = 0
     articles_written = 0
@@ -284,14 +375,45 @@ def main() -> int:
         articles_def_error = admin.ensure_article_definitions()
         if articles_def_error:
             log.warning("Artikelnummer-definities: %s", articles_def_error)
-    skipped_exists = 0
-    skipped_no_image = 0
-    images_backfilled = 0
-    image_backfill_errors = 0
-    publish_ok = 0
-    publish_errors = 0
-    skipped_already_has_image = 0
-    skipped_no_bihr_image = 0
+
+    # --- Discontinued: niet publiceren, bestaande live producten op draft ---
+    if do_draft:
+        discontinued = discontinued_part_numbers(raw_dir)
+        targets = select_fully_discontinued(
+            discontinued,
+            sku_to_pid,
+            products_index,
+        )
+        draft_targets = len(targets)
+        log.info(
+            "Discontinued bij Bihr: %s; actief in Motox en helemaal discontinued: %s",
+            len(discontinued),
+            draft_targets,
+        )
+        for item in targets:
+            err = admin.set_status(item["id"], "DRAFT", dry_run=dry_run)
+            unpublish_err = ""
+            if not err:
+                unpublish_err = admin.unpublish_from_all_channels(item["id"], dry_run=dry_run)
+            detail = "; ".join(part for part in (err, unpublish_err) if part)
+            if detail:
+                draft_errors += 1
+                report_rows.append(
+                    {"action": "draft", "handle": item["handle"], "ok": "0", "detail": detail}
+                )
+                log.warning("Draft fail %s: %s", item["handle"], detail)
+                continue
+            drafted += 1
+            report_rows.append(
+                {
+                    "action": "draft",
+                    "handle": item["handle"],
+                    "ok": "1",
+                    "detail": "discontinued",
+                }
+            )
+            if not dry_run:
+                time.sleep(0.15)
 
     # --- Creates ---
     if do_create:
@@ -742,6 +864,91 @@ def main() -> int:
             price_errors,
         )
 
+    # --- Inventory policy from Bihr stock (delta by default) ---
+    if do_stock_policy:
+        use_policy_delta = not args.force_all_stock_policies
+        if use_policy_delta and not sku_to_shop_policy:
+            log.warning(
+                "Geen sku_to_inventory_policy in Motox-cache — delta niet mogelijk; "
+                "alle matched policies worden geschreven. Ververs cache of gebruik "
+                "--force-all-stock-policies."
+            )
+            use_policy_delta = False
+        elif use_policy_delta:
+            log.info(
+                "Stock-policy-delta: Bihr vs Motox-cache (%s SKU-policies in cache)",
+                len(sku_to_shop_policy),
+            )
+        else:
+            log.info("Stock-policy-modus: force-all (geen delta)")
+
+        by_pid_policy: dict[str, list[tuple[str, str]]] = {}
+        seen_skus: set[str] = set()
+        for pn, stock_row in stocks.items():
+            sku = (pn or "").strip()
+            if not sku or sku.upper() in seen_skus:
+                continue
+            seen_skus.add(sku.upper())
+            desired = inventory_policy_from_bihr_stock(stock_row)
+            if not desired:
+                stock_policy_skipped_no_bihr += 1
+                continue
+            vid = sku_to_vid.get(sku) or sku_to_vid.get(sku.upper())
+            pid = sku_to_pid.get(sku) or sku_to_pid.get(sku.upper())
+            if not vid or not pid:
+                continue
+            stock_policy_checked += 1
+            if use_policy_delta:
+                shop_pol = _normalize_inventory_policy(
+                    sku_to_shop_policy.get(sku)
+                    or sku_to_shop_policy.get(sku.upper())
+                    or ""
+                )
+                if shop_pol and shop_pol == desired:
+                    stock_policy_unchanged += 1
+                    continue
+            by_pid_policy.setdefault(pid, []).append((vid, desired))
+
+        n_policy_products = 0
+        for pid, pairs in by_pid_policy.items():
+            if args.max_stock_policy_updates and n_policy_products >= args.max_stock_policy_updates:
+                break
+            seen: dict[str, str] = {}
+            for vid, pol in pairs:
+                seen[vid] = pol
+            pairs = list(seen.items())
+            err = admin.update_variant_inventory_policies(pid, pairs, dry_run=dry_run)
+            n_policy_products += 1
+            if err:
+                stock_policy_errors += 1
+                report_rows.append(
+                    {"action": "stock_policy", "handle": pid, "ok": "0", "detail": err}
+                )
+            else:
+                stock_policy_updated += len(pairs)
+                stock_policy_products_written += 1
+                report_rows.append(
+                    {
+                        "action": "stock_policy",
+                        "handle": pid,
+                        "ok": "1",
+                        "detail": f"{len(pairs)} variants",
+                    }
+                )
+            if not dry_run:
+                time.sleep(0.25)
+
+        log.info(
+            "Stock policy: checked=%s unchanged=%s products_written=%s "
+            "variants_written=%s skipped_no_signal=%s errors=%s",
+            stock_policy_checked,
+            stock_policy_unchanged,
+            stock_policy_products_written,
+            stock_policy_updated,
+            stock_policy_skipped_no_bihr,
+            stock_policy_errors,
+        )
+
     summary = {
         "dry_run": dry_run,
         "raw_dir": str(raw_dir),
@@ -754,6 +961,9 @@ def main() -> int:
         "image_backfill_errors": image_backfill_errors,
         "skipped_already_has_image": skipped_already_has_image,
         "skipped_no_bihr_image_for_existing": skipped_no_bihr_image,
+        "draft_targets": draft_targets,
+        "drafted": drafted,
+        "draft_errors": draft_errors,
         "publish_ok": publish_ok,
         "publish_errors": publish_errors,
         "price_checked": price_checked,
@@ -762,6 +972,13 @@ def main() -> int:
         "price_variant_updates": prices_updated,
         "price_errors": price_errors,
         "price_delta": not args.force_all_prices,
+        "stock_policy_checked": stock_policy_checked,
+        "stock_policy_unchanged": stock_policy_unchanged,
+        "stock_policy_products_written": stock_policy_products_written,
+        "stock_policy_variant_updates": stock_policy_updated,
+        "stock_policy_errors": stock_policy_errors,
+        "stock_policy_skipped_no_bihr": stock_policy_skipped_no_bihr,
+        "stock_policy_delta": not args.force_all_stock_policies,
         "metafields_set": meta_set,
         "metafields_errors": meta_errors,
         "fitment_checked": fitment_checked,
@@ -809,10 +1026,22 @@ def main() -> int:
             )
             f.write(f"- publish channels: **{publish_ok}** (errors {publish_errors})\n")
             f.write(
+                f"- discontinued op draft: **{drafted}** "
+                f"van {draft_targets} (errors {draft_errors})\n"
+            )
+            f.write(
                 f"- prices: checked **{price_checked}**, unchanged **{price_unchanged}**, "
                 f"products written **{price_products_written}**, "
                 f"variants written **{prices_updated}** (errors {price_errors})"
                 f"{'' if not args.force_all_prices else ' [force-all]'}\n"
+            )
+            f.write(
+                f"- stock policy: checked **{stock_policy_checked}**, "
+                f"unchanged **{stock_policy_unchanged}**, "
+                f"products written **{stock_policy_products_written}**, "
+                f"variants written **{stock_policy_updated}** "
+                f"(errors {stock_policy_errors})"
+                f"{'' if not args.force_all_stock_policies else ' [force-all]'}\n"
             )
             f.write(f"- metafields set: **{meta_set}** (errors {meta_errors})\n")
             f.write(
@@ -851,6 +1080,8 @@ def main() -> int:
         soft.append(f"fitment={fitment_errors}")
     if articles_errors:
         soft.append(f"articles={articles_errors}")
+    if draft_errors:
+        soft.append(f"draft={draft_errors}")
     if soft:
         log.warning(
             "Non-fatal sync issues (%s); see sync_report. Job stays green.",
@@ -858,6 +1089,7 @@ def main() -> int:
         )
     hard_errors = (
         price_errors
+        or stock_policy_errors
         or meta_errors
         or image_backfill_errors
         or publish_errors

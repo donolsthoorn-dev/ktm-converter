@@ -47,7 +47,7 @@ Het systeem haalt de actuele Shopify-catalogus op en slaat die op in de database
 
 Producten die **niet geschikt** zijn om online te staan, worden op **concept** gezet (niet meer zichtbaar voor klanten). Dat gebeurt onder andere als:
 
-- er **geen geldige verkoopprijs** is (prijs ontbreekt of is nul);
+- **geen enkele uitvoering** een geldige verkoopprijs heeft (prijs ontbreekt of is nul). Eén uitvoering op nul blijft weg van de productpagina en is niet te bestellen; de rest van het product blijft online;
 - **alles uitverkocht** is in Shopify (geen voorraad, klant kan niet bestellen);
 - het artikel in KTM **uitgefaseerd** is (status “80”) **én** er is geen voorraad;
 - KTM **“geen voorraad”** aangeeft (voorraadcode 0) **én** Shopify heeft ook echt 0 stuks.

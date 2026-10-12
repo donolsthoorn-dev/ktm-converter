@@ -1,0 +1,124 @@
+<script type="application/json" id="motox-garage-config">
+{
+  "loggedIn": {% if customer %}true{% else %}false{% endif %},
+  "proxyPath": "/apps/garage",
+  "catalogUrl": {{ 'vehicles.json' | asset_url | json }},
+  "copy": {
+    "stripEmpty": {{ 'garage.strip_empty' | t | json }},
+    "stripSet": {{ 'garage.strip_set' | t | json }},
+    "stripSetMobile": {{ 'garage.strip_set_mobile' | t | json }},
+    "stripFor": {{ 'garage.strip_for' | t | json }},
+    "stripForMobile": {{ 'garage.strip_for_mobile' | t | json }},
+    "stripSwitch": {{ 'garage.strip_switch' | t | json }},
+    "dialogTitle": {{ 'garage.dialog_title' | t | json }},
+    "dialogSub": {{ 'garage.dialog_sub' | t | json }},
+    "make": {{ 'garage.make' | t | json }},
+    "model": {{ 'garage.model' | t | json }},
+    "year": {{ 'garage.year' | t | json }},
+    "pick": {{ 'garage.pick' | t | json }},
+    "save": {{ 'garage.save' | t | json }},
+    "close": {{ 'garage.close' | t | json }},
+    "saved": {{ 'garage.saved' | t | json }},
+    "remove": {{ 'garage.remove' | t | json }},
+    "empty": {{ 'garage.empty' | t | json }},
+    "fits": {{ 'garage.fits' | t | json }},
+    "noFit": {{ 'garage.no_fit' | t | json }},
+    "catalogMissing": {{ 'garage.catalog_missing' | t | json }},
+    "limit": {{ 'garage.limit' | t | json }},
+    "filterLabel": {{ 'garage.filter_label' | t | json }},
+    "filterEmpty": {{ 'garage.filter_empty' | t | json }},
+    "filterUnavailable": {{ 'garage.filter_unavailable' | t | json }}
+  },
+  "product": {% if product %}{
+    "id": {{ product.id | json }},
+    "fitsOn": {{ product.metafields.global.fits_on.value | json }}
+  }{% else %}null{% endif %}
+}
+</script>
+<script>
+(function () {
+  try {
+    if (location.pathname.indexOf("/collections/") === -1) return;
+    if (sessionStorage.getItem("mxg-filter-user") === "off") return;
+    if (sessionStorage.getItem("mxg-filter-off") === "1") return;
+    var parts = document.cookie ? document.cookie.split("; ") : [];
+    var raw = "";
+    for (var i = 0; i < parts.length; i += 1) {
+      if (parts[i].indexOf("motox_garage=") === 0) raw = decodeURIComponent(parts[i].slice(13));
+    }
+    if (!raw) return;
+    var garage = JSON.parse(raw);
+    var list = garage && garage.vehicles ? garage.vehicles : [];
+    var vehicle = null;
+    for (var j = 0; j < list.length; j += 1) {
+      if (list[j] && list[j].id === garage.activeId) vehicle = list[j];
+    }
+    if (!vehicle && list.length) vehicle = list[list.length - 1];
+    if (!vehicle || !vehicle.make || !vehicle.model || !vehicle.year) return;
+    var path = location.pathname.split("/");
+    var at = path.indexOf("collections");
+    var handle = at >= 0 ? decodeURIComponent(path[at + 1] || "") : "";
+    if (!handle) return;
+    try {
+      var downAt = Number(sessionStorage.getItem("mxg-proxy-retry") || "0");
+      if (downAt && Date.now() - downAt < 45000) return;
+    } catch (err) {}
+    document.documentElement.classList.add("mxg-hold");
+    setTimeout(function () {
+      document.documentElement.classList.remove("mxg-hold");
+    }, 1500);
+    try {
+      var saved = JSON.parse(sessionStorage.getItem("mxg-grid:" + vehicle.id + "|1|" + location.pathname + location.search) || "null");
+      if (saved && saved.payload && saved.payload.ok && Date.now() - saved.at < 600000) return;
+    } catch (err) {}
+    var next = new URLSearchParams();
+    next.set("handle", handle);
+    next.set("make", vehicle.make);
+    next.set("model", vehicle.model);
+    next.set("year", vehicle.year);
+    next.set("page", "1");
+    var current = new URLSearchParams(location.search);
+    current.forEach(function (value, name) {
+      if (name === "page") return;
+      if (name === "sort_by" || name.indexOf("filter.") === 0) next.append(name, value);
+    });
+    var key = vehicle.id + "|1|" + location.pathname + location.search;
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () {
+      ctrl.abort();
+    }, 20000);
+    window.__mxgPrefetch = {
+      key: key,
+      promise: fetch("/apps/garage/collection?" + next.toString(), {
+        credentials: "same-origin",
+        signal: ctrl.signal
+      }).then(
+        function (response) {
+          clearTimeout(timer);
+          if (!response.ok) {
+            try { sessionStorage.setItem("mxg-proxy-retry", String(Date.now())); } catch (err) {}
+            document.documentElement.classList.remove("mxg-hold");
+          }
+          return response;
+        },
+        function (err) {
+          clearTimeout(timer);
+          try { sessionStorage.setItem("mxg-proxy-retry", String(Date.now())); } catch (e) {}
+          document.documentElement.classList.remove("mxg-hold");
+          throw err;
+        }
+      )
+    };
+  } catch (err) {}
+})();
+</script>
+
+{% schema %}
+{
+  "name": "t:garage_embed.name",
+  "target": "body",
+  "stylesheet": "garage.css",
+  "javascript": "garage.js",
+  "settings": []
+}
+{% endschema %}

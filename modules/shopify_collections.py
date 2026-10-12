@@ -101,3 +101,149 @@ def fetch_all_collections(
         if not cursor:
             break
     return out
+
+
+COLLECTION_UPDATE = """
+mutation CollectionUpdate($input: CollectionInput!) {
+  collectionUpdate(input: $input) {
+    collection {
+      id
+      title
+      handle
+      productsCount { count }
+      ruleSet {
+        appliedDisjunctively
+        rules {
+          column
+          relation
+          condition
+        }
+      }
+    }
+    userErrors { field message }
+  }
+}
+"""
+
+COLLECTION_CREATE = """
+mutation CollectionCreate($input: CollectionInput!) {
+  collectionCreate(input: $input) {
+    collection {
+      id
+      title
+      handle
+      productsCount { count }
+      ruleSet {
+        appliedDisjunctively
+        rules {
+          column
+          relation
+          condition
+        }
+      }
+    }
+    userErrors { field message }
+  }
+}
+"""
+
+PUBLISHABLE_PUBLISH = """
+mutation PublishablePublish($id: ID!, $input: [PublicationInput!]!) {
+  publishablePublish(id: $id, input: $input) {
+    userErrors { field message }
+  }
+}
+"""
+
+PRODUCT_PUBLISH_ONLINE = """
+mutation ProductPublishOnline($input: ProductInput!) {
+  productUpdate(input: $input) {
+    product { id publishedAt }
+    userErrors { field message }
+  }
+}
+"""
+
+# Shopify smart collections standaard max. 60 voorwaarden.
+MAX_SMART_RULES = 60
+
+
+def rule_to_input(rule: dict) -> dict:
+    """Zet een opgehaalde regel om naar CollectionRuleInput."""
+    out = {
+        "column": rule.get("column"),
+        "relation": rule.get("relation"),
+        "condition": rule.get("condition") or "",
+    }
+    oid = rule.get("conditionObjectId")
+    if oid:
+        out["conditionObjectId"] = oid
+    return out
+
+
+def type_equals_rule(product_type: str) -> dict:
+    return {
+        "column": "TYPE",
+        "relation": "EQUALS",
+        "condition": product_type,
+    }
+
+
+def merge_type_equals(
+    existing_rules: list[dict],
+    extra_types: list[str],
+    *,
+    limit: int = MAX_SMART_RULES,
+) -> tuple[list[dict], list[str], list[str]]:
+    """Voeg TYPE EQUALS-regels toe. Retourneert (rules, added, skipped_over_limit)."""
+    merged = [rule_to_input(r) for r in existing_rules]
+    have = {
+        (r["column"], r["relation"], r["condition"])
+        for r in merged
+    }
+    added: list[str] = []
+    skipped: list[str] = []
+    for t in extra_types:
+        key = ("TYPE", "EQUALS", t)
+        if key in have:
+            continue
+        if len(merged) >= limit:
+            skipped.append(t)
+            continue
+        merged.append(type_equals_rule(t))
+        have.add(key)
+        added.append(t)
+    return merged, added, skipped
+
+
+def collection_update_rules(
+    shop: str,
+    token: str,
+    api_version: str,
+    collection_id: str,
+    rules: list[dict],
+    *,
+    applied_disjunctively: bool = True,
+    sess: requests.Session | None = None,
+) -> dict:
+    data = graphql_post(
+        shop,
+        token,
+        api_version,
+        COLLECTION_UPDATE,
+        {
+            "input": {
+                "id": collection_id,
+                "ruleSet": {
+                    "appliedDisjunctively": applied_disjunctively,
+                    "rules": rules,
+                },
+            }
+        },
+        sess=sess,
+    )
+    payload = ((data.get("data") or {}).get("collectionUpdate")) or {}
+    errs = payload.get("userErrors") or []
+    if errs:
+        raise RuntimeError(json.dumps(errs, ensure_ascii=False, indent=2))
+    return payload.get("collection") or {}

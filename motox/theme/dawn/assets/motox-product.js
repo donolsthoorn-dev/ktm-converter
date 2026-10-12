@@ -325,9 +325,9 @@
       return body;
     }
 
-    var product = root.closest(".product") || root;
+    var product = root.querySelector(".product") || root.closest(".product") || root;
     var tabs = document.createElement("div");
-    tabs.className = "motox-tabs page-width";
+    tabs.className = "motox-tabs";
     var list = document.createElement("div");
     list.className = "motox-tabs__list";
     list.setAttribute("role", "tablist");
@@ -354,10 +354,27 @@
     var shortLabels = {
       info: txt("tabInfoShort", "Info"),
       fits: txt("tabFitsShort", "Past op"),
+      frame: txt("tabFrameShort", "Frame"),
       ship: txt("tabShippingShort", "Verzending"),
       gift: txt("tabGiftShort", "Cadeaubon"),
       service: txt("tabServiceShort", "Service"),
     };
+
+    function buildFrameSizesPanel() {
+      var src = root.getAttribute("data-frame-sizes-src");
+      if (!src) return null;
+      var box = document.createElement("div");
+      box.className = "motox-frame-sizes";
+      box.innerHTML =
+        '<p class="motox-frame-sizes__note">' +
+        esc(txt("frameSizesNote", "Let op: deze tabel geeft alleen een globale indicatie.")) +
+        '</p><img class="motox-frame-sizes__img" src="' +
+        esc(src) +
+        '" alt="' +
+        esc(txt("frameSizesAlt", "KTM frame maten naar lichaamslengte")) +
+        '" width="1110" height="625" loading="lazy" decoding="async">';
+      return box;
+    }
 
     function applyTabLabels() {
       var short = window.matchMedia("(max-width: 749px)").matches;
@@ -366,6 +383,7 @@
         var tiny = tab.dataset.labelShort;
         tab.textContent = short && tiny ? tiny : full;
       });
+      if (short && selectedId === "gift") selectTab("info");
     }
 
     function addTab(id, labelText, node, position) {
@@ -401,6 +419,7 @@
     }
 
     addTab("info", txt("tabInfo", "Productinformatie"), description);
+    addTab("frame", txt("tabFrame", "Frame maten"), buildFrameSizesPanel());
     addTab("ship", txt("tabShipping", "Verzending & retour"), accordionPanel(accordions.ship));
     addTab("gift", txt("tabGift", "Cadeaubon"), accordionPanel(accordions.gift));
     addTab("service", txt("tabService", "Klantenservice"), accordionPanel(accordions.service));

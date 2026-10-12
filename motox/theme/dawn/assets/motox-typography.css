@@ -1,0 +1,701 @@
+/* Motox typografie — Manrope + leesbaarheids-finetuning (Dawn 15) */
+
+:root {
+  /* Merkkleuren / tekst */
+  --mx-text: #111111;
+  --mx-text-body: #444444;
+  --mx-text-secondary: #666666;
+  --mx-text-muted: #777777;
+  --mx-border: #e5e5e5;
+  --mx-background: #f7f7f7;
+  --mx-green: #00a900;
+  --mx-green-dark: #008f00;
+  --motox-brand-red: #c9290a;
+  --motox-brand-red-dark: #a02008;
+
+  /* Dawn link-kleur → Motox rood (tekstlinks overal) */
+  --color-link: 201, 41, 10;
+  --mx-title: #222222;
+
+  /* Font stack */
+  --mx-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Dawn hooks → Manrope */
+  --font-body-family: var(--mx-font);
+  --font-heading-family: var(--mx-font);
+  --font-body-style: normal;
+  --font-heading-style: normal;
+  --font-body-weight: 450;
+  --font-heading-weight: 750;
+  --font-body-weight-bold: 700;
+
+  /* Type scale (1rem ≈ 10px via Dawn html 62.5%) */
+  --mx-body-size: 1.5rem;
+  --mx-body-lh: 1.6;
+  --mx-h1: 3.9rem; /* ~39px desktop */
+  --mx-h2: 2.8rem;
+  --mx-h3: 2rem;
+  --mx-card-title: 1.5rem;
+  --mx-price: 3rem;
+  --mx-card-price: 1.8rem;
+  --mx-meta: 1.25rem; /* 12.5px — metadata 12-13px */
+  --mx-nav: 1.4rem; /* 14px — hoofdmenu leesbaarder */
+  --mx-btn: 1.3rem;
+  --mx-usp-title: 1.4rem;
+  --mx-usp-desc: 1.2rem;
+
+  --mx-weight-body: 450;
+  --mx-weight-regular: 400;
+  --mx-weight-meta: 500;
+  --mx-weight-title: 650;
+  --mx-weight-label: 700;
+  --mx-weight-display: 750;
+  --mx-weight-price: 750;
+}
+
+@media screen and (max-width: 989px) {
+  :root {
+    --mx-h1: 3.4rem;
+    --mx-h2: 2.5rem;
+    --mx-h3: 1.9rem;
+  }
+}
+
+@media screen and (max-width: 749px) {
+  :root {
+    --mx-h1: 3rem;
+    --mx-h2: 2.4rem;
+    --mx-h3: 1.8rem;
+    --mx-body-size: 1.5rem;
+    --mx-price: 2.7rem;
+    --mx-card-title: 1.5rem;
+  }
+}
+
+/* —— Basis —— */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--mx-font);
+  font-size: var(--mx-body-size);
+  font-weight: var(--mx-weight-body);
+  line-height: var(--mx-body-lh);
+  letter-spacing: 0;
+  color: var(--mx-text);
+}
+
+@media screen and (min-width: 750px) {
+  body {
+    font-size: var(--mx-body-size);
+  }
+}
+
+h1,
+.h0,
+.h1,
+.h2,
+.h3,
+.h4,
+.h5,
+.inline-richtext.h0,
+.inline-richtext.h1,
+.inline-richtext.h2,
+.inline-richtext.h3,
+.inline-richtext.h4,
+.inline-richtext.h5,
+.product__title,
+.collection-hero__title,
+.related-products__heading,
+.collection__title .title,
+.title-wrapper-with-link .title {
+  font-family: var(--mx-font);
+  font-style: normal;
+  color: var(--mx-text);
+}
+
+h1,
+.h0,
+.h1,
+.collection-hero__title,
+.product__title h1,
+.product__title > h1 {
+  font-size: var(--mx-h1);
+  line-height: 1.08;
+  font-weight: var(--mx-weight-display);
+  letter-spacing: -0.025em;
+}
+
+.collection-hero__title {
+  line-height: 1.05;
+}
+
+h2,
+.h2,
+.related-products__heading,
+.collection__title .title,
+.title-wrapper .title {
+  font-size: var(--mx-h2);
+  line-height: 1.15;
+  font-weight: var(--mx-weight-display);
+  letter-spacing: -0.02em;
+}
+
+h3,
+.h3 {
+  font-size: var(--mx-h3);
+  line-height: 1.2;
+  font-weight: var(--mx-weight-label);
+  letter-spacing: -0.01em;
+}
+
+h4,
+.h4,
+h5,
+.h5 {
+  font-size: 1.6rem;
+  line-height: 1.3;
+  font-weight: var(--mx-weight-label);
+  letter-spacing: 0;
+}
+
+p,
+.rte,
+.rte p {
+  color: var(--mx-text-body);
+  font-size: var(--mx-body-size);
+  line-height: 1.6;
+  font-weight: var(--mx-weight-body);
+}
+
+.collection-hero__description,
+.collection-hero__title + .collection-hero__description,
+.collection-hero__description p,
+.collection-hero__text-wrapper .rte,
+.collection-hero__text-wrapper .rte p {
+  font-size: var(--mx-body-size);
+  color: var(--mx-text-body);
+  font-weight: var(--mx-weight-body);
+  line-height: 1.6;
+}
+
+/* Garage-motorstrip: witte tekst op rood */
+.mxg-strip,
+.mxg-strip p,
+.mxg-strip span,
+.mxg-strip a,
+.mxg-strip button,
+.mxg-strip .mxg-prompt,
+.mxg-strip .mxg-bike,
+.mxg-strip .mxg-bike-name,
+.mxg-strip .mxg-bike-year,
+.mxg-strip .mxg-action {
+  color: #fff;
+  font-family: var(--mx-font);
+  line-height: 1.3;
+}
+
+.mxg-strip {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.mxg-strip .mxg-prompt {
+  font-size: 1.45rem;
+  font-weight: 400;
+}
+
+.mxg-strip .mxg-bike,
+.mxg-strip .mxg-bike-name {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.mxg-strip .mxg-bike-year {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.mxg-strip .mxg-action,
+.mxg-strip .mxg-action.is-edit {
+  font-size: 1.45rem;
+  font-weight: 400;
+  font-style: italic;
+  text-decoration: underline;
+  text-underline-offset: 0.22em;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.mxg-strip .mxg-action:hover,
+.mxg-strip .mxg-action.is-edit:hover {
+  color: #fff;
+  opacity: 0.9;
+  text-decoration: underline;
+  text-underline-offset: 0.22em;
+}
+
+.rte a,
+.inline-richtext a,
+.motox-tabs__panel a,
+.product__description a,
+.footer-block__details-content a,
+.footer__content-bottom a,
+.article-template a,
+.page-width .rte a {
+  color: var(--motox-brand-red, #c9290a);
+}
+
+.rte a:hover,
+.inline-richtext a:hover,
+.motox-tabs__panel a:hover,
+.product__description a:hover,
+.footer-block__details-content a:hover,
+.footer__content-bottom a:hover,
+.article-template a:hover {
+  color: var(--motox-brand-red-dark, #a02008);
+}
+
+/* Footer: adres/tekst wit op zwarte achtergrond */
+.footer,
+.footer .footer-block__details-content,
+.footer .footer-block__details-content.rte,
+.footer .footer-block__details-content p,
+.footer .footer-block__details-content li,
+.footer .footer-block__heading,
+.footer .copyright__content {
+  color: #ffffff !important;
+}
+
+.footer .footer-block__details-content a,
+.footer .copyright__content a {
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+.footer .footer-block__details-content a:hover,
+.footer .copyright__content a:hover {
+  color: #ff6b4a !important;
+}
+
+.footer .list-menu__item--link,
+.footer .footer-block__details-content .list-menu__item--link {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.footer .list-menu__item--link:hover {
+  color: #ffffff !important;
+}
+
+/* —— Metadata (Past op, SKU, Merk, BTW) —— */
+.caption,
+.caption-large,
+.caption-with-letter-spacing,
+.product__tax,
+.product__sku,
+.product__text,
+.product__ymm,
+.product-count__text,
+.motox-buy-meta__ids {
+  font-size: var(--mx-meta);
+  line-height: 1.4;
+  font-weight: var(--mx-weight-meta);
+  letter-spacing: 0.01em;
+  color: var(--mx-text-secondary);
+}
+
+/* —— Navigatie —— */
+.header__menu-item,
+.header__menu-item span,
+.header__inline-menu .list-menu__item,
+.menu-drawer__menu-item {
+  font-family: var(--mx-font);
+  font-size: var(--mx-nav);
+  font-weight: var(--mx-weight-label);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.header__menu-item:hover,
+.header__menu-item:hover span,
+.header__active-menu-item,
+.header__menu-item[aria-current='page'],
+.header__menu-item[aria-current='page'] span,
+details[open] > .header__menu-item,
+details[open] > .header__menu-item span {
+  color: #ffffff;
+}
+
+.header--middle-left .header__inline-menu .list-menu__item,
+.header__menu-item {
+  text-transform: uppercase;
+}
+
+/* —— Buttons / CTA —— */
+.button,
+.shopify-challenge__button,
+.customer button,
+button.shopify-payment-button__button--unbranded,
+.product-form__submit,
+.cart__ctas .cart__checkout-button,
+.cart-notification__links .button {
+  font-family: var(--mx-font);
+  font-size: var(--mx-btn);
+  font-weight: var(--mx-weight-label);
+  letter-spacing: 0.01em;
+}
+
+.button--primary,
+.product-form__submit,
+.cart__ctas .cart__checkout-button {
+  background-color: var(--mx-green);
+  border-color: var(--mx-green);
+}
+
+.button--primary:hover,
+.product-form__submit:hover:not([disabled]),
+.cart__ctas .cart__checkout-button:hover {
+  background-color: var(--mx-green-dark);
+  border-color: var(--mx-green-dark);
+}
+
+/* Homepage CTAs: huisstijl-rood (product/cart-knoppen blijven groen hierboven) */
+.template-index .button--primary {
+  background-color: var(--motox-brand-red, #c9290a) !important;
+  border-color: var(--motox-brand-red, #c9290a) !important;
+  color: #ffffff !important;
+}
+
+.template-index .button--primary:hover {
+  background-color: #a02008 !important;
+  border-color: #a02008 !important;
+  color: #ffffff !important;
+}
+
+.template-index .button--secondary {
+  background-color: #ffffff !important;
+  border: 1px solid var(--motox-brand-red, #c9290a) !important;
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+.template-index .button--secondary:hover {
+  background-color: var(--motox-brand-red, #c9290a) !important;
+  border-color: var(--motox-brand-red, #c9290a) !important;
+  color: #ffffff !important;
+}
+
+/* —— Productpagina —— */
+.product__info-container .product__title,
+.product__info-container .product__title h1,
+.product__info-container .product__title > a {
+  font-size: var(--mx-h1);
+  line-height: 1.08;
+  font-weight: var(--mx-weight-display);
+  letter-spacing: -0.025em;
+  color: var(--mx-text);
+}
+
+.product__info-container .price--large .price-item--regular,
+.product__info-container .price--large .price-item--sale,
+.product__info-container .price .price-item--regular,
+.product__info-container .price .price-item--sale {
+  font-size: var(--mx-price);
+  line-height: 1;
+  font-weight: var(--mx-weight-price);
+  letter-spacing: -0.025em;
+  color: var(--mx-text);
+}
+
+.product__info-container .product__tax,
+.motox-price-row .product__tax {
+  font-size: var(--mx-meta);
+  font-weight: var(--mx-weight-meta);
+  color: var(--mx-text-secondary);
+  line-height: 1.4;
+}
+
+.product__info-container .product__ymm {
+  font-size: var(--mx-meta);
+  font-weight: var(--mx-weight-meta);
+  color: var(--mx-text-secondary);
+  line-height: 1.45;
+}
+
+.product__info-container .product__ymm .product__label {
+  font-weight: var(--mx-weight-label);
+  color: var(--mx-text-secondary);
+}
+
+.motox-stock--in,
+.product__inventory.motox-stock--in,
+.motox-stock--in .motox-stock__label {
+  color: var(--mx-green);
+  font-size: 1.4rem;
+  font-weight: var(--mx-weight-label);
+}
+
+.motox-stock--in .motox-stock__mark {
+  background: var(--mx-green);
+}
+
+.motox-buy-meta__ids {
+  font-size: var(--mx-meta);
+  font-weight: var(--mx-weight-meta);
+  color: var(--mx-text-secondary);
+}
+
+/* Productomschrijving */
+.motox-tabs__panel .product__description,
+.motox-tabs__panel .rte,
+.motox-tabs__panel .rte p,
+.product__description,
+.product__description p {
+  font-size: var(--mx-body-size);
+  line-height: 1.65;
+  font-weight: var(--mx-weight-body);
+  color: var(--mx-text-body);
+}
+
+/* —— Productkaarten —— */
+.product-grid .card > .card__content .card__heading,
+.product-grid .card > .card__content .card__heading a,
+.product-grid .card__heading,
+.product-grid .card__heading a {
+  font-size: var(--mx-card-title);
+  line-height: 1.3;
+  font-weight: var(--mx-weight-title);
+  letter-spacing: 0;
+  color: var(--mx-title);
+}
+
+/* Merk */
+.product-grid .card-information > .caption-with-letter-spacing,
+.product-grid .caption-with-letter-spacing,
+.product-grid .vendor,
+.product-grid .card-information__footer .caption-with-letter-spacing {
+  font-size: 1.15rem;
+  font-weight: var(--mx-weight-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mx-text-muted);
+}
+
+/* Modelinformatie / YMM */
+.product-grid .card__ymm,
+.product-grid .card-information .caption-large {
+  font-size: 1.2rem;
+  line-height: 1.4;
+  font-weight: var(--mx-weight-body);
+  color: var(--mx-text-secondary);
+}
+
+.product-grid .price,
+.product-grid .price-item,
+.product-grid .price .price-item--regular,
+.product-grid .price .price-item--sale {
+  font-size: var(--mx-card-price);
+  line-height: 1.1;
+  font-weight: var(--mx-weight-price);
+  letter-spacing: -0.015em;
+  color: var(--mx-text);
+}
+
+/* —— Collectie —— */
+.collection-hero__title {
+  font-size: var(--mx-h1);
+  font-weight: var(--mx-weight-display);
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  color: var(--mx-text);
+}
+
+.product-count-vertical .product-count__text,
+.product-count__text,
+#ProductCountDesktop,
+#ProductCount {
+  font-size: 1.25rem;
+  font-weight: var(--mx-weight-meta);
+  color: var(--mx-text-secondary);
+}
+
+/* Filters */
+.facets__heading,
+.facets__heading--vertical,
+.facets__summary,
+.motox-facets-layout .facets__summary,
+.motox-facets-layout .facets__heading,
+.motox-facets-layout .facets__heading--vertical {
+  font-size: 1.4rem;
+  font-weight: var(--mx-weight-label);
+  color: #222222;
+}
+
+.facet-checkbox,
+.facets-layout-list .facets__label,
+.motox-facets-layout .facet-checkbox,
+.facet-checkbox__text-label {
+  font-size: 1.3rem;
+  font-weight: var(--mx-weight-body);
+  color: var(--mx-text-body);
+}
+
+.facet-checkbox__text {
+  font-size: 1.3rem;
+  font-weight: var(--mx-weight-body);
+  color: var(--mx-text-body);
+}
+
+.facet-checkbox__text .count,
+.facets__label .count,
+.active-facets__button-inner {
+  font-size: 1.2rem;
+  font-weight: var(--mx-weight-meta);
+  color: var(--mx-text-secondary);
+}
+
+/* —— Tabs —— */
+.motox-tabs__tab {
+  font-family: var(--mx-font);
+  font-size: 1.4rem;
+  font-weight: var(--mx-weight-label);
+  letter-spacing: 0;
+  color: #222222;
+}
+
+@media screen and (max-width: 749px) {
+  .motox-tabs__tab {
+    font-size: 1.8rem;
+  }
+}
+
+.motox-tabs__tab[aria-selected='true'] {
+  color: var(--motox-brand-red, #c9290a);
+  border-bottom-color: var(--motox-brand-red, #c9290a);
+}
+
+.motox-tabs__tab:not([aria-selected='true']):hover {
+  color: var(--mx-text);
+}
+
+/* —— USP / trust —— */
+.motox-trust__title,
+.motox-trust__item strong {
+  font-size: var(--mx-usp-title);
+  font-weight: var(--mx-weight-label);
+  color: var(--mx-text);
+}
+
+.motox-trust__text,
+.motox-trust__item p {
+  font-size: var(--mx-usp-desc);
+  font-weight: var(--mx-weight-meta);
+  color: var(--mx-text-secondary);
+}
+
+/* —— Formulieren —— */
+input,
+textarea,
+select,
+.field__input,
+.select__select,
+.customer .field input {
+  font-family: var(--mx-font);
+  font-size: 1.4rem;
+  font-weight: var(--mx-weight-body);
+  color: var(--mx-text);
+}
+
+.field__label,
+.customer .field label {
+  font-size: var(--mx-meta);
+  font-weight: var(--mx-weight-meta);
+  color: var(--mx-text-secondary);
+}
+
+/* —— Borders / surfaces —— */
+.collection-hero,
+.header-wrapper,
+.cart-notification,
+.cart-drawer {
+  border-color: var(--mx-border);
+}
+
+/* Winkelwagen-popup: altijd lichte achtergrond (niet header-zwart) */
+.cart-notification,
+#cart-notification.cart-notification {
+  --color-background: 255, 255, 255;
+  --color-foreground: 34, 34, 34;
+  --color-button: 201, 41, 10;
+  --color-button-text: 255, 255, 255;
+  --color-link: 201, 41, 10;
+  --color-shadow: 0, 0, 0;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #222222 !important;
+  border: 1px solid #e5e5e5 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+}
+
+.cart-notification .cart-notification__heading,
+.cart-notification .cart-notification__heading *,
+.cart-notification .cart-notification-product__name,
+.cart-notification .cart-notification-product,
+.cart-notification .cart-notification-product *,
+.cart-notification .product-option,
+.cart-notification dl,
+.cart-notification dt,
+.cart-notification dd {
+  color: #222222 !important;
+}
+
+.cart-notification .cart-notification__heading .icon-checkmark {
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+.cart-notification .cart-notification__close,
+.cart-notification .cart-notification__close .icon,
+.cart-notification .modal__close-button {
+  color: #444444 !important;
+}
+
+.cart-notification .cart-notification__links .button--secondary {
+  background: #ffffff !important;
+  border: 1px solid var(--motox-brand-red, #c9290a) !important;
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+.cart-notification .cart-notification__links .button--secondary:hover {
+  background: var(--motox-brand-red, #c9290a) !important;
+  color: #ffffff !important;
+}
+
+.cart-notification .cart-notification__links .button--primary {
+  background-color: var(--mx-green, #00a900) !important;
+  border-color: var(--mx-green, #00a900) !important;
+  color: #ffffff !important;
+}
+
+.cart-notification .cart-notification__links .button--primary:hover {
+  background-color: var(--mx-green-dark, #008f00) !important;
+  border-color: var(--mx-green-dark, #008f00) !important;
+}
+
+.cart-notification .cart-notification__links .link,
+.cart-notification .cart-notification__links .button-label {
+  color: #555555 !important;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.cart-notification .cart-notification__links .link:hover,
+.cart-notification .cart-notification__links .button-label:hover {
+  color: var(--motox-brand-red, #c9290a) !important;
+}
+
+.gradient.motox-related-section,
+.motox-featured-collection,
+.motox-collection-section {
+  --color-background: 247, 247, 247;
+}

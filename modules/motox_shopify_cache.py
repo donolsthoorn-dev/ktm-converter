@@ -11,6 +11,7 @@ Caches:
   cache/motox/shopify_sku_to_product_id.json — sku -> product id
   cache/motox/shopify_sku_to_variant_id.json — sku -> variant id
   cache/motox/shopify_sku_to_price.json      — sku -> current Shopify price (string)
+  cache/motox/shopify_sku_to_inventory_policy.json — sku -> CONTINUE|DENY
   cache/motox/shopify_sku_to_customs.json    — sku -> {hs, country}
   cache/motox/shopify_sku_to_article.json    — sku -> article_numbers JSON
   cache/motox/shopify_handle_to_product_id.json — handle -> product id
@@ -40,6 +41,7 @@ PRODUCTS_INDEX_FILE = CACHE_DIR / "shopify_products_index.json"
 SKU_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_sku_to_product_id.json"
 SKU_TO_VARIANT_ID_FILE = CACHE_DIR / "shopify_sku_to_variant_id.json"
 SKU_TO_PRICE_FILE = CACHE_DIR / "shopify_sku_to_price.json"
+SKU_TO_INVENTORY_POLICY_FILE = CACHE_DIR / "shopify_sku_to_inventory_policy.json"
 SKU_TO_CUSTOMS_FILE = CACHE_DIR / "shopify_sku_to_customs.json"
 SKU_TO_ARTICLE_FILE = CACHE_DIR / "shopify_sku_to_article.json"
 HANDLE_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_handle_to_product_id.json"
@@ -75,6 +77,7 @@ _BULK_QUERY = """{
               id
               sku
               price
+              inventoryPolicy
               inventoryItem {
                 harmonizedSystemCode
                 countryCodeOfOrigin
@@ -385,6 +388,9 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
                             "sku": sku,
                             "variant_id": _gid_num(gid) if gid else "",
                             "price": (obj.get("price") or "").strip(),
+                            "inventory_policy": (
+                                obj.get("inventoryPolicy") or ""
+                            ).strip().upper(),
                             "hs": (inv.get("harmonizedSystemCode") or "").strip(),
                             "country": (inv.get("countryCodeOfOrigin") or "").strip(),
                             "customs_seen": "inventoryItem" in obj,
@@ -416,6 +422,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     sku_to_pid: dict[str, str] = {}
     sku_to_vid: dict[str, str] = {}
     sku_to_price: dict[str, str] = {}
+    sku_to_inventory_policy: dict[str, str] = {}
     sku_to_customs: dict[str, dict[str, str]] = {}
     sku_to_article: dict[str, str] = {}
     handle_to_pid: dict[str, str] = {}
@@ -440,10 +447,12 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                 s = entry.strip()
                 vid = ""
                 price = ""
+                inv_policy = ""
             else:
                 s = (entry.get("sku") or "").strip()
                 vid = (entry.get("variant_id") or "").strip()
                 price = (entry.get("price") or "").strip()
+                inv_policy = (entry.get("inventory_policy") or "").strip().upper()
                 if entry.get("customs_seen"):
                     sku_to_customs[s.upper()] = {
                         "hs": (entry.get("hs") or "").strip(),
@@ -469,6 +478,11 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                     sku_to_price[s] = price
                 if s.upper() not in sku_to_price:
                     sku_to_price[s.upper()] = price
+            if inv_policy in ("CONTINUE", "DENY"):
+                if s not in sku_to_inventory_policy:
+                    sku_to_inventory_policy[s] = inv_policy
+                if s.upper() not in sku_to_inventory_policy:
+                    sku_to_inventory_policy[s.upper()] = inv_policy
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     SKUS_FILE.write_text(
@@ -486,6 +500,9 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     SKU_TO_PRICE_FILE.write_text(
         json.dumps(sku_to_price, ensure_ascii=False), encoding="utf-8"
     )
+    SKU_TO_INVENTORY_POLICY_FILE.write_text(
+        json.dumps(sku_to_inventory_policy, ensure_ascii=False), encoding="utf-8"
+    )
     SKU_TO_CUSTOMS_FILE.write_text(
         json.dumps(sku_to_customs, ensure_ascii=False), encoding="utf-8"
     )
@@ -502,6 +519,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
+        "sku_to_inventory_policy": len(sku_to_inventory_policy),
         "sku_to_customs": len(sku_to_customs),
         "sku_to_article": len(sku_to_article),
         "handles": len(handle_to_pid),
@@ -510,7 +528,8 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     print(
         f"Motox-cache geschreven: {summary['products']} producten, "
         f"{summary['skus']} SKUs, {summary['sku_to_variant_id']} variant-ids, "
-        f"{summary['sku_to_price']} prijzen → {CACHE_DIR}",
+        f"{summary['sku_to_price']} prijzen, "
+        f"{summary['sku_to_inventory_policy']} inventory policies → {CACHE_DIR}",
         flush=True,
     )
     return summary
@@ -556,6 +575,7 @@ def load_motox_indexes() -> dict:
       sku_to_product_id: dict[str, str]
       sku_to_variant_id: dict[str, str]
       sku_to_price: dict[str, str]
+      sku_to_inventory_policy: dict[str, str]
       sku_to_customs: dict[str, dict]
       sku_to_article: dict[str, str]
       handle_to_product_id: dict[str, str]
@@ -566,6 +586,7 @@ def load_motox_indexes() -> dict:
     sku_to_pid = _load_json(SKU_TO_PRODUCT_ID_FILE, {})
     sku_to_vid = _load_json(SKU_TO_VARIANT_ID_FILE, {})
     sku_to_price = _load_json(SKU_TO_PRICE_FILE, {})
+    sku_to_inventory_policy = _load_json(SKU_TO_INVENTORY_POLICY_FILE, {})
     sku_to_customs = _load_json(SKU_TO_CUSTOMS_FILE, {})
     sku_to_article = _load_json(SKU_TO_ARTICLE_FILE, {})
     handle_to_pid = _load_json(HANDLE_TO_PRODUCT_ID_FILE, {})
@@ -587,6 +608,9 @@ def load_motox_indexes() -> dict:
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
+        "sku_to_inventory_policy": (
+            len(sku_to_inventory_policy) if isinstance(sku_to_inventory_policy, dict) else 0
+        ),
         "sku_to_customs": len(sku_to_customs) if isinstance(sku_to_customs, dict) else 0,
         "sku_to_article": len(sku_to_article) if isinstance(sku_to_article, dict) else 0,
         "handles": len(handles),
@@ -600,6 +624,9 @@ def load_motox_indexes() -> dict:
         "sku_to_product_id": sku_to_pid,
         "sku_to_variant_id": sku_to_vid,
         "sku_to_price": sku_to_price,
+        "sku_to_inventory_policy": (
+            sku_to_inventory_policy if isinstance(sku_to_inventory_policy, dict) else {}
+        ),
         "sku_to_customs": sku_to_customs if isinstance(sku_to_customs, dict) else {},
         "sku_to_article": sku_to_article if isinstance(sku_to_article, dict) else {},
         "handle_to_product_id": handle_to_pid,

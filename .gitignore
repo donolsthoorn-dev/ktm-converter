@@ -43,6 +43,11 @@ env/
 /shopify_skus.json
 cache/*.json
 motox/Putoline/state/
+cache/motox/*.sqlite
+cache/motox/fitment_bulk.jsonl
+cache/ktm/*.sqlite
+cache/ktm/*.jsonl
+ktm/garage/host/stage/
 output/logs/
 *.log
 
@@ -86,5 +91,11 @@ motox/e-bihr/ymm-filter-data-ebihr-*.csv
 # converter/ (Next.js)
 # ------------------------------
 converter/node_modules/
+motox/garage/.shopify/
+motox/garage/node_modules/
+motox/garage/data/
+ktm/garage/data/
+motox/garage/host/stage/
+motox/garage/host/.vercel/
 converter/.next/
 converter/out/

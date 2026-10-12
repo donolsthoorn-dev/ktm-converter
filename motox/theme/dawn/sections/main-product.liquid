@@ -1,3 +1,11 @@
+{%- liquid
+  assign show_frame_sizes = false
+  for collection in product.collections
+    if collection.handle == 'mtb-fietsen' or collection.handle == 'ktm-bikes'
+      assign show_frame_sizes = true
+    endif
+  endfor
+-%}
 <product-info
   id="MainProduct-{{ section.id }}"
   class="section-{{ section.id }}-padding gradient color-{{ section.settings.color_scheme }}"
@@ -5,6 +13,9 @@
   data-product-id="{{ product.id }}"
   data-update-url="true"
   data-url="{{ product.url }}"
+  {% if show_frame_sizes %}
+    data-frame-sizes-src="{{ 'ktm-frame-sizes-2025.jpg' | asset_url }}"
+  {% endif %}
   {% if section.settings.image_zoom == 'hover' %}
     data-zoom-on-hover
   {% endif %}
