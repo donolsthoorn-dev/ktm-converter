@@ -52,6 +52,17 @@ Werkt bij op welke motor een product past, als dat veranderd is. Maximaal 500 pr
 
 ## Motox
 
+### 02:15 — Putoline
+
+Haalt het Kroon-assortiment op en werkt Motox bij. De aanroep gaat via de VPS, omdat de API alleen dat adres toelaat.
+
+- prijs, barcode en gewicht aanpassen als ze afwijken
+- een nieuw artikelnummer met prijs aanmaken en op de webshop zetten
+- een artikel dat uit het assortiment verdwijnt alleen melden, niet verbergen
+- de voorraadindicatie alleen melden, niet als aantal wegschrijven
+
+De vijf oude kassa-artikelen 70630, 74016, 74026, 74036 en 74089 blijven staan. Workflow: `motox_putoline.yml`.
+
 ### 21:15 — SEO teksten
 
 Schrijft de titel, de korte Google-tekst en de alt-tekst van de foto. Eerst producten die te koop zijn en op voorraad liggen, daarna de rest. Maximaal 4000 per nacht.

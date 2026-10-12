@@ -31,6 +31,7 @@ Python-scripts houden hun bestaande bestandsnaam. Alleen de workflowbestanden zi
 
 ## Blijft `motox_`
 
+- `motox_putoline.yml` — nachtelijke Kroon-delta (prijs, EAN, gewicht, nieuwe artikelen), 02:15
 - `motox_ebihr_seo.yml`
 - `motox_ebihr_sync.yml`
 - `motox_deactivate_products_without_image.yml`

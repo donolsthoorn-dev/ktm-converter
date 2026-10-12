@@ -42,6 +42,7 @@ env/
 # Oude kopie; canoniek is cache/shopify_skus.json (zie modules/shopify_client.py)
 /shopify_skus.json
 cache/*.json
+motox/Putoline/state/
 output/logs/
 *.log
 

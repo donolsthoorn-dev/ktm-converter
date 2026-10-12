@@ -9,6 +9,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
 
 | Inhoud (voorheen jobnaam) | Workflow / modus | Lokale tijd |
 |---------------------------|------------------|-------------|
+| `motox_putoline` | `motox_putoline.yml` (Kroon-assortiment naar Motox: prijs, EAN, gewicht, nieuwe artikelen) | Dagelijks **02:15** |
 | `ktm_job_worker_nightly` | `ktm_job_worker.yml` | Dagelijks **03:00** |
 | `ktm_shopify_auto_deactivate_after_policy` | `ktm_shopify_auto_deactivate_invalid_products.yml` (apply) | Dagelijks **04:00** |
 | `ktm_shopify_publish_sellable_active` | `ktm_shopify_publish_sellable_active_products.yml` (apply) | Dagelijks **04:30** |
@@ -19,7 +20,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
 | `ktm_motox_synkro_clone_missing` | `shops_synkro_clone_missing.yml` (tag-clone telling-SKU’s ktm-shop.nl → Motox POS, max 40) | **07:30** t/m **22:30**, elk half uur (**:30**) |
 
 - dispatch stuurt `dispatch_log_id` mee → GitHub-run koppelt aan de juiste `workflow_dispatch_log`-rij (geen “laatste rij”-verwarring meer)
-- `shopify_write_lock_busy`: geen nieuwe dispatch naar GitHub zolang een Shopify-write-run `run_state=running` is (log `skipped`, geen spook-`queued`). Lock-lijst: price/ETA, customs, auto-deactivate, publish, GTIN-fill, Synkro clone-missing (`shops_synkro_clone_missing.yml`).
+- `shopify_write_lock_busy`: geen nieuwe dispatch naar GitHub zolang een Shopify-write-run `run_state=running` is (log `skipped`, geen spook-`queued`). Lock-lijst: price/ETA, customs, auto-deactivate, publish, GTIN-fill, Synkro clone-missing (`shops_synkro_clone_missing.yml`), Putoline (`motox_putoline.yml`).
 - Synkro clone-missing (`shops_synkro_clone_missing`): dry-run lokaal met `python3 scripts/motox_synkro_clone_missing.py`; apply tagt max 40 KTM-producten met `synkro-clone-ktm-shop-nederland`. Telling-CSV of `motox/telling_skus.txt` moet in de repo staan voor CI.
 - verweesde `queued` zonder `github_run_id` (>2u) → `dispatch_never_started`
 - guard: `price_eta` start niet als er al een `scope=policy` run in progress is (tussenliggende uren worden dan bewust overgeslagen)
@@ -56,6 +57,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/033_gtin_fill_nightly_and_staging.sql` (GTIN-fill 05:30 NL + staging `proposed_barcode`)
    - `converter/supabase/migrations/034_motox_synkro_clone_missing_hourly.sql` (Synkro tag-clone 07:30–22:30 NL)
    - `converter/supabase/migrations/035_rename_github_workflow_files.sql` (workflowbestanden `ktm_` / `shops_`; zie `docs/workflow-namen.md`)
+   - `converter/supabase/migrations/036_motox_putoline_nightly.sql` (Putoline-delta 02:15 NL)
 2. Create vault secret for GitHub API token (required):
 
 ```sql

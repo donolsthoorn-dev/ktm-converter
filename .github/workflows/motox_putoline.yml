@@ -1,0 +1,61 @@
+# Putoline-delta voor Motox. Roept de Kroon-API aan vanaf de VPS en werkt
+# prijs, EAN, gewicht en nieuwe artikelnummers bij.
+#
+# De API staat alleen het uitgaande adres van 149.210.206.111 toe, dus de
+# runner logt daarop in en start het script. Zelfde script draait om 02:15
+# ook via cron op de VPS (CRON_TZ=Europe/Amsterdam).
+#
+# Secret: MOTOX_VPS_SSH_KEY (privésleutel voor motoxshop@149.210.206.111).
+# Shopify- en Kroon-sleutels staan op de VPS, niet in deze workflow.
+
+name: motox_putoline
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = delta wegschrijven, false = alleen dry-run"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
+
+jobs:
+  motox_putoline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency:
+      group: shopify-write-lock-motox
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Delta op de VPS
+        env:
+          SSH_KEY: ${{ secrets.MOTOX_VPS_SSH_KEY }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "Secret MOTOX_VPS_SSH_KEY ontbreekt."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/motox_putoline
+          chmod 600 ~/.ssh/motox_putoline
+          SSH="ssh -i ~/.ssh/motox_putoline -o StrictHostKeyChecking=accept-new"
+          $SSH motoxshop@149.210.206.111 "mkdir -p /home/motoxshop/Putoline/state"
+          scp -i ~/.ssh/motox_putoline -o StrictHostKeyChecking=accept-new \
+            motox/Putoline/motox_putoline_delta.py \
+            motox/Putoline/motox_putoline_fetch.php \
+            motoxshop@149.210.206.111:/home/motoxshop/Putoline/
+          flag=""
+          if [ "$APPLY" = "true" ]; then
+            flag="--apply"
+          fi
+          $SSH motoxshop@149.210.206.111 \
+            "python3 /home/motoxshop/Putoline/motox_putoline_delta.py $flag"
