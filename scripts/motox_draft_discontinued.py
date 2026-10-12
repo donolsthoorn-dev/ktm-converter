@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Zet Motox-producten op draft als Bihr ze als discontinued markeert.
+"""Zet Motox-producten op draft als Bihr ze niet meer levert.
 
-Alleen producten waarvan élke variant-SKU discontinued is. Een product met
-nog een leverbare variant blijft actief.
+Een product gaat op draft als het uit de Bihr-catalogus komt en geen enkele
+variant nog leverbaar is: elke variant is discontinued of uit de catalogus
+verdwenen. Een maat die nog in de catalogus staat blijft het product actief,
+ook als de voorraad tijdelijk 0 is.
 
 Standaard een proefrun, zonder Shopify-schrijfacties:
 
@@ -27,8 +29,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from modules.ebihr.discontinued import (  # noqa: E402
-    discontinued_part_numbers,
-    select_fully_discontinued,
+    catalog_part_status,
+    select_products_without_bihr_offer,
 )
 from modules.ebihr.motox_publish import MotoxAdmin  # noqa: E402
 from modules.motox_shopify_cache import load_motox_indexes  # noqa: E402
@@ -68,16 +70,20 @@ def main() -> int:
 
     catalog = _catalog_dir(args.catalog)
     print(f"Bihr-catalogus: {catalog}", flush=True)
-    discontinued = discontinued_part_numbers(catalog)
-    print(f"Discontinued bij Bihr: {len(discontinued)}", flush=True)
+    catalog_parts, discontinued = catalog_part_status(catalog)
+    print(
+        f"Partnummers: {len(catalog_parts)}, waarvan discontinued: {len(discontinued)}",
+        flush=True,
+    )
 
     indexes = load_motox_indexes()
-    targets = select_fully_discontinued(
+    targets = select_products_without_bihr_offer(
+        catalog_parts,
         discontinued,
         indexes["sku_to_product_id"],
         indexes["products_index"],
     )
-    print(f"Actief in de shop en helemaal discontinued: {len(targets)}", flush=True)
+    print(f"Actief in de shop zonder leverbare Bihr-variant: {len(targets)}", flush=True)
     for item in targets[:12]:
         print(f"  {item['handle']}  {item['title']}", flush=True)
     if len(targets) > 12:

@@ -11,7 +11,9 @@ Oud Bihr-nummer en leverancierscode gaan naar variant-metafields, een
 zoeklijst op het product, en ``ref:``-tags zodat de sitezoekfunctie ze vindt.
 Bihr-stock (Value) → Shopify ``inventoryPolicy`` (CONTINUE/DENY) op bestaande
 varianten: delta t.o.v. Motox-cache. Shopify-qty blijft meestal 0; verkoopbaarheid
-hangt af van doorverkopen (CONTINUE).
+hangt af van doorverkopen (CONTINUE). Een variant die uit de Bihr-catalogus
+verdwijnt, of discontinued is zonder voorraadregel, gaat op DENY. Blijft er
+geen leverbare variant over, dan gaat het product op draft.
 
   # Dry-run tegen bestaande raw:
   python3 scripts/motox_ebihr_sync.py --raw-dir motox/e-bihr/raw/<ts> --dry-run
@@ -38,6 +40,7 @@ Prijzen: standaard alleen delta (Bihr ≠ huidige Motox-prijs uit cache).
   --force-all-prices  schrijft alle matched prijzen opnieuw (oude gedrag)
 
 Inventory policy: standaard delta (Bihr-stock ≠ Motox-cache CONTINUE/DENY).
+  Verdwenen of discontinued varianten zonder voorraadregel worden DENY.
   --force-all-stock-policies  schrijft alle matched policies opnieuw
 """
 
@@ -62,8 +65,9 @@ from modules.ebihr.build_products import (  # noqa: E402
     inventory_policy_from_bihr_stock,
 )
 from modules.ebihr.discontinued import (  # noqa: E402
-    discontinued_part_numbers,
-    select_fully_discontinued,
+    catalog_part_status,
+    select_products_without_bihr_offer,
+    variants_to_block,
 )
 from modules.ebihr.build_ymm import build_ymm_from_raw  # noqa: E402
 from modules.ebihr.client import BihrClient  # noqa: E402
@@ -376,18 +380,27 @@ def main() -> int:
         if articles_def_error:
             log.warning("Artikelnummer-definities: %s", articles_def_error)
 
-    # --- Discontinued: niet publiceren, bestaande live producten op draft ---
+    catalog_parts: set[str] = set()
+    discontinued_parts: set[str] = set()
+    if do_draft or do_stock_policy:
+        catalog_parts, discontinued_parts = catalog_part_status(raw_dir)
+        log.info(
+            "Bihr-catalogus: %s partnummers, waarvan %s discontinued",
+            len(catalog_parts),
+            len(discontinued_parts),
+        )
+
+    # --- Niet meer leverbaar bij Bihr: live product op draft ---
     if do_draft:
-        discontinued = discontinued_part_numbers(raw_dir)
-        targets = select_fully_discontinued(
-            discontinued,
+        targets = select_products_without_bihr_offer(
+            catalog_parts,
+            discontinued_parts,
             sku_to_pid,
             products_index,
         )
         draft_targets = len(targets)
         log.info(
-            "Discontinued bij Bihr: %s; actief in Motox en helemaal discontinued: %s",
-            len(discontinued),
+            "Actief in Motox zonder leverbare Bihr-variant: %s",
             draft_targets,
         )
         for item in targets:
@@ -409,7 +422,7 @@ def main() -> int:
                     "action": "draft",
                     "handle": item["handle"],
                     "ok": "1",
-                    "detail": "discontinued",
+                    "detail": "niet meer leverbaar bij Bihr",
                 }
             )
             if not dry_run:
@@ -909,6 +922,24 @@ def main() -> int:
                     continue
             by_pid_policy.setdefault(pid, []).append((vid, desired))
 
+        blocked, blocked_already_deny = variants_to_block(
+            catalog_parts,
+            discontinued_parts,
+            seen_skus,
+            sku_to_pid,
+            sku_to_vid,
+            sku_to_shop_policy,
+            respect_current=use_policy_delta,
+        )
+        stock_policy_unchanged += blocked_already_deny
+        for pid, pairs in blocked.items():
+            have = {vid for vid, _pol in by_pid_policy.get(pid, [])}
+            extra = [(vid, pol) for vid, pol in pairs if vid not in have]
+            if not extra:
+                continue
+            stock_policy_checked += len(extra)
+            by_pid_policy.setdefault(pid, []).extend(extra)
+
         n_policy_products = 0
         for pid, pairs in by_pid_policy.items():
             if args.max_stock_policy_updates and n_policy_products >= args.max_stock_policy_updates:
@@ -1026,7 +1057,7 @@ def main() -> int:
             )
             f.write(f"- publish channels: **{publish_ok}** (errors {publish_errors})\n")
             f.write(
-                f"- discontinued op draft: **{drafted}** "
+                f"- niet meer leverbaar bij Bihr op draft: **{drafted}** "
                 f"van {draft_targets} (errors {draft_errors})\n"
             )
             f.write(

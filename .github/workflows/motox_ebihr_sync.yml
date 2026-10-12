@@ -4,7 +4,9 @@
 # op bestaande producten bijgewerkt als ze leeg zijn of afwijken.
 # Bihr-stock Value → Shopify inventoryPolicy (CONTINUE/DENY) op bestaande
 # varianten (delta); Shopify-qty blijft meestal 0.
-# Discontinued bij Bihr: niet publiceren, en een live product op draft zetten.
+# Een variant die uit de catalogus verdwijnt, of discontinued is zonder
+# voorraadregel, gaat op DENY. Blijft er geen leverbare variant over, dan
+# gaat het live product op draft.
 #
 # Secrets:
 #   BIHR_USERNAME, BIHR_PASSWORD
