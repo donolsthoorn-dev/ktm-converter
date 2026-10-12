@@ -2,7 +2,8 @@
 #
 # Elke nacht eerst actieve producten mét voorraad, daarna de rest.
 # 4000 producten blijven binnen de 6 uur limiet van GitHub Actions.
-# Een volgende run slaat gevulde titel, omschrijving en alt over.
+# Een volgende run slaat een goede titel, omschrijving en alt over.
+# Een afgekapte titel en een Engelse of afgekapte omschrijving worden wel vervangen.
 # HOMNN en barcode worden niet aangeraakt.
 #
 # Deelt shopify-write-lock-ktm met de andere ktm-shop-jobs, dus deze wacht

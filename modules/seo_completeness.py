@@ -93,6 +93,58 @@ def marketing_lines(plain: str) -> list[str]:
     return lines
 
 
+_ENGLISH_WORDS = frozenset({
+    "the", "and", "with", "for", "from", "your", "this", "that", "made",
+    "high", "quality", "light", "extremely", "included", "mounting",
+    "perfectly", "surface", "visual", "material", "supply", "workmanship",
+    "integrated", "simplifies", "optimised", "optimized", "changing",
+    "highest", "scope", "look", "motorcycle",
+})
+_DUTCH_WORDS = frozenset({
+    "de", "het", "een", "van", "voor", "met", "op", "naar", "uit", "door",
+    "bij", "niet", "ook", "of", "en", "gemaakt", "origineel", "onderdeel",
+    "is", "zijn", "wordt", "heeft", "deze", "dit", "om", "als", "tot",
+})
+_TITLE_FILLER = _DUTCH_WORDS | frozenset({"uw", "onze", "jouw", "in", "aan", "te"})
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def title_needs_rewrite(seo_title: str, product_title: str, vendor: str = "KTM") -> bool:
+    """Lege titel, of een afgekapte productnaam zoals 'Fly screen kit' zonder het model."""
+    current = collapse_ws(seo_title)
+    proposed = propose_seo_title(product_title, vendor)
+    if not current:
+        return True
+    if current == proposed:
+        return False
+    full = collapse_ws(product_title)
+    cur = current.casefold()
+    if full and full.casefold().startswith(cur) and len(current) + 3 < len(full):
+        return True
+    if proposed and proposed.casefold().startswith(cur) and len(current) + 3 < len(proposed):
+        return True
+    return False
+
+
+def description_needs_rewrite(seo_description: str, product_title: str = "") -> bool:
+    """Leeg, afgekapt, Engels, of alleen een herhaling van de productnaam."""
+    desc = collapse_ws(seo_description)
+    if not desc or len(desc) > SEO_DESC_MAX or "…" in desc:
+        return True
+    words = _words(desc)
+    title_words = _words(product_title)
+    if title_words and len(words & title_words) >= min(3, len(title_words)):
+        extra = words - title_words - _TITLE_FILLER
+        if len(extra) < 3:
+            return True
+    english = words & _ENGLISH_WORDS
+    dutch = words & _DUTCH_WORDS
+    return len(english) >= 2 and len(english) > len(dutch)
+
+
 def propose_seo_title(title: str, vendor: str = "KTM") -> str:
     t = collapse_ws(title)
     v = collapse_ws(vendor) or "KTM"

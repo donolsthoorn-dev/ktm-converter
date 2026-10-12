@@ -6,7 +6,9 @@ Titel en alt zijn vaste regels. De meta-omschrijving komt van hetzelfde model
 als de Motox e-bihr-job, zonder "Past op". HOMNN in de producttekst blijft staan.
 Barcode blijft bij ktm_shopify_gtin_fill.
 
-Alleen lege velden (fill-if-empty). Zonder --apply geen writes.
+Lege velden worden gevuld. Een afgekapte titel en een Engelse of afgekapte
+import-omschrijving worden overschreven. Een goede Nederlandse omschrijving
+blijft staan. Zonder --apply geen writes.
 
   python3 scripts/ktm_seo.py --limit 5
   python3 scripts/ktm_seo.py --limit 5 --apply
@@ -36,12 +38,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
+from modules.env_loader import load_project_env  # noqa: E402
+
+load_project_env()
+
 import config  # noqa: E402
 from modules.seo_completeness import (  # noqa: E402
+    description_needs_rewrite,
     propose_image_alt,
     propose_seo_title,
     strip_homnn_plain,
     strip_html,
+    title_needs_rewrite,
 )
 
 _motox_seo_path = ROOT / "scripts" / "motox_ebihr_seo_descriptions.py"
@@ -50,6 +58,10 @@ if _spec is None or _spec.loader is None:
     raise SystemExit(f"Kan {_motox_seo_path} niet laden")
 motox_seo = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(motox_seo)
+
+# backstock = actief zonder voorraad. Concepten staan niet in Google.
+_BATCHES = dict(motox_seo._BATCH_QUERIES)
+_BATCHES["backstock"] = ["status:active inventory_total:<=0"]
 
 CACHE_PATH = ROOT / "cache" / "ktm" / "seo_completeness_descriptions.json"
 
@@ -126,8 +138,16 @@ def _needs_alt(row: dict) -> bool:
     return bool(media) and all(not m["alt"] for m in media)
 
 
+def _needs_title(row: dict) -> bool:
+    return title_needs_rewrite(row["seo_title"], row["title"], row["vendor"] or "KTM")
+
+
+def _needs_description(row: dict) -> bool:
+    return description_needs_rewrite(row["seo_description"], row["title"])
+
+
 def _needs_seo(row: dict) -> bool:
-    return not row["seo_title"] or not row["seo_description"] or _needs_alt(row)
+    return _needs_title(row) or _needs_description(row) or _needs_alt(row)
 
 
 def iter_products(sess, url, token, *, handles: list[str], limit: int, batch: str):
@@ -153,13 +173,13 @@ def iter_products(sess, url, token, *, handles: list[str], limit: int, batch: st
                 print(f"Overgeslagen {handle} (niet gevonden of gearchiveerd)", flush=True)
                 continue
             if not _needs_seo(row):
-                print(f"Overgeslagen {handle} (SEO-titel, omschrijving en alt bestaan al)", flush=True)
+                print(f"Overgeslagen {handle} (titel, omschrijving en alt zijn al in orde)", flush=True)
                 continue
             yielded += 1
             yield row
         return
 
-    for query in motox_seo._BATCH_QUERIES[batch]:
+    for query in _BATCHES[batch]:
         cursor = None
         while target is None or yielded < target:
             body = motox_seo._gql(sess, url, token, _QUERY_PAGE, {"c": cursor, "q": query})
@@ -180,7 +200,7 @@ def iter_products(sess, url, token, *, handles: list[str], limit: int, batch: st
 
 
 def _describe(row: dict, *, call, model: str, cache: dict) -> tuple[str, str]:
-    if row["seo_description"]:
+    if row["seo_description"] and not _needs_description(row):
         return row["seo_description"], "bestaand"
     plain = strip_homnn_plain(strip_html(row["body_html"]))[:700]
     payload = {
@@ -217,7 +237,7 @@ def main() -> int:
     ap.add_argument("--handle", action="append", default=[], help="Alleen deze handle (herhaalbaar)")
     ap.add_argument(
         "--batch",
-        choices=tuple(motox_seo._BATCH_QUERIES),
+        choices=tuple(_BATCHES),
         default="priority",
         help="priority = eerst voorraad, daarna de rest",
     )
@@ -261,7 +281,13 @@ def main() -> int:
         limit=args.limit,
         batch=args.batch,
     ):
-        seo_title = product["seo_title"] or propose_seo_title(product["title"], product["vendor"] or "KTM")
+        write_title = _needs_title(product)
+        write_desc = _needs_description(product)
+        seo_title = (
+            propose_seo_title(product["title"], product["vendor"] or "KTM")
+            if write_title
+            else product["seo_title"]
+        )
         description, bron = _describe(product, call=call, model=model, cache=cache)
         if bron not in ("bestaand", "cache"):
             time.sleep(args.sleep)
@@ -270,14 +296,14 @@ def main() -> int:
 
         fout = ""
         if args.apply:
-            if not product["seo_title"] or (description and not product["seo_description"]):
+            if (write_title and seo_title) or (write_desc and description):
                 fout = motox_seo._write_seo(
                     sess,
                     shop_url,
                     token,
                     product["id"],
-                    seo_title if not product["seo_title"] else "",
-                    description if description and not product["seo_description"] else "",
+                    seo_title if write_title else "",
+                    description if write_desc else "",
                 )
             if not fout and alt_targets:
                 fout = motox_seo._write_alts(
