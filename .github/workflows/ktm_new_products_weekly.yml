@@ -55,16 +55,30 @@ jobs:
           fi
           echo "SSH_KEY length=${#SSH_KEY}"
           install -m 700 -d ~/.ssh
-          # Multiline secret: behoud newlines, strip CR
           printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/ktm_vps
           chmod 600 ~/.ssh/ktm_vps
-          ssh-keygen -y -f ~/.ssh/ktm_vps >/dev/null
-          SSH=(ssh -i ~/.ssh/ktm_vps -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new)
+          if ! ssh-keygen -y -f ~/.ssh/ktm_vps >/dev/null 2>&1; then
+            echo "::error::MOTOX_VPS_SSH_KEY is geen geldige private key."
+            exit 1
+          fi
+
+          # Keepalives + korte poll-SSH: lange stille FTP anders → Broken pipe
+          SSH_OPTS=(
+            -i "$HOME/.ssh/ktm_vps"
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=120
+          )
           HOST="motoxshop@149.210.206.111"
           REMOTE="/home/motoxshop/ktm_project"
 
           echo "SSH connectivity check…"
-          "${SSH[@]}" "$HOST" 'echo ok; hostname; test -d /home/motoxshop/ktm_project'
+          if ! ssh "${SSH_OPTS[@]}" "$HOST" 'echo ok; hostname; test -d /home/motoxshop/ktm_project'; then
+            echo "::error::SSH geweigerd. Zet secret via: gh secret set MOTOX_VPS_SSH_KEY --repo donolsthoorn-dev/ktm-converter < ~/.ssh/id_ed25519"
+            exit 255
+          fi
 
           FLAGS="--brands ${BRANDS}"
           if [ "$SKIP_PIM" = "true" ]; then
@@ -78,7 +92,6 @@ jobs:
           fi
           echo "FLAGS=$FLAGS"
 
-          # Code sync (behoud .env / .venv / input / output op de VPS)
           rsync -az --delete \
             --exclude '.git/' \
             --exclude '.env' \
@@ -91,7 +104,60 @@ jobs:
             --exclude 'ktm/theme/' \
             --exclude 'motox/theme/' \
             --exclude '__pycache__/' \
-            -e "ssh -i $HOME/.ssh/ktm_vps -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            -e "ssh ${SSH_OPTS[*]}" \
             ./ "$HOST:$REMOTE/"
 
-          "${SSH[@]}" "$HOST" "cd $REMOTE && if [ -x .venv/bin/python ]; then .venv/bin/python scripts/run_new_products_weekly.py $FLAGS; else python3 scripts/run_new_products_weekly.py $FLAGS; fi"
+          # Detach: pipeline blijft draaien als GHA-SSH wegvalt; we poll'en het log.
+          RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)_${GITHUB_RUN_ID:-local}"
+          LOG="$REMOTE/output/logs/weekly_${RUN_ID}.log"
+          EXITF="$REMOTE/output/logs/weekly_${RUN_ID}.exit"
+          PIDF="$REMOTE/output/logs/weekly_${RUN_ID}.pid"
+          echo "Remote log: $LOG"
+
+          ssh "${SSH_OPTS[@]}" "$HOST" bash -s <<EOF
+          set -e
+          mkdir -p "$REMOTE/output/logs"
+          cd "$REMOTE"
+          rm -f "$EXITF"
+          nohup bash -c '
+            set +e
+            if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=python3; fi
+            \$PY -u scripts/run_new_products_weekly.py $FLAGS
+            echo \$? > "$EXITF"
+          ' > "$LOG" 2>&1 < /dev/null &
+          echo \$! > "$PIDF"
+          echo "started pid=\$(cat "$PIDF")"
+          EOF
+
+          OFFSET=0
+          while true; do
+            META="$(mktemp)"
+            # Short SSH: dump new log bytes + status (survives NAT better than one long session)
+            ssh "${SSH_OPTS[@]}" "$HOST" \
+              "python3 -c \"
+          import sys
+          from pathlib import Path
+          log, ex, off = Path('$LOG'), Path('$EXITF'), $OFFSET
+          data = log.read_bytes() if log.is_file() else b''
+          sys.stdout.buffer.write(data[off:])
+          sys.stdout.buffer.flush()
+          print(f'OFFSET {len(data)}', file=sys.stderr)
+          print(f'DONE {int(ex.is_file())}', file=sys.stderr)
+          if ex.is_file():
+              print(f'RC {ex.read_text().strip()}', file=sys.stderr)
+          \"" 2>"$META" || true
+
+            OFFSET="$(awk '/^OFFSET /{print \$2}' "$META" | tail -1)"
+            OFFSET="${OFFSET:-0}"
+            DONE="$(awk '/^DONE /{print \$2}' "$META" | tail -1)"
+            if [ "${DONE:-0}" = "1" ]; then
+              RC="$(awk '/^RC /{print \$2}' "$META" | tail -1)"
+              rm -f "$META"
+              echo ""
+              echo "Remote finished with exit=${RC:-1}"
+              exit "${RC:-1}"
+            fi
+            rm -f "$META"
+            echo "[poll] log_bytes=$OFFSET" >&2
+            sleep 20
+          done
