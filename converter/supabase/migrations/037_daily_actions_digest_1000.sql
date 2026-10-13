@@ -8,7 +8,10 @@ security definer
 as $$
   select public.dispatch_github_workflow_with_inputs(
     'daily_actions_digest.yml'::text,
-    jsonb_build_object('send', 'true'),
+    jsonb_build_object(
+      'send', 'true',
+      'until_now', 'false'
+    ),
     false
   );
 $$;

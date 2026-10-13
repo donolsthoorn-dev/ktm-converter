@@ -20,8 +20,15 @@ on:
           - "true"
           - "false"
         default: "false"
+      until_now:
+        description: "true = sinds laatste 10:00 NL tot nu (i.p.v. vaste dag-cutoff)"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
       hours:
-        description: "Optioneel venster in uren (leeg = gisteren 10:00 → vandaag 10:00 NL)"
+        description: "Optioneel venster in uren (leeg = 10:00-logica; negeert until_now)"
         required: false
         default: ""
       dispatch_log_id:
@@ -40,6 +47,7 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       SEND: ${{ github.event.inputs.send || 'false' }}
+      UNTIL_NOW: ${{ github.event.inputs.until_now || 'false' }}
       HOURS: ${{ github.event.inputs.hours || '' }}
     steps:
       - uses: actions/checkout@v6
@@ -93,5 +101,7 @@ jobs:
           fi
           if [[ -n "${HOURS}" ]]; then
             EXTRA+=(--hours "${HOURS}")
+          elif [[ "${UNTIL_NOW}" == "true" ]]; then
+            EXTRA+=(--until-now)
           fi
           python3 scripts/daily_actions_digest.py "${EXTRA[@]}"

@@ -121,17 +121,27 @@ def digest_window(
     *,
     until: datetime | None = None,
     hours: float | None = None,
+    until_now: bool = False,
 ) -> tuple[datetime, datetime]:
-    """Return (since, until) as timezone-aware datetimes in UTC-comparable form."""
+    """Return (since, until) as timezone-aware datetimes in UTC-comparable form.
+
+    - default: vorige 10:00 NL → vandaag 10:00 NL
+    - until_now: meest recente 10:00 NL → nu (alles sinds de laatste digest-cutoff)
+    - hours: nu − N uur → nu
+    """
     now_nl = (until or datetime.now(tz=NL)).astimezone(NL)
     if hours is not None:
         end = now_nl
         start = end - timedelta(hours=hours)
         return start, end
-    # Align to 10:00 NL boundary: if we run at/after 10:00, window ends at today's 10:00.
-    end = now_nl.replace(hour=10, minute=0, second=0, microsecond=0)
-    if now_nl < end:
-        end -= timedelta(days=1)
+    # Meest recente 10:00-grens die al gepasseerd is.
+    boundary = now_nl.replace(hour=10, minute=0, second=0, microsecond=0)
+    if now_nl < boundary:
+        boundary -= timedelta(days=1)
+    if until_now:
+        return boundary, now_nl
+    # Standaard geplande digest: die grens is het einde van het venster.
+    end = boundary
     start = end - timedelta(days=1)
     return start, end
 
@@ -358,23 +368,19 @@ def _parse_metrics(wf: str, text: str) -> dict[str, int]:
             m["ok"] = int(g.group(1))
         return m
     if wf == "motox_putoline.yml":
+        # Summary: delta prijs=N ean=N gewicht=N nieuw=N listing=N sellable=N …
         g = re.search(
-            r"(?:updated|bijgewerkt|nieuw|created|prijs|EAN).*?(\d+)",
+            r"delta\s+prijs=(\d+)\s+ean=(\d+)\s+gewicht=(\d+)\s+"
+            r"nieuw=(\d+)\s+listing=(\d+)\s+sellable=(\d+)",
             text,
-            re.I,
         )
-        # Prefer explicit summary if present
-        for pat, key in (
-            (r"prijzen?[=\s:]+(\d+)", "price"),
-            (r"nieuw(?:e)?[=\s:]+(\d+)", "new"),
-            (r"EAN[=\s:]+(\d+)", "ean"),
-            (r"updated[=\s:]+(\d+)", "updated"),
-        ):
-            gg = re.search(pat, text, re.I)
-            if gg:
-                m[key] = int(gg.group(1))
-        if not m and g:
-            pass  # avoid noisy false positives
+        if g:
+            m["price"] = int(g.group(1))
+            m["ean"] = int(g.group(2))
+            m["weight"] = int(g.group(3))
+            m["new"] = int(g.group(4))
+            m["listing"] = int(g.group(5))
+            m["sellable"] = int(g.group(6))
         return m
     if wf == "ktm_job_worker.yml":
         g = re.search(
@@ -521,8 +527,10 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         mapping = [
             ("price", "prijzen", 10),
             ("ean", "EAN", 11),
-            ("new", "nieuw", 12),
-            ("updated", "bijgewerkt", 13),
+            ("weight", "gewicht", 12),
+            ("new", "nieuw", 13),
+            ("listing", "listing/SEO", 14),
+            ("sellable", "verkoopbaar", 15),
         ]
         for k, label, sort in mapping:
             if totals.get(k):
@@ -683,6 +691,11 @@ def main() -> int:
         help="Optioneel: venster van N uur terug i.p.v. 10:00→10:00",
     )
     ap.add_argument(
+        "--until-now",
+        action="store_true",
+        help="Venster: laatste 10:00 NL → nu (handig na handmatige jobs)",
+    )
+    ap.add_argument(
         "--repo",
         default=os.environ.get("GITHUB_REPOSITORY") or REPO_DEFAULT,
     )
@@ -696,7 +709,7 @@ def main() -> int:
     supabase_url = (os.environ.get("SUPABASE_URL") or "").strip()
     supabase_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
 
-    since, until = digest_window(hours=args.hours)
+    since, until = digest_window(hours=args.hours, until_now=args.until_now)
     print(f"Venster: {since.isoformat()} → {until.isoformat()}", flush=True)
 
     runs = fetch_github_runs(
