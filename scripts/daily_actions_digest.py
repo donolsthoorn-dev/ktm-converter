@@ -16,7 +16,7 @@ import re
 import sys
 import zipfile
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -33,26 +33,38 @@ UTC = timezone.utc
 REPO_DEFAULT = "donolsthoorn-dev/ktm-converter"
 DIGEST_WORKFLOW = "daily_actions_digest.yml"
 
-LABELS: dict[str, str] = {
-    "ktm_price_eta_status_sync.yml": "KTM prijs/ETA",
-    "motox_ebihr_sync.yml": "Motox e-Bihr sync",
-    "motox_ebihr_seo.yml": "Motox e-Bihr SEO",
-    "motox_putoline.yml": "Motox Putoline (Kroon)",
-    "motox_deactivate_products_without_image.yml": "Motox zonder foto op draft",
-    "motox_shopify_gtin_fill.yml": "Motox barcodes vullen",
-    "motox_ymm_derived_fill.yml": "Motox YMM afgeleide velden",
-    "ktm_seo.yml": "KTM SEO",
-    "ktm_new_products_weekly.yml": "KTM nieuwe producten (wekelijks)",
-    "ktm_ymm_delivery.yml": "KTM YMM-levering",
-    "ktm_garage_fitment_deploy.yml": "KTM garage fitment",
-    "ktm_job_worker.yml": "KTM Shopify-spiegel",
-    "ktm_customs_missing_fill.yml": "KTM HS/herkomst aanvullen",
-    "ktm_shopify_gtin_fill.yml": "KTM barcodes vullen",
-    "ktm_shopify_auto_deactivate_invalid_products.yml": "KTM productstatus",
-    "ktm_shopify_publish_sellable_active_products.yml": "KTM leverbare producten publiceren",
-    "shops_category_fill_empty.yml": "Category vullen (KTM + Motox)",
-    "shops_synkro_clone_missing.yml": "Synkro POS-kopieën",
+# Workflows die we meenemen (logs parsen). Prijs/ETA komt uit Supabase.
+TRACKED_WORKFLOWS = {
+    "motox_ebihr_sync.yml",
+    "motox_ebihr_seo.yml",
+    "motox_putoline.yml",
+    "motox_deactivate_products_without_image.yml",
+    "motox_shopify_gtin_fill.yml",
+    "motox_ymm_derived_fill.yml",
+    "ktm_seo.yml",
+    "ktm_new_products_weekly.yml",
+    "ktm_ymm_delivery.yml",
+    "ktm_garage_fitment_deploy.yml",
+    "ktm_job_worker.yml",
+    "ktm_customs_missing_fill.yml",
+    "ktm_shopify_gtin_fill.yml",
+    "ktm_shopify_auto_deactivate_invalid_products.yml",
+    "ktm_shopify_publish_sellable_active_products.yml",
+    "shops_category_fill_empty.yml",
+    "shops_synkro_clone_missing.yml",
 }
+
+GROUP_KTM = "ktm"
+GROUP_MOTOX = "motox"
+GROUP_PUTOLINE = "putoline"
+
+GROUP_TITLES = {
+    GROUP_KTM: "KTM aanpassingen aan producten",
+    GROUP_MOTOX: "Motox aanpassingen aan producten",
+    GROUP_PUTOLINE: "Putoline",
+}
+
+GROUP_ORDER = (GROUP_KTM, GROUP_MOTOX, GROUP_PUTOLINE)
 
 NL_MONTHS = {
     1: "jan",
@@ -80,14 +92,12 @@ NL_WEEKDAYS = {
 
 
 @dataclass
-class Section:
-    title: str
-    lines: list[str] = field(default_factory=list)
-    sort_key: int = 100
+class DigestItem:
+    """Één opsommingsregel onder een groeps-kop."""
 
-    @property
-    def has_content(self) -> bool:
-        return bool(self.lines)
+    group: str
+    text: str
+    sort_key: int = 100
 
 
 def _nl_num(n: int | float) -> str:
@@ -242,9 +252,8 @@ def _sum_int(stats: dict[str, Any], *keys: str) -> int:
     return total
 
 
-def section_price_eta(rows: list[dict[str, Any]]) -> Section | None:
+def items_price_eta(rows: list[dict[str, Any]]) -> list[DigestItem]:
     agg: Counter[str] = Counter()
-    n = 0
     for r in rows:
         if (r.get("workflow_file") or "") != "ktm_price_eta_status_sync.yml":
             continue
@@ -253,36 +262,27 @@ def section_price_eta(rows: list[dict[str, Any]]) -> Section | None:
         stats = r.get("run_stats") or {}
         if not isinstance(stats, dict):
             continue
-        n += 1
         agg["price"] += _sum_int(stats, "price_success")
         agg["eta"] += _sum_int(stats, "eta_success")
         agg["gtin"] += _sum_int(stats, "gtin_success")
         agg["policy"] += _sum_int(stats, "policy_success")
         agg["customs"] += _sum_int(stats, "customs_success")
         agg["product_status"] += _sum_int(stats, "product_status_success")
-    if n == 0 or sum(agg.values()) == 0:
-        return None
-    bits = []
-    if agg["price"]:
-        bits.append(f"prijs {_nl_num(agg['price'])}")
-    if agg["eta"]:
-        bits.append(f"ETA {_nl_num(agg['eta'])}")
-    if agg["gtin"]:
-        bits.append(f"barcodes {_nl_num(agg['gtin'])}")
-    if agg["policy"]:
-        bits.append(f"voorraadbeleid {_nl_num(agg['policy'])}")
-    if agg["customs"]:
-        bits.append(f"HS/herkomst {_nl_num(agg['customs'])}")
-    if agg["product_status"]:
-        bits.append(f"productstatus {_nl_num(agg['product_status'])}")
-    if not bits:
-        return None
-    # Split into two lines if long
-    mid = (len(bits) + 1) // 2
-    lines = ["  " + " · ".join(bits[:mid])]
-    if bits[mid:]:
-        lines.append("  " + " · ".join(bits[mid:]))
-    return Section(LABELS["ktm_price_eta_status_sync.yml"], lines, sort_key=10)
+    items: list[DigestItem] = []
+    mapping = [
+        ("price", "prijs", 10),
+        ("eta", "ETA", 11),
+        ("gtin", "barcodes", 12),
+        ("policy", "voorraadbeleid", 13),
+        ("customs", "HS/herkomst", 14),
+        ("product_status", "productstatus", 15),
+    ]
+    for key, label, sort in mapping:
+        if agg.get(key):
+            items.append(
+                DigestItem(GROUP_KTM, f"{label} {_nl_num(agg[key])}", sort)
+            )
+    return items
 
 
 def _parse_metrics(wf: str, text: str) -> dict[str, int]:
@@ -399,73 +399,154 @@ def _parse_metrics(wf: str, text: str) -> dict[str, int]:
     return m
 
 
-def _metrics_to_lines(wf: str, totals: dict[str, int]) -> list[str] | None:
+def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
     if not any(v > 0 for v in totals.values()):
-        return None
+        return []
+    out: list[DigestItem] = []
     if wf == "shops_synkro_clone_missing.yml":
-        return [f"  {_nl_num(totals['getagd'])} producten getagd"]
-    if wf in ("ktm_seo.yml", "motox_ebihr_seo.yml"):
-        return [f"  {_nl_num(totals['geschreven'])} producten bijgewerkt"]
-    if wf == "motox_ebihr_sync.yml":
-        bits = []
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"Synkro POS-kopieën {_nl_num(totals['getagd'])} getagd",
+                50,
+            )
+        )
+    elif wf == "ktm_seo.yml":
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"SEO {_nl_num(totals['geschreven'])} producten",
+                30,
+            )
+        )
+    elif wf == "motox_ebihr_seo.yml":
+        out.append(
+            DigestItem(
+                GROUP_MOTOX,
+                f"SEO {_nl_num(totals['geschreven'])} producten",
+                30,
+            )
+        )
+    elif wf == "motox_ebihr_sync.yml":
         mapping = [
-            ("created", "nieuw"),
-            ("price", "prijzen"),
-            ("stock_policy", "voorraadbeleid"),
-            ("fitment", "fitment"),
-            ("customs", "HS/herkomst"),
-            ("articles", "artikelen"),
-            ("images", "foto’s"),
-            ("drafted", "op draft"),
+            ("created", "nieuw", 20),
+            ("price", "prijzen", 21),
+            ("stock_policy", "voorraadbeleid", 22),
+            ("fitment", "fitment", 23),
+            ("customs", "HS/herkomst", 24),
+            ("articles", "artikelen", 25),
+            ("images", "foto’s", 26),
+            ("drafted", "op draft", 27),
         ]
-        for k, label in mapping:
+        for k, label, sort in mapping:
             if totals.get(k):
-                bits.append(f"{label} {_nl_num(totals[k])}")
-        if not bits:
-            return None
-        mid = (len(bits) + 1) // 2
-        lines = ["  " + " · ".join(bits[:mid])]
-        if bits[mid:]:
-            lines.append("  " + " · ".join(bits[mid:]))
-        return lines
-    if wf in (
-        "ktm_shopify_gtin_fill.yml",
-        "motox_shopify_gtin_fill.yml",
-        "motox_ymm_derived_fill.yml",
-    ):
-        return [f"  {_nl_num(totals['ok'])} bijgewerkt"]
-    if wf == "ktm_shopify_auto_deactivate_invalid_products.yml":
-        return [f"  {_nl_num(totals['ok'])} producten aangepast"]
-    if wf == "ktm_shopify_publish_sellable_active_products.yml":
-        return [f"  {_nl_num(totals['published'])} producten gepubliceerd"]
-    if wf == "motox_deactivate_products_without_image.yml":
-        return [f"  {_nl_num(totals['draft'])} producten op draft"]
-    if wf == "shops_category_fill_empty.yml":
-        return [f"  {_nl_num(totals['ok'])} producten van category voorzien"]
-    if wf == "ktm_new_products_weekly.yml":
-        return [f"  {_nl_num(totals['geschreven'])} geschreven"]
-    if wf == "ktm_ymm_delivery.yml":
-        return [f"  {_nl_num(totals['ok'])} producten gepusht"]
-    if wf == "motox_putoline.yml":
-        bits = []
-        for k, label in (
-            ("price", "prijzen"),
-            ("ean", "EAN"),
-            ("new", "nieuw"),
-            ("updated", "bijgewerkt"),
-        ):
-            if totals.get(k):
-                bits.append(f"{label} {_nl_num(totals[k])}")
-        return ["  " + " · ".join(bits)] if bits else None
-    if wf == "ktm_job_worker.yml":
-        return [
-            f"  catalogus vernieuwd (~{_nl_num(totals['products'])} producten)"
+                out.append(
+                    DigestItem(GROUP_MOTOX, f"{label} {_nl_num(totals[k])}", sort)
+                )
+    elif wf == "ktm_shopify_gtin_fill.yml":
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"barcodes vullen {_nl_num(totals['ok'])}",
+                70,
+            )
+        )
+    elif wf == "motox_shopify_gtin_fill.yml":
+        out.append(
+            DigestItem(
+                GROUP_MOTOX,
+                f"barcodes vullen {_nl_num(totals['ok'])}",
+                70,
+            )
+        )
+    elif wf == "motox_ymm_derived_fill.yml":
+        out.append(
+            DigestItem(
+                GROUP_MOTOX,
+                f"YMM-velden {_nl_num(totals['ok'])}",
+                92,
+            )
+        )
+    elif wf == "ktm_shopify_auto_deactivate_invalid_products.yml":
+        # Merge visually with price/ETA productstatus: same label family
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"productstatus {_nl_num(totals['ok'])} aangepast",
+                60,
+            )
+        )
+    elif wf == "ktm_shopify_publish_sellable_active_products.yml":
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"leverbare producten publiceren {_nl_num(totals['published'])}",
+                61,
+            )
+        )
+    elif wf == "motox_deactivate_products_without_image.yml":
+        out.append(
+            DigestItem(
+                GROUP_MOTOX,
+                f"zonder foto op draft {_nl_num(totals['draft'])}",
+                91,
+            )
+        )
+    elif wf == "shops_category_fill_empty.yml":
+        # Beide shops; toon onder KTM (één regel)
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"category vullen {_nl_num(totals['ok'])}",
+                80,
+            )
+        )
+    elif wf == "ktm_new_products_weekly.yml":
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"nieuwe producten {_nl_num(totals['geschreven'])}",
+                40,
+            )
+        )
+    elif wf == "ktm_ymm_delivery.yml":
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"YMM-levering {_nl_num(totals['ok'])}",
+                93,
+            )
+        )
+    elif wf == "motox_putoline.yml":
+        mapping = [
+            ("price", "prijzen", 10),
+            ("ean", "EAN", 11),
+            ("new", "nieuw", 12),
+            ("updated", "bijgewerkt", 13),
         ]
-    if wf == "ktm_customs_missing_fill.yml":
+        for k, label, sort in mapping:
+            if totals.get(k):
+                out.append(
+                    DigestItem(GROUP_PUTOLINE, f"{label} {_nl_num(totals[k])}", sort)
+                )
+    elif wf == "ktm_job_worker.yml":
+        out.append(
+            DigestItem(
+                GROUP_KTM,
+                f"catalogus-spiegel ~{_nl_num(totals['products'])} producten",
+                95,
+            )
+        )
+    elif wf == "ktm_customs_missing_fill.yml":
         if totals.get("written"):
-            return [f"  {_nl_num(totals['written'])} bijgewerkt"]
-        return None
-    return None
+            out.append(
+                DigestItem(
+                    GROUP_KTM,
+                    f"HS/herkomst aanvullen {_nl_num(totals['written'])}",
+                    72,
+                )
+            )
+    return out
 
 
 def aggregate_from_logs(
@@ -473,19 +554,19 @@ def aggregate_from_logs(
     repo: str,
     token: str,
     runs: list[dict[str, Any]],
-) -> list[Section]:
+) -> list[DigestItem]:
     by_wf: dict[str, list[int]] = defaultdict(list)
     for r in runs:
         if (r.get("conclusion") or "") != "success":
             continue
         path = (r.get("path") or "").split("/")[-1]
-        if path not in LABELS or path == "ktm_price_eta_status_sync.yml":
+        if path not in TRACKED_WORKFLOWS:
             continue
         by_wf[path].append(int(r["id"]))
 
-    sections: list[Section] = []
+    collected: list[DigestItem] = []
 
-    def work(item: tuple[str, list[int]]) -> Section | None:
+    def work(item: tuple[str, list[int]]) -> list[DigestItem]:
         wf, ids = item
         totals: Counter[str] = Counter()
         for rid in ids:
@@ -496,61 +577,70 @@ def aggregate_from_logs(
                 continue
             for k, v in _parse_metrics(wf, text).items():
                 totals[k] += v
-        lines = _metrics_to_lines(wf, dict(totals))
-        if not lines:
-            return None
-        sort = {
-            "motox_ebihr_sync.yml": 20,
-            "ktm_seo.yml": 30,
-            "motox_ebihr_seo.yml": 31,
-            "ktm_new_products_weekly.yml": 40,
-            "shops_synkro_clone_missing.yml": 50,
-            "ktm_shopify_auto_deactivate_invalid_products.yml": 60,
-            "ktm_shopify_publish_sellable_active_products.yml": 61,
-            "ktm_shopify_gtin_fill.yml": 70,
-            "motox_shopify_gtin_fill.yml": 71,
-            "ktm_customs_missing_fill.yml": 72,
-            "shops_category_fill_empty.yml": 80,
-            "motox_putoline.yml": 90,
-            "motox_deactivate_products_without_image.yml": 91,
-            "motox_ymm_derived_fill.yml": 92,
-            "ktm_ymm_delivery.yml": 93,
-            "ktm_job_worker.yml": 95,
-        }.get(wf, 100)
-        return Section(LABELS[wf], lines, sort_key=sort)
+        return _metrics_to_items(wf, dict(totals))
 
     items = list(by_wf.items())
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        for sec in pool.map(work, items):
-            if sec:
-                sections.append(sec)
-    return sections
+        for batch in pool.map(work, items):
+            collected.extend(batch)
+    return collected
+
+
+def _escape_html(s: str) -> str:
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 def build_digest(
     *,
     since: datetime,
     until: datetime,
-    sections: list[Section],
-) -> tuple[str, str]:
-    subject = f"KTM digest — {_fmt_nl_short(until)}"
-    header = [
-        "KTM / Motox — dagelijkse digest",
-        f"Periode: {_fmt_nl(since)} → {_fmt_nl(until)}",
-        "",
+    items: list[DigestItem],
+) -> tuple[str, str, str]:
+    """Return (subject, text_body, html_body)."""
+    subject = f"Overzicht updates webshops — {_fmt_nl_short(until)}"
+    period = f"Periode: {_fmt_nl(since)} → {_fmt_nl(until)}"
+
+    by_group: dict[str, list[DigestItem]] = defaultdict(list)
+    for it in items:
+        by_group[it.group].append(it)
+
+    text_parts = [period, ""]
+    html_parts = [
+        f"<p>{_escape_html(period)}</p>",
     ]
-    body_sections = [s for s in sorted(sections, key=lambda x: x.sort_key) if s.has_content]
-    if not body_sections:
-        body = "\n".join(header + ["Geen bijgewerkte resultaten in dit venster."])
-        return subject, body
-    parts = list(header)
-    for s in body_sections:
-        parts.append(f"• {s.title}")
-        parts.extend(s.lines)
-        parts.append("")
-    while parts and parts[-1] == "":
-        parts.pop()
-    return subject, "\n".join(parts)
+
+    any_content = False
+    for group in GROUP_ORDER:
+        group_items = sorted(by_group.get(group, []), key=lambda x: x.sort_key)
+        if not group_items:
+            continue
+        any_content = True
+        title = GROUP_TITLES[group]
+        text_parts.append(title)
+        html_parts.append(f"<p><strong>{_escape_html(title)}</strong></p>")
+        html_parts.append("<ul>")
+        for it in group_items:
+            text_parts.append(f"• {it.text}")
+            html_parts.append(f"<li>{_escape_html(it.text)}</li>")
+        html_parts.append("</ul>")
+        text_parts.append("")
+
+    if not any_content:
+        empty = "Geen bijgewerkte resultaten in dit venster."
+        text_parts.append(empty)
+        html_parts.append(f"<p>{_escape_html(empty)}</p>")
+
+    while text_parts and text_parts[-1] == "":
+        text_parts.pop()
+
+    text_body = "\n".join(text_parts)
+    html_body = "\n".join(html_parts)
+    return subject, text_body, html_body
 
 
 def send_resend(
@@ -560,6 +650,7 @@ def send_resend(
     to_addrs: list[str],
     subject: str,
     text: str,
+    html: str,
 ) -> dict[str, Any]:
     resp = requests.post(
         "https://api.resend.com/emails",
@@ -569,6 +660,7 @@ def send_resend(
             "to": to_addrs,
             "subject": subject,
             "text": text,
+            "html": html,
         },
         timeout=60,
     )
@@ -612,7 +704,7 @@ def main() -> int:
     )
     print(f"GitHub runs in venster: {len(runs)}", flush=True)
 
-    sections: list[Section] = []
+    items: list[DigestItem] = []
     if supabase_url and supabase_key:
         try:
             rows = fetch_dispatch_logs(
@@ -622,28 +714,26 @@ def main() -> int:
                 until=until,
             )
             print(f"workflow_dispatch_log: {len(rows)}", flush=True)
-            pe = section_price_eta(rows)
-            if pe:
-                sections.append(pe)
+            items.extend(items_price_eta(rows))
         except Exception as e:
             print(f"warn: supabase dispatch log: {e}", file=sys.stderr)
     else:
         print("warn: geen Supabase-credentials; prijs/ETA-stats overgeslagen", file=sys.stderr)
 
-    sections.extend(
-        aggregate_from_logs(repo=args.repo, token=token, runs=runs)
-    )
+    items.extend(aggregate_from_logs(repo=args.repo, token=token, runs=runs))
 
-    subject, body = build_digest(since=since, until=until, sections=sections)
+    subject, text_body, html_body = build_digest(
+        since=since, until=until, items=items
+    )
     print("---", flush=True)
     print(subject, flush=True)
-    print(body, flush=True)
+    print(text_body, flush=True)
     print("---", flush=True)
 
     gh_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if gh_summary:
         with open(gh_summary, "a", encoding="utf-8") as f:
-            f.write(f"## {subject}\n\n```\n{body}\n```\n")
+            f.write(f"## {subject}\n\n```\n{text_body}\n```\n")
 
     if not args.send:
         return 0
@@ -669,7 +759,8 @@ def main() -> int:
         from_addr=from_addr,
         to_addrs=to_addrs,
         subject=subject,
-        text=body,
+        text=text_body,
+        html=html_body,
     )
     print(f"Resend: {json.dumps(result)}", flush=True)
     return 0
