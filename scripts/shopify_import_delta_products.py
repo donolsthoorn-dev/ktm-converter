@@ -33,6 +33,7 @@ load_dotenv()
 
 import config  # noqa: E402
 from modules.shopify_client import get_shopify_products_index  # noqa: E402
+from modules.xml_loader import normalize_shopify_product_handle  # noqa: E402
 
 try:
     import requests
@@ -170,6 +171,24 @@ def _parse_delta_groups(path: Path) -> list[dict[str, Any]]:
     return groups
 
 
+def _index_has_handle(index: dict, handle: str) -> bool:
+    h = normalize_shopify_product_handle(handle)
+    if not h:
+        return False
+    # Cache keys are normalize_shopify_product_handle()'d.
+    return h in index or handle in index
+
+
+def _handle_search_query(handle: str) -> str:
+    h = (handle or "").strip()
+    if not h:
+        return ""
+    if any(c in h for c in ' \t"\\:'):
+        esc = h.replace("\\", "\\\\").replace('"', '\\"')
+        return f'handle:"{esc}"'
+    return f"handle:{h}"
+
+
 def _handle_exists(
     sess: requests.Session,
     handle: str,
@@ -177,13 +196,26 @@ def _handle_exists(
     *,
     live_check: bool,
 ) -> bool:
-    if handle in index:
+    if _index_has_handle(index, handle):
         return True
     if not live_check:
         return False
-    body = _gql(sess, _GQL_BY_HANDLE, {"q": f"handle:{handle}"})
+    q = _handle_search_query(handle)
+    if not q:
+        return False
+    body = _gql(sess, _GQL_BY_HANDLE, {"q": q})
     nodes = (((body.get("data") or {}).get("products") or {}).get("nodes")) or []
-    return bool(nodes)
+    if nodes:
+        index[normalize_shopify_product_handle(handle)] = {"id": nodes[0].get("id") or ""}
+        return True
+    return False
+
+
+def _is_already_exists_error(err: str) -> bool:
+    e = (err or "").upper()
+    return "HANDLE_NOT_UNIQUE" in e or (
+        "ALREADY EXISTS" in e and ("VARIANT" in e or "HANDLE" in e)
+    )
 
 
 def _create_product(sess: requests.Session, group: dict[str, Any]) -> tuple[str | None, str]:
@@ -264,8 +296,9 @@ def main() -> int:
     ap.add_argument("--sleep", type=float, default=0.25)
     ap.add_argument(
         "--live-handle-check",
-        action="store_true",
-        help="Bij cache-miss: GraphQL handle-check (trager, zekerder)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Bij cache-miss: GraphQL handle-check (default: aan)",
     )
     ap.add_argument("--refresh-cache", action="store_true")
     args = ap.parse_args()
@@ -276,7 +309,10 @@ def main() -> int:
 
     print("Shopify products-index laden…", flush=True)
     index = get_shopify_products_index() or {}
-    print(f"Handles in cache: {len(index)}", flush=True)
+    print(
+        f"Handles in cache: {len(index)} (live-handle-check={'on' if args.live_handle_check else 'off'})",
+        flush=True,
+    )
 
     sess = _session()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -340,18 +376,33 @@ def main() -> int:
 
                 pid, err = _create_product(sess, g)
                 if not pid:
-                    failed += 1
-                    w.writerow(
-                        {
-                            "brand": brand,
-                            "handle": handle,
-                            "title": g["title"],
-                            "result": "fail_create",
-                            "product_id": "",
-                            "error": err,
-                        }
-                    )
-                    print(f"  FAIL create {handle}: {err}", flush=True)
+                    if _is_already_exists_error(err):
+                        skipped += 1
+                        index[normalize_shopify_product_handle(handle)] = {"id": ""}
+                        w.writerow(
+                            {
+                                "brand": brand,
+                                "handle": handle,
+                                "title": g["title"],
+                                "result": "skipped_exists_api",
+                                "product_id": "",
+                                "error": err,
+                            }
+                        )
+                        print(f"  SKIP exists {handle}", flush=True)
+                    else:
+                        failed += 1
+                        w.writerow(
+                            {
+                                "brand": brand,
+                                "handle": handle,
+                                "title": g["title"],
+                                "result": "fail_create",
+                                "product_id": "",
+                                "error": err,
+                            }
+                        )
+                        print(f"  FAIL create {handle}: {err}", flush=True)
                     time.sleep(args.sleep)
                     continue
 
@@ -359,7 +410,7 @@ def main() -> int:
                 result = "ok" if not img_err else "ok_media_warn"
                 created += 1
                 done += 1
-                index[handle] = {"id": pid}
+                index[normalize_shopify_product_handle(handle)] = {"id": pid}
                 w.writerow(
                     {
                         "brand": brand,
