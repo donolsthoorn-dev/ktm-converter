@@ -21,19 +21,19 @@ export KTM_SHOPIFY_CACHE_MAX_AGE_DAYS=7
 
 ```bash
 export KTM_FORCE_REFRESH_SHOPIFY_CACHE=1
-python3 -u scripts/export_product_ids_and_ymm.py
+python3 -u scripts/export_product_metafields.py --refresh-shopify-cache
 ```
 
 Of alleen voor die run:
 
 ```bash
-KTM_FORCE_REFRESH_SHOPIFY_CACHE=1 python3 -u scripts/export_product_ids_and_ymm.py
+KTM_FORCE_REFRESH_SHOPIFY_CACHE=1 python3 -u scripts/export_product_metafields.py
 ```
 
 Of met vlag:
 
 ```bash
-python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache
+python3 -u scripts/export_product_metafields.py --refresh-shopify-cache
 ```
 
 ## Volledig periodiek, zonder dat je Terminal open hebt (macOS)
@@ -49,7 +49,7 @@ Het script doet **geen** achtergronddaemon; “periodiek uit zichzelf” regel j
 cd /pad/naar/ktm_project || exit 1
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 export KTM_FORCE_REFRESH_SHOPIFY_CACHE=1
-/usr/bin/python3 -u scripts/export_product_ids_and_ymm.py >> output/logs/ymm_export_cron.log 2>&1
+/usr/bin/python3 -u scripts/export_product_metafields.py --refresh-shopify-cache >> output/logs/ymm_export_cron.log 2>&1
 ```
 
 2. `chmod +x ~/bin/ktm_export_weekly.sh`

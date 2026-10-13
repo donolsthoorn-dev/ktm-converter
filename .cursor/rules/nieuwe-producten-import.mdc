@@ -1,0 +1,15 @@
+---
+description: Bij vragen over nieuwe KTM/HSQ/WP productimport: kort stappenplan uit docs/STAPPENPLAN.md geven
+alwaysApply: true
+---
+
+# Nieuwe producten importeren
+
+Als de gebruiker vraagt hoe opnieuw producten te importeren (FTP, delta, YMM, nieuwe import):
+
+1. Geef **alleen** het korte stappenplan uit [`docs/STAPPENPLAN.md`](docs/STAPPENPLAN.md) — genummerd, met copy-paste-commando’s.
+2. Niet uitwijden over oude YMM-app, ALL-export, of optionele ETA tenzij gevraagd.
+3. Volgorde: FTP → prepare (XML+PHO) → `rebuild_shopify_deltas.py` → `shopify_import_delta_products.py` → canonical YMM-pipeline → complementary.
+4. Geen werkende foto (niet gevonden/gematcht, of >20 MB Shopify-limiet) → product hoort niet in de delta.
+5. Productie: wekelijks via VPS + workflow `ktm_new_products_weekly` (zie `docs/vps-ftp-en-runner.md`); prijs/ETA blijft nachtelijke GHA.
+6. Motox POS-kopieën (Synkro) zijn iets anders; geen YMM vanaf ktm-shop op die kopieën verwachten (zie motox-pos regel).

@@ -102,11 +102,13 @@ def is_fallback_image_url(url: str) -> bool:
     return bool(_FALLBACK_IMAGE_BASENAME_RE.match(key))
 
 
-def latest_all_csv(products_dir: str) -> str | None:
-    paths = glob.glob(os.path.join(products_dir, "shopify_export_all_*.csv"))
-    if not paths:
-        return None
-    return max(paths, key=os.path.getmtime)
+def latest_product_csv(products_dir: str) -> str | None:
+    """Nieuwste delta-export. Oudere all-bestanden blijven bruikbaar tot de volgende run."""
+    for pattern in ("shopify_export_delta_*.csv", "shopify_export_all_*.csv"):
+        paths = glob.glob(os.path.join(products_dir, pattern))
+        if paths:
+            return max(paths, key=os.path.getmtime)
+    return None
 
 
 def parse_csv_images(path: str) -> dict[str, list[str]]:

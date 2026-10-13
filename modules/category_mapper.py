@@ -244,8 +244,6 @@ GENERIC_TYPES: set[str] = {
     "functional",
     "offroad",
     "street",
-    "gravel",
-    "road",
     "lifestyle",
     "fan gear",
     "pos",
@@ -254,12 +252,12 @@ GENERIC_TYPES: set[str] = {
     # Te vaag / catalogus-bakken zonder zinvolle leaf
     "new",
     "other",
-    "kids",
     "flash",
     "best deal",
     "hsq -",
     # XC_2 = productlijn (vaak elektrisch/diagnose), geen fiets — titel beslist.
     "xc_2",
+    # gravel / road / kids = complete fietsen → TYPE_EXACT (niet generic).
 }
 
 # Exact Shopify product_type → taxonomy path (case-insensitive).
@@ -584,13 +582,22 @@ TYPE_EXACT: dict[str, str] = {
     "drift": TOOLS,
     # Bikes (incl. NBSP-varianten worden genormaliseerd)
     "mtb fully": BIKES,
+    "mtb hardtail": BIKES,
+    "bicycle": BIKES,
+    "gravel": BIKES,
+    "road": BIKES,
+    "kids": BIKES,
     "trekking onroad": BIKES,
     "trekking offroad": BIKES,
+    "e city": BIKES_E,
+    "e mtb fully": BIKES_E,
+    "e mtb ht": BIKES_E,
     "e troffroad": BIKES_E,
     "sl e gravel": BIKES_E,
     "sl e mtb fully": BIKES_E,
     "sl e road": BIKES_E,
     "stacyc electric balance bikes": BIKES_E,
+    "electric balance bikes": BIKES_E,
     # Vage onderdelen-bakken → generieke motor parts (bewust)
     # 2-/4-stroke Offroad: zie SOFT_TYPE_FALLBACKS (tekst eerst, default Exhaust).
     "husaberg": DEFAULT_SHOPIFY_PRODUCT_CATEGORY,
@@ -767,6 +774,25 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         re.compile(r"\b(bicycle\s*basket|bike\s*basket|\bbasket\b)\b"),
         BIKE_BASKETS,
     ),
+    # Complete fietsen vóór moto-onderdelen (specs noemen vaak chain/fork/wheel).
+    (
+        "text:ebike",
+        re.compile(
+            r"\b(electric\s*balance|e-?bike|stacyc|e-?\s*mtb|macina)\b"
+        ),
+        BIKES_E,
+    ),
+    (
+        "text:bike",
+        re.compile(
+            r"\b(bicycle|fiets|hardtail|\batb\b|"
+            r"revelator|gravelator|myroon|scarplet|primeville|chicago|"
+            r"life\s*cycle|life\s*conquest|life\s*joy|life\s*ride|"
+            r"life\s*space|life\s*style|reputation|ultra\s*ride|ultra\s*1964|"
+            r"wild\s*one|wild\s*speed|x-stradam|x-life|x-myroon)\b"
+        ),
+        BIKES,
+    ),
     (
         "text:bag",
         re.compile(
@@ -824,7 +850,16 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         BRAKING,
     ),
     ("text:clutch", re.compile(r"\bclutch\b"), DRIVETRAIN),
-    ("text:chain", re.compile(r"\b(chain|sprocket|ketting|tandwiel)\b"), DRIVETRAIN),
+    # Geen losse "chain"/"ketting" — fiets-specs ("Chain: …") → vals Drivetrain.
+    (
+        "text:chain",
+        re.compile(
+            r"\b(chain\s*kit|chain\s*guide|chain\s*slider|chain\s*guard|"
+            r"drive\s*chain|sprocket|kettingwiel|tandwiel|"
+            r"ketting\s*kit|kettinggeleider)\b"
+        ),
+        DRIVETRAIN,
+    ),
     ("text:suspension", re.compile(r"\b(fork|shock|suspension|triple\s*clamp|swing\s*arm|swingarm|pds|damping)\b"), SUSPENSION),
     ("text:cooling", re.compile(r"\b(radiator|coolant|cooling|water\s*pump)\b"), COOLING),
     ("text:air", re.compile(r"\b(air\s*filter|airbox|intake)\b"), AIR_INTAKE),
@@ -858,11 +893,6 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ),
     ("text:decal", re.compile(r"\b(decal|sticker|start\s*number|number\s*plate|graphic\s*kit)\b"), DECALS),
     ("text:tools", re.compile(r"\b(special\s*tool|torque\s*wrench|tool\s*kit|gereedschap|socket|wrench)\b"), TOOLS),
-    (
-        "text:bike",
-        re.compile(r"\b(electric\s*balance|e-?bike|bicycle|fiets|stacyc)\b"),
-        BIKES_E,
-    ),
     ("text:controls", re.compile(r"\b(handlebar|grip|lever|throttle|stuur)\b"), CONTROLS),
 ]
 
@@ -997,6 +1027,7 @@ _PARTS_GENERIC_SKIP_TEXT = frozenset(
         "text:flag",
         "text:bike-bag",
         "text:bike-basket",
+        "text:ebike",
         "text:bike",
         "text:bike-helmet",
         "text:boots",

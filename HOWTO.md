@@ -14,15 +14,15 @@ Detail / naslag: [`docs/workflow_per_merk.md`](docs/workflow_per_merk.md). Techn
 python3 -u main.py
 ```
 
-Output o.a.: `output/products/shopify_export_delta_<timestamp>.csv` en `shopify_export_all_*.csv`.
+Output: `output/products/shopify_export_delta_<timestamp>.csv`.
 
 **Input:** `input/CBEXPDN_KTM-DN*.xml` + `input/*0150*.csv` (+ evt. afbeeldingen). Zie [`config.py`](config.py) / `KTM_XML_FILE` in `.env`.
 
 ---
 
-## SKU controleren (all/delta-export)
+## SKU controleren (delta-export)
 
-Één SKU: staat die in de all-/delta-export en zo niet, waarom (zelfde regels en teksten als `shopify_export_excluded_*.csv`). Standaard geen netwerk (snel); optioneel `--network` voor CDN/Shopify-afbeeldinglookup zoals `main.py` bij lege cache.
+Één SKU: staat die in de delta-export en zo niet, waarom (zelfde regels en teksten als `shopify_export_excluded_*.csv`). Standaard geen netwerk (snel); optioneel `--network` voor CDN/Shopify-afbeeldinglookup zoals `main.py` bij lege cache.
 
 ```bash
 python3 scripts/sku_export_status.py A62612995001
@@ -33,70 +33,22 @@ Zie [`scripts/sku_export_status.py`](scripts/sku_export_status.py).
 
 ---
 
-## YMM (app-import)
+## YMM (metafields)
 
-Zelfde merkvlag als `main.py`: `--brand ktm` (default), `hsq`, `wp`. Output onder `output/`, `output/hsq/` of `output/wp/` (`ids/`, `ymm/`, `metafields/`).
+Fitment gaat naar Shopify als metafields (`fits_on`, `ymm_summary` en de platte velden). De eigen YMM-app leest die metafields. De oude YMM-app-CSV (`ymm_APP_import_*.csv`) wordt niet meer gemaakt.
 
-**Delta** (na import van die producten in Shopify; vervang pad + timestamp):
+Na een productimport in Shopify is de route XML → Supabase → Shopify. Zie [`docs/supabase-ymm-pipeline.md`](docs/supabase-ymm-pipeline.md) en [`docs/STAPPENPLAN.md`](docs/STAPPENPLAN.md).
 
-```bash
-# KTM
-python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
-  --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
-
-# Husqvarna
-python3 -u scripts/export_product_ids_and_ymm.py --brand hsq --refresh-shopify-cache \
-  --delta-handles-csv output/hsq/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
-
-# WP
-python3 -u scripts/export_product_ids_and_ymm.py --brand wp --refresh-shopify-cache \
-  --delta-handles-csv output/wp/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
-```
-
-**Hele catalogus** (groot; alleen als je dat bewust wilt):
-
-```bash
-python3 -u scripts/export_product_ids_and_ymm.py --brand hsq
-```
-
-**Compacte delta voor apps** (filter op laatste product-delta):
-
-```bash
-python3 scripts/export_delta_app_imports.py --brand hsq
-```
-
-Output o.a.: `output/<merk>/ymm/ymm_APP_import_*.csv`
-
-Standaard bevat YMM (en metafields `fits_on*`) alleen fitment voor **KTM**, **Husqvarna** en **GASGAS**. Volledige cross-brand lijst: `--ymm-all-makes`. Andere subset: `--ymm-makes KTM Husqvarna`.
-
-Na YMM-import: metafields opnieuw importeren (`export_product_metafields.py` per merk) — overschrijft `fits_on` op de producten. Gebruik **geen** `--merge-from-shopify-csv` bij een schone refresh (dat haalt oude shop-data terug).
-
-Kolom **`id`** = Shopify Product Id uit `product_ids_from_xml.csv` + Shopify-cache. Leeg = handle niet (nog) in Shopify. Na nieuwe product-import: eerst `export_product_ids_and_ymm.py --refresh-shopify-cache`, daarna `export_product_metafields.py --refresh-shopify-cache` (zelfde merk).
-
-### YMM-app: alleen **Update rows** (geen append)
-
-`ymm_APP_import_*.csv` heeft geen kolom **Id** → niet voor Update rows. Wel na vergelijking met een app-export:
-
-1. YMM-app → **Import/Export** → export → `input/YMM-*-update_csv.csv` (of onder `input/hsq/`, `input/wp/`).
-2. Lokaal (na `export_product_ids_and_ymm.py --brand …` voor ALL):
-
-```bash
-python3 scripts/build_ymm_update_rows.py --brand hsq
-python3 scripts/build_ymm_update_rows.py --brand wp
-```
-
-3. YMM-app → **Update rows** → `output/<merk>/ymm/ymm_update_rows.csv`
-
-Standaard alleen **gewijzigde** overlappende regels. Nieuwe fitment (nog niet in app) zit hier niet in — anders `build_ymm_add_delete_delta.py` (add/delete) of Append.
+Standaard bevat `fits_on` alleen fitment voor **KTM**, **Husqvarna** en **GASGAS**. Volledige lijst: `--ymm-all-makes` op `export_product_metafields.py`. Andere subset: `--ymm-makes KTM Husqvarna`.
 
 ---
 
 ## Metafields Manager-export
 
-**Delta** (zelfde `--delta-handles-csv` als bij YMM):
+**Delta** (na import van die producten in Shopify; vervang pad + timestamp). `--refresh-shopify-cache` op het eerste merk, zodat nieuwe handles een product-id krijgen:
 
 ```bash
-python3 -u scripts/export_product_metafields.py --brand hsq \
+python3 -u scripts/export_product_metafields.py --brand hsq --refresh-shopify-cache \
   --delta-handles-csv output/hsq/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
 ```
 
@@ -162,11 +114,11 @@ Zie [`scripts/shopify_set_products_draft.py`](scripts/shopify_set_products_draft
 
 ---
 
-## Ontbrekende productafbeeldingen (`shopify_export_all` → Shopify API)
+## Ontbrekende productafbeeldingen (delta-CSV → Shopify API)
 
 Twee stappen: **(1) vergelijken** (export + live shop, rapport + JSON), **(2) ontbrekende URL’s koppelen** aan producten. Zelfde URL’s als in de CSV; alleen handles uit de export worden opgehaald. Stap 1 gebruikt standaard **GraphQL** (`handle:a OR handle:b …` in batches) — veel minder API-rondes dan één REST-call per handle; ontbrekende handles daarna via REST. Geen `KTM_SKIP_SHOPIFY_API=1`.
 
-**Stap 1 — vergelijken** (standaard nieuwste `shopify_export_all_*.csv`; schrijft `output/logs/shopify_missing_image_tasks.json` als er ontbrekende images zijn):
+**Stap 1 — vergelijken** (standaard nieuwste `shopify_export_delta_*.csv`; schrijft `output/logs/shopify_missing_image_tasks.json` als er ontbrekende images zijn):
 
 ```bash
 python3 scripts/shopify_compare_export_images.py
@@ -194,8 +146,11 @@ Zie de docstrings in [`scripts/shopify_compare_export_images.py`](scripts/shopif
 
 ```bash
 python3 scripts/fetch_input_sftp.py
-python3 scripts/prepare_input_from_ftp.py --extract-xml-from-zips
+python3 scripts/prepare_input_from_ftp.py
+python3 scripts/prepare_input_from_ftp.py --files XML_Export_PIM_KTM_International.zip --extract-xml-from-zips
 ```
+
+De PIM-zip wordt niet naar `input/` gekopieerd. Na het uitpakken wordt hij verwijderd. HQV en WP: `--input-dir input/hsq` respectievelijk `input/wp`.
 
 ---
 
@@ -211,10 +166,4 @@ Laatste delta-CSV vinden:
 
 ```bash
 ls -t output/products/shopify_export_delta_*.csv | head -1
-```
-
-Alleen app-CSV’s filteren zonder opnieuw te genereren:
-
-```bash
-python3 scripts/export_delta_app_imports.py
 ```

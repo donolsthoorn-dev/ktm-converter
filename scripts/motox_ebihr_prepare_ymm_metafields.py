@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Na Motox-import van new-only producten: YMM-app + Metafields Manager CSV's
+Na Motox-import van new-only producten: Metafields Manager CSV
 met echte Shopify product-IDs, alleen voor de new-only set.
 
   # 1) producten geïmporteerd in Motox
   # 2) cache verversen (nieuwe product-IDs)
   python3 scripts/motox_ebihr_refresh_cache.py
-  # 3) YMM + metafields
+  # 3) metafields
   python3 scripts/motox_ebihr_prepare_ymm_metafields.py
 
 Input:
@@ -15,7 +15,6 @@ Input:
   motox/e-bihr/ymm-metafields-data-ebihr-*_chunks/
 
 Output:
-  motox/e-bihr/output/ymm/ymm_APP_import_new_only*.csv
   motox/e-bihr/output/metafields/product_metafields_new_only*.csv
 """
 
@@ -46,13 +45,11 @@ from modules.motox_shopify_cache import (  # noqa: E402
 )
 from modules.xml_loader import normalize_shopify_product_handle  # noqa: E402
 from modules.ymm_export import (  # noqa: E402
-    YMM_MAX_FILE_SIZE_BYTES,
     split_csv_max_bytes_with_header,
 )
 
 EBIHR = ROOT / "motox" / "e-bihr"
 PRODUCTS_OUT = EBIHR / "output" / "products"
-YMM_OUT = EBIHR / "output" / "ymm"
 META_OUT = EBIHR / "output" / "metafields"
 
 
@@ -305,29 +302,11 @@ def main() -> int:
         flush=True,
     )
 
-    YMM_OUT.mkdir(parents=True, exist_ok=True)
     META_OUT.mkdir(parents=True, exist_ok=True)
-    for old in YMM_OUT.glob("ymm_APP_import_new_only*"):
-        old.unlink()
     for old in META_OUT.glob("product_metafields_new_only*"):
         old.unlink()
 
-    # YMM app: one row per product_id + make + model + year
-    ymm_path = YMM_OUT / "ymm_APP_import_new_only.csv"
-    ymm_rows = 0
-    with ymm_path.open("w", encoding="utf-8", newline="") as f:
-        w = csv.writer(f, lineterminator="\n")
-        w.writerow(["Product Ids", "Make", "Model", "Year"])
-        for pid in sorted(pid_tuples.keys(), key=lambda x: int(x) if x.isdigit() else x):
-            for make, model, year in sorted(pid_tuples[pid]):
-                w.writerow([pid, make, model, year])
-                ymm_rows += 1
-
     max_bytes = int(args.max_mb * 1024 * 1024)
-    ymm_parts = split_csv_max_bytes_with_header(str(ymm_path), max_bytes=max_bytes)
-    print(f"YMM-app: {ymm_rows} rijen → {len(ymm_parts)} bestand(en)", flush=True)
-    for p in ymm_parts:
-        print(f"  {p}", flush=True)
 
     # Metafields Manager full header
     meta_path = META_OUT / "product_metafields_new_only.csv"

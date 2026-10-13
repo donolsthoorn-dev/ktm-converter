@@ -621,7 +621,8 @@ html.mxg-hold .product-grid {
   padding-right: 0 !important;
 }
 
-/* Tabs (50%) + aanbevolen/ET (50%) onder productgallery */
+/* Tabs (50%) + aanbevolen/ET (50%) onder productgallery.
+   Zonder side-relations (o.a. fietsen): tabs 100% breed. */
 .ktm-product-meta {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -632,6 +633,19 @@ html.mxg-hold .product-grid {
   margin: 3rem 0 1rem;
   width: 100%;
   position: relative;
+}
+
+.ktm-product-meta:not(:has(.ktm-side-relations--mixed)),
+.ktm-product-meta--full {
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 0;
+}
+
+.ktm-product-meta:not(:has(.ktm-side-relations--mixed)) .ktm-tabs__list,
+.ktm-product-meta:not(:has(.ktm-side-relations--mixed)) .ktm-tabs__panel,
+.ktm-product-meta--full .ktm-tabs__list,
+.ktm-product-meta--full .ktm-tabs__panel {
+  grid-column: 1 / -1;
 }
 
 /* Til children in één grid zodat tablijst + kop op één rij staan */

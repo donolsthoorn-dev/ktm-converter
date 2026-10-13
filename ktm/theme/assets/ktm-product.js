@@ -427,6 +427,12 @@
       product.insertAdjacentElement("afterend", tabs);
     }
 
+    // Geen bijbehorende producten (vaak fietsen): tabs volle breedte.
+    var meta = (tabsHost && tabsHost.closest(".ktm-product-meta")) || document.querySelector(".ktm-product-meta");
+    if (meta && !meta.querySelector(".ktm-side-relations--mixed")) {
+      meta.classList.add("ktm-product-meta--full");
+    }
+
     var selectedId = null;
     function selectTab(id) {
       var buttons = list.querySelectorAll(".ktm-tabs__tab");

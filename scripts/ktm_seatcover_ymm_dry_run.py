@@ -5,7 +5,6 @@ Dry-run: leid YMM-metafields af uit Kutvek seatcover-titels op ktm-shop.nl.
 Leest `output/seatcovers_raw.jsonl` (of `--refresh` via Shopify GraphQL) en schrijft:
   - Metafields Manager CSV (komma) klaar voor review/import
   - Review-CSV (puntkomma) met parse-status, raw vs genormaliseerd model
-  - Optionele YMM-app filter CSV (Product Ids, Make, Model, Year)
 
 Voorbeelden:
   python3 scripts/ktm_seatcover_ymm_dry_run.py
@@ -405,11 +404,6 @@ def main() -> int:
         action="store_true",
         help="Ook producten die al ymm_summary/fits_on hebben in de import-CSV",
     )
-    ap.add_argument(
-        "--write-app-csv",
-        action="store_true",
-        help="Schrijf ook YMM-app filter CSV (één rij per make/model/year)",
-    )
     args = ap.parse_args()
 
     if args.refresh:
@@ -422,7 +416,6 @@ def main() -> int:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     meta_path = args.out_dir / f"ymm_metafields_dry_run_{stamp}.csv"
     review_path = args.out_dir / f"ymm_metafields_dry_run_review_{stamp}.csv"
-    app_path = args.out_dir / f"ymm_APP_import_seatcovers_dry_run_{stamp}.csv"
     latest_meta = args.out_dir / "ymm_metafields_dry_run.csv"
     latest_review = args.out_dir / "ymm_metafields_dry_run_review.csv"
 
@@ -448,7 +441,6 @@ def main() -> int:
     stats = defaultdict(int)
     meta_rows: list[list[str]] = []
     review_rows: list[dict] = []
-    app_rows: list[tuple[str, str, str, str]] = []
 
     for node in nodes:
         stats["total"] += 1
@@ -481,8 +473,6 @@ def main() -> int:
             stats["would_write"] += 1
             action = "would_write"
             meta_rows.append(metafields_row(pid, handle, title, tuples, mpn=mpn))
-            for make, model, year in sorted(tuples):
-                app_rows.append((pid, make, model, year))
 
         review_rows.append(
             {
@@ -524,14 +514,6 @@ def main() -> int:
         w.writeheader()
         w.writerows(review_rows)
     latest_review.write_bytes(review_path.read_bytes())
-
-    if args.write_app_csv:
-        with app_path.open("w", encoding="utf-8", newline="") as f:
-            w = csv.writer(f, delimiter=",", quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
-            w.writerow(["Product Ids", "Make", "Model", "Year"])
-            for row in sorted(set(app_rows)):
-                w.writerow(row)
-        print(f"YMM-app CSV: {app_path} ({len(set(app_rows))} rijen)")
 
     print(f"Totaal Seat Cover: {stats['total']}")
     print(f"Would write:       {stats['would_write']}")

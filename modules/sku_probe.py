@@ -81,9 +81,16 @@ def compute_etl_pipeline_sets(
     image_url_map: dict[str, str] = {}
     image_url_by_norm: dict[str, str] = {}
 
+    _max_image_bytes = 20 * 1024 * 1024  # Shopify product media limiet
+
     for ref in image_refs:
         local_path = resolve_local_image(ref, input_root, by_basename_exact, by_basename_lower)
         if not local_path:
+            continue
+        try:
+            if local_path.stat().st_size > _max_image_bytes:
+                continue
+        except OSError:
             continue
         cache_name = local_path.name
         url = resolve_image_url_without_upload(
@@ -108,8 +115,9 @@ def compute_etl_pipeline_sets(
                 url = image_url_map.get(raw) if raw else None
                 if not url and raw:
                     url = image_url_by_norm.get(_norm_ref_key(raw))
-                if url:
-                    new_images.append(url)
+                if url and str(url).startswith(("http://", "https://")):
+                    if "fallback_no_picture" not in str(url).lower():
+                        new_images.append(url)
             p["images"] = new_images
             if new_images:
                 group_has_images = True

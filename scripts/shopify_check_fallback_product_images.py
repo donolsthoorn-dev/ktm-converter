@@ -4,7 +4,7 @@ Producten in Shopify met placeholder-afbeelding (pho_fallback_fallback_no_pictur
 controleren op nieuw beschikbare bronnen.
 
 Stappen:
-  1. Lees shopify_export_all_*.csv: handles met fallback-URL in de export.
+  1. Lees shopify_export_delta_*.csv: handles met fallback-URL in de export.
   2. Haal live productmedia op (GraphQL + REST fallback).
   3. Filter: live heeft alleen fallback (geen echte foto op het product).
   4. Per handle: echte URL's in CSV? Lokale XML-referenties + cache/CDN (zonder upload)?
@@ -46,7 +46,7 @@ from modules.image_resolve import build_basename_index, resolve_local_image  # n
 from modules.shopify_export_images_lib import (  # noqa: E402
     fetch_handle_maps_for_handles,
     is_fallback_image_url,
-    latest_all_csv,
+    latest_product_csv,
     live_norms_are_fallback_only,
     norm_src,
     parse_csv_images_split,
@@ -139,7 +139,7 @@ def main() -> int:
     ap.add_argument(
         "--csv",
         metavar="PATH",
-        help=f"shopify_export_all_*.csv (default: nieuwste in {config.PRODUCTS_OUTPUT_DIR})",
+        help=f"Product-CSV (default: nieuwste shopify_export_delta_*.csv in {config.PRODUCTS_OUTPUT_DIR})",
     )
     ap.add_argument(
         "--brand",
@@ -215,10 +215,10 @@ def main() -> int:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt (.env).", file=sys.stderr)
         return 1
 
-    csv_path = args.csv or latest_all_csv(config.PRODUCTS_OUTPUT_DIR)
+    csv_path = args.csv or latest_product_csv(config.PRODUCTS_OUTPUT_DIR)
     if not csv_path or not os.path.isfile(csv_path):
         print(
-            "Geen CSV: geef --csv of zet shopify_export_all_*.csv in output/products/.",
+            "Geen CSV: geef --csv of zet shopify_export_delta_*.csv in output/products/.",
             file=sys.stderr,
         )
         return 1

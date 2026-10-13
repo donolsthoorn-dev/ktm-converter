@@ -116,7 +116,7 @@ Systeem werkt voor:
 ## Workflow: YMM + metafields
 
 Na `main.py` staat de delta-CSV onder `output/products/shopify_export_delta_<timestamp>.csv`.  
-Volgorde, commando’s, delta vs. volledige catalogus en `export_delta_app_imports`: **`docs/workflow.md`** (hoofdlijn) en **`docs/metafields_manager_export.md`** (metafields/YMM-detail).
+Volgorde en commando’s: **`docs/workflow.md`** (hoofdlijn), **`docs/supabase-ymm-pipeline.md`** (fitment-push) en **`docs/metafields_manager_export.md`** (CSV-backup).
 
 ---
 

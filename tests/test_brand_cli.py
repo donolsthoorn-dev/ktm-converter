@@ -13,7 +13,7 @@ def test_bootstrap_sets_env(monkeypatch) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
-        ["export_product_ids_and_ymm.py", "--brand", "wp", "--help"],
+        ["export_product_metafields.py", "--brand", "wp", "--help"],
     )
     monkeypatch.delenv("BRAND", raising=False)
     brand = bootstrap_brand_from_argv()

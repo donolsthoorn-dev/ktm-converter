@@ -3,7 +3,7 @@
 **Doelshop:** Motox (`ktm-shop-nederland`, credentials in `.env.motox`)  
 **Bron:** CSV’s in [`motox/e-bihr/`](../motox/e-bihr/) (valid-products, ymm-filter, ymm-metafields)
 
-Dit is een **semi-handmatige** flow: scripts maken gefilterde importbestanden; jij importeert in Shopify Admin, de YMM-app en Metafields Manager.
+Dit is een **semi-handmatige** flow: scripts maken gefilterde importbestanden; jij importeert in Shopify Admin en Metafields Manager. De nachtelijke sync schrijft `fits_on` direct via de API.
 
 Voor **automatische sync** (API → Motox Shopify, prijzen + metafields): zie [`docs/motox-ebihr-pipeline.md`](motox-ebihr-pipeline.md) en `scripts/motox_ebihr_sync.py` / workflow `motox_ebihr_sync`.
 
@@ -91,16 +91,14 @@ Output:
 
 | Map / bestand | Gebruik |
 |---------------|---------|
-| `motox/e-bihr/output/ymm/ymm_APP_import_new_only*.csv` | **YMM-app** — kolom `Product Ids` = Shopify product-ID; 1 regel per product + Make + Model + Year |
 | `motox/e-bihr/output/metafields/product_metafields_new_only*.csv` | **Metafields Manager** — o.a. `id`, `handle`, `fits_on`, `ymm_summary` |
 | `…/report_unmatched_tokens.csv` | Tokens uit de bron zonder match op Motox |
 
 Exit code `2` = nog geen gemapte producten (meestal: import nog niet klaar of cache niet ververst).
 
-### 5. Handmatig: apps
+### 5. Handmatig: Metafields Manager
 
-1. **YMM-app:** importeer de `ymm_APP_import_new_only*.csv` delen achter elkaar  
-2. **Metafields Manager:** importeer `product_metafields_new_only*.csv` delen achter elkaar  
+Importeer `product_metafields_new_only*.csv` delen achter elkaar.
 
 Gebruik **niet** de ruwe `ymm-filter-data-ebihr-*.csv` (tilde-artikelnummers) of alleen-`handle,fits_on` metafields-bestanden voor Motox — die koppelen niet op Shopify product-IDs / theme-velden.
 
@@ -108,7 +106,7 @@ Gebruik **niet** de ruwe `ymm-filter-data-ebihr-*.csv` (tilde-artikelnummers) of
 
 ## Waarom deze volgorde?
 
-De e-bihr YMM-bron is voertuig-gecentreerd (`Product Ids` = Bihr-artikelnummers met `~`). De Motox YMM-app verwacht **Shopify product-IDs**. Die bestaan pas **nadat** de producten geïmporteerd zijn; daarom eerst producten, dan cache refresh, dan YMM/metafields.
+De e-bihr-bron is voertuig-gecentreerd. Shopify-product-IDs voor de metafields-CSV bestaan pas **nadat** de producten geïmporteerd zijn; daarom eerst producten, dan cache refresh, dan metafields. De eigen YMM leest `fits_on` op het product.
 
 ---
 
@@ -118,6 +116,6 @@ De e-bihr YMM-bron is voertuig-gecentreerd (`Product Ids` = Bihr-artikelnummers 
 |--------|-----|
 | [`scripts/motox_ebihr_refresh_cache.py`](../scripts/motox_ebihr_refresh_cache.py) | Motox-index ophalen |
 | [`scripts/motox_ebihr_filter_new_products.py`](../scripts/motox_ebihr_filter_new_products.py) | New-only product-CSV’s |
-| [`scripts/motox_ebihr_prepare_ymm_metafields.py`](../scripts/motox_ebihr_prepare_ymm_metafields.py) | YMM + metafields met Shopify-IDs |
+| [`scripts/motox_ebihr_prepare_ymm_metafields.py`](../scripts/motox_ebihr_prepare_ymm_metafields.py) | Metafields-CSV met Shopify-IDs |
 
 Gedeelde cache-logica: [`modules/motox_shopify_cache.py`](../modules/motox_shopify_cache.py).

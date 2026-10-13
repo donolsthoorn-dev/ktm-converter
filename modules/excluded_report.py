@@ -1,5 +1,5 @@
 """
-Rapportage: varianten die niet in shopify_export_all / delta terechtkomen (met redenen).
+Rapportage: varianten die niet in de delta-export terechtkomen (met redenen).
 """
 
 from __future__ import annotations

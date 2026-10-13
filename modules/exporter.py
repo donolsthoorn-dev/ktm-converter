@@ -186,43 +186,54 @@ def _cache_choice_key(files_url: str) -> str:
     return os.path.basename(_strip_query(files_url)).strip().lower()
 
 
-def _pick_best_cdn_url(files_url: str, products_url: str, mode: str) -> str:
+def _remember_choice(choice_key: str, choice: str) -> None:
     global _csv_image_cache_dirty
-    if not files_url:
-        return products_url
-    if not products_url or files_url == products_url:
-        return files_url
+    if not choice_key:
+        return
+    if _csv_image_choice_cache.get(choice_key) == choice:
+        return
+    _csv_image_choice_cache[choice_key] = choice
+    _csv_image_cache_dirty = True
+
+
+def _forget_choice(choice_key: str) -> None:
+    global _csv_image_cache_dirty
+    if choice_key and choice_key in _csv_image_choice_cache:
+        del _csv_image_choice_cache[choice_key]
+        _csv_image_cache_dirty = True
+
+
+def _pick_best_cdn_url(files_url: str, products_url: str, mode: str) -> str:
+    """Publieke CDN-URL, of leeg als geen van beide paden een bestand teruggeeft.
+
+    Een gegokte /files/-URL die 404 geeft komt niet in de CSV: Shopify maakt
+    het product dan wel aan en meldt daarna een mislukte media-upload.
+    """
+    if not files_url and not products_url:
+        return ""
+    if files_url == products_url:
+        return files_url if _is_url_reachable(files_url) else ""
 
     if mode == "files":
-        return files_url
-    if mode == "products":
-        return products_url
-
-    choice_key = _cache_choice_key(files_url)
-    if choice_key:
-        cached = _csv_image_choice_cache.get(choice_key)
-        if cached == "files":
-            return files_url
+        order = (("files", files_url),)
+    elif mode == "products":
+        order = (("products", products_url),)
+    else:
+        choice_key = _cache_choice_key(files_url or products_url)
+        cached = _csv_image_choice_cache.get(choice_key) if choice_key else None
         if cached == "products":
-            return products_url
+            order = (("products", products_url), ("files", files_url))
+        else:
+            order = (("files", files_url), ("products", products_url))
 
-    # Auto-mode: eerst files, dan products.
-    if _is_url_reachable(files_url):
-        if choice_key:
-            _csv_image_choice_cache[choice_key] = "files"
-            _csv_image_cache_dirty = True
-        return files_url
-    if _is_url_reachable(products_url):
-        if choice_key:
-            _csv_image_choice_cache[choice_key] = "products"
-            _csv_image_cache_dirty = True
-        return products_url
+    choice_key = _cache_choice_key(files_url or products_url)
+    for choice, url in order:
+        if url and _is_url_reachable(url):
+            _remember_choice(choice_key, choice)
+            return url
 
-    # Geen van beide publiek bereikbaar: veilige fallback blijft /files.
-    if choice_key:
-        _csv_image_choice_cache[choice_key] = "files"
-        _csv_image_cache_dirty = True
-    return files_url
+    _forget_choice(choice_key)
+    return ""
 
 
 def _shopify_cdn_content_files_to_products_path(url: str) -> str:
@@ -304,8 +315,15 @@ def setcol(row, name, value):
     row[COL[name]] = value if value else ""
 
 
+def _is_fallback_placeholder(path: str) -> bool:
+    name = os.path.basename((path or "").strip().split("?", 1)[0]).lower()
+    return "fallback_no_picture" in name
+
+
 def normalize_image_url(path: str) -> str:
     if not path:
+        return ""
+    if _is_fallback_placeholder(path):
         return ""
     _load_csv_image_cache()
     mode = _image_url_mode()
@@ -388,6 +406,14 @@ def export(products, filename):
                 continue
 
             images = primary.get("images", [])
+            resolved_images: list[str] = []
+            seen_images: set[str] = set()
+            for img in images:
+                src = normalize_image_url(img)
+                if not src or src in seen_images:
+                    continue
+                seen_images.add(src)
+                resolved_images.append(src)
 
             for idx, p in enumerate(items):
                 row = [""] * len(HEADER)
@@ -474,9 +500,9 @@ def export(products, filename):
                 setcol(row, "Google Shopping / AdWords Grouping", type_value)
                 setcol(row, "Google Shopping / AdWords Labels", tags_value)
 
-                # image
-                if idx == 0 and images:
-                    setcol(row, "Image Src", normalize_image_url(images[0]))
+                # image — alleen een URL die publiek een bestand teruggeeft
+                if idx == 0 and resolved_images:
+                    setcol(row, "Image Src", resolved_images[0])
                     setcol(row, "Image Position", 1)
                     setcol(
                         row,
@@ -487,10 +513,10 @@ def export(products, filename):
                 writer.writerow(row)
 
             # Shopify accepts extra image-only rows for a handle.
-            for img_pos, img in enumerate(images[1:], start=2):
+            for img_pos, src in enumerate(resolved_images[1:], start=2):
                 image_row = [""] * len(HEADER)
                 setcol(image_row, "Handle", handle)
-                setcol(image_row, "Image Src", normalize_image_url(img))
+                setcol(image_row, "Image Src", src)
                 setcol(image_row, "Image Position", img_pos)
                 setcol(image_row, "Image Alt Text", title)
                 writer.writerow(image_row)

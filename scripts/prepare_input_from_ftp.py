@@ -48,6 +48,29 @@ def _copy_or_move(src: Path, dst: Path, move: bool) -> None:
         shutil.copy2(src, dst)
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False
+
+
+def _zip_member_relpath(member_filename: str) -> Path:
+    """Normaliseer zip-pad (geen absolute/escape paths)."""
+    parts = [p for p in Path(member_filename).parts if p not in ("", ".", "..")]
+    return Path(*parts) if parts else Path(Path(member_filename).name)
+
+
+def _is_media_member(rel: Path) -> bool:
+    """Alleen bestanden onder een PHO/-map in de zip (geen losse jpg’s elders)."""
+    parts_l = [p.lower() for p in rel.parts]
+    if "pho" not in parts_l:
+        return False
+    if rel.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".gif"}:
+        return False
+    return "fallback_no_picture" not in rel.name.lower()
+
+
 def _extract_xml_from_zip(zip_path: Path, input_dir: Path, dry_run: bool) -> int:
     count = 0
     with zipfile.ZipFile(zip_path) as zf:
@@ -65,6 +88,66 @@ def _extract_xml_from_zip(zip_path: Path, input_dir: Path, dry_run: bool) -> int
                 print(f"Extracted: {zip_path.name}:{member.filename} -> {dest}")
             count += 1
     return count
+
+
+def _extract_media_from_zip(zip_path: Path, input_dir: Path, dry_run: bool) -> int:
+    """Pak PHO/media uit zip naar input_dir, behoud relatieve pad onder PHO/…"""
+    count = 0
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            rel = _zip_member_relpath(member.filename)
+            if not _is_media_member(rel):
+                continue
+            # Altijd onder input_dir; strip leading junk tot we bij PHO of file zijn
+            parts_l = [p.lower() for p in rel.parts]
+            if "pho" in parts_l:
+                idx = parts_l.index("pho")
+                rel = Path(*rel.parts[idx:])
+            dest = input_dir / rel
+            if dry_run:
+                print(f"[dry-run] media {zip_path.name}:{member.filename} -> {dest}")
+            else:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(member, "r") as src, open(dest, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                if count < 5 or count % 500 == 0:
+                    print(f"Media: {dest.relative_to(input_dir)}", flush=True)
+            count += 1
+    return count
+
+
+def _prune_old_cbexpdn_xml(input_dir: Path, keep_names: set[str], dry_run: bool) -> int:
+    """Verwijder oude CBEXPDN_*.xml behalve zojuist geëxtraheerde."""
+    removed = 0
+    for path in sorted(input_dir.glob("CBEXPDN_*.xml")):
+        if path.name in keep_names:
+            continue
+        if dry_run:
+            print(f"[dry-run] prune XML {path}")
+        else:
+            path.unlink()
+            print(f"Oude XML verwijderd: {path.name}")
+        removed += 1
+    return removed
+
+
+def _remove_unpacked_zip(zip_path: Path, extra_copies: list[Path], dry_run: bool) -> None:
+    seen: set[Path] = set()
+    for path in [zip_path, *extra_copies]:
+        try:
+            key = path.resolve()
+        except OSError:
+            key = path
+        if key in seen or not path.is_file():
+            continue
+        seen.add(key)
+        if dry_run:
+            print(f"[dry-run] verwijder {path}")
+            continue
+        path.unlink()
+        print(f"Verwijderd: {path}")
 
 
 def _build_default_file_list() -> list[str]:
@@ -105,7 +188,23 @@ def main() -> int:
     parser.add_argument(
         "--extract-xml-from-zips",
         action="store_true",
-        help="Pak XML-bestanden uit zip-bestanden in de input-map.",
+        help=(
+            "Pak XML uit zip-bestanden in de staging-map naar de doelmap. "
+            "De zip wordt niet gekopieerd en na een geslaagde extractie verwijderd."
+        ),
+    )
+    parser.add_argument(
+        "--extract-media-from-zips",
+        action="store_true",
+        help=(
+            "Pak ook PHO/foto’s uit de zip naar de doelmap (naast XML). "
+            "Vereist --extract-xml-from-zips of werkt alleen op geselecteerde zips."
+        ),
+    )
+    parser.add_argument(
+        "--prune-old-xml",
+        action="store_true",
+        help="Na extract: oude CBEXPDN_*.xml in doelmap weg (behoud nieuwste uit deze run).",
     )
     parser.add_argument(
         "--dry-run",
@@ -139,11 +238,19 @@ def main() -> int:
         else:
             selected = all_files
 
+    extract_zips = args.extract_xml_from_zips or args.extract_media_from_zips
+
     copied = 0
     for src in sorted(selected, key=lambda p: p.name.lower()):
+        if extract_zips and src.suffix.lower() == ".zip":
+            continue
         route = route_dir_for_filename(src.name)
         dest_dir = Path(route) if route else input_dir
         dst = dest_dir / src.name
+        if _same_file(src, dst):
+            print(f"Al op de plek: {dst}")
+            copied += 1
+            continue
         if args.dry_run:
             action = "move" if args.move else "copy"
             print(f"[dry-run] {action} {src} -> {dst}")
@@ -152,13 +259,45 @@ def main() -> int:
             print(f"Prepared: {src.name} -> {dst}")
         copied += 1
 
-    extracted = 0
-    if args.extract_xml_from_zips:
+    extracted_xml = 0
+    extracted_media = 0
+    kept_xml: set[str] = set()
+    if extract_zips:
         zip_sources = [p for p in selected if p.suffix.lower() == ".zip"]
         for zp in zip_sources:
-            extracted += _extract_xml_from_zip(zp, input_dir, args.dry_run)
+            n_xml = 0
+            n_media = 0
+            try:
+                with zipfile.ZipFile(zp) as zf:
+                    for m in zf.infolist():
+                        name = Path(m.filename).name
+                        if name.lower().endswith(".xml"):
+                            kept_xml.add(name)
+                if args.extract_xml_from_zips or args.extract_media_from_zips:
+                    n_xml = _extract_xml_from_zip(zp, input_dir, args.dry_run)
+                    extracted_xml += n_xml
+                if args.extract_media_from_zips:
+                    n_media = _extract_media_from_zip(zp, input_dir, args.dry_run)
+                    extracted_media += n_media
+            except (zipfile.BadZipFile, OSError) as exc:
+                print(f"Uitpakken mislukt, zip blijft staan: {zp} ({exc})")
+                return 1
+            if n_xml == 0 and n_media == 0:
+                print(f"Niets bruikbaars in {zp.name}; zip blijft staan.")
+                continue
+            route = route_dir_for_filename(zp.name)
+            dest_dir = Path(route) if route else input_dir
+            leftover = dest_dir / zp.name
+            extras = [] if _same_file(leftover, zp) else [leftover]
+            _remove_unpacked_zip(zp, extras, args.dry_run)
 
-    print(f"Klaar. Bestanden voorbereid: {copied}. XML extracted uit zips: {extracted}.")
+        if args.prune_old_xml and kept_xml:
+            _prune_old_cbexpdn_xml(input_dir, kept_xml, args.dry_run)
+
+    print(
+        f"Klaar. Bestanden voorbereid: {copied}. "
+        f"XML extracted: {extracted_xml}. Media extracted: {extracted_media}."
+    )
     return 0
 
 

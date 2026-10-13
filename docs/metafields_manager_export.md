@@ -6,49 +6,33 @@ Compatibel met het importformaat zoals [Metafields Manager](https://metafieldsma
 
 ### Aanbevolen: alleen delta (na import van nieuwe producten)
 
-Kleine bestanden, minder kans op time-outs in YMM-/Metafields-apps.
+Kleine bestanden, minder kans op time-outs in Metafields Manager. De live route is de Supabase-push ([`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md)); deze CSV is de backup.
 
 1. **Delta-CSV** met kolom `Handle`: `main.py` schrijft die naar `output/products/shopify_export_delta_<timestamp>.csv`. Neem het bestand van de run waarmee je de betreffende producten hebt geëxporteerd (of de nieuwste delta als die set klopt).
 
-2. **YMM + Product Id’s (delta)** — cache verversen na een grote import:
+2. **Metafields (delta)** — Product Id's komen uit de Shopify-index. Na een grote import: `--refresh-shopify-cache`.
 
    ```bash
-   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
-     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
-   ```
-
-   Output o.a.: `output/ids/product_ids_from_xml_delta.csv`, `output/ymm/ymm_APP_import_DELTA.csv` (eventueel gesplitst in `_part_00x`).
-
-3. **Metafields (delta)** — standaard wordt `output/ids/product_ids_from_xml_delta.csv` gebruikt (zelfde als stap 2). Alleen nodig om `--product-ids` mee te geven als je een ander bestand wilt:
-
-   ```bash
-   python3 -u scripts/export_product_metafields.py \
+   python3 -u scripts/export_product_metafields.py --refresh-shopify-cache \
      --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
    ```
 
    Output: `output/metafields/product_metafields_metafields_manager_delta.csv`.
 
-   In plaats van `--delta-handles-csv` kun je `--delta-handles-file pad/naar/handles.txt` gebruiken (één handle per regel, `#` = commentaar).
-
-**Alternatief (geen nieuwe generatie):** heb je al de **volledige** `product_ids` in `output/ids/` plus YMM + metafields in `output/ymm/` en `output/metafields/`, filter dan met:
-
-```bash
-python3 scripts/export_delta_app_imports.py
-```
-
-Dat leest de **laatste** `output/products/shopify_export_delta_*.csv` en schrijft o.a. `output/ymm/ymm_APP_import_delta_latest.csv` en `output/metafields/product_metafields_delta_latest.csv`.
+   In plaats van `--delta-handles-csv` kun je `--delta-handles-file pad/naar/handles.txt` gebruiken (één handle per regel, `#` = commentaar). Optioneel: `--product-ids output/ids/product_ids_from_xml.csv` als je een bestaand id-bestand wilt meegeven.
 
 ### Hele catalogus (grote bestanden)
 
-1. `python3 -u scripts/export_product_ids_and_ymm.py` (optioneel `--refresh-shopify-cache`)
-2. `python3 -u scripts/export_product_metafields.py`
+```bash
+python3 -u scripts/export_product_metafields.py
+```
 
 ## Output
 
 - Volledig: `output/metafields/product_metafields_metafields_manager_part_001.csv` (en `_part_002`, … als > 10 MB)
 - Delta: `output/metafields/product_metafields_metafields_manager_delta.csv` (meestal één bestand)
 
-Volledige catalogus wordt automatisch gesplitst op **10 MB per deel** (zelfde limiet als YMM-app), zodat Metafields Manager-import niet time-out of upload-limiet raakt. Importeer delen **achter elkaar** in dezelfde app.
+Volledige catalogus wordt automatisch gesplitst op **10 MB per deel**, zodat Metafields Manager-import niet time-out of upload-limiet raakt. Importeer delen **achter elkaar**.
 
 ## Opties
 
@@ -61,7 +45,7 @@ python3 scripts/export_product_metafields.py --product-ids output/ids/product_id
 | Kolom | Bron |
 |--------|------|
 | `handle`, `title` | XML-structuur + `build_product_rows` |
-| `id` | `Product Id` uit `product_ids_from_xml.csv` (zelfde mapping als YMM-export) |
+| `id` | Shopify Product Id uit `--product-ids` of de Shopify-productindex |
 | `fits_on` | JSON `{ "MAKE": { "Model": ["year",…], … } }` uit alle variant-SKU’s: **Bikes MODELL** + **ZBH2BIKE** (zie `docs/zbh2bike_ymm.md`). Standaard **cross-brand**: union van KTM-, HSQ- en WP-CBEXPDN op **dezelfde SKU** (zelfde fitment op `a54029994500`, `hsq-…`, `wp-…`). Uitzetten: `--no-cross-brand-ymm`. **Inhoud** (niet de kolomkoppen) vanaf `fits_on` t/m `MPN` in **hoofdletters**. |
 | `fits_on_year`, `fits_on_make`, `fits_on_model` | Unieke waarden, gescheiden met `\|\|` (zoals je bestaande export) |
 | `ymm_summary` | Per OEM rijk: `KTM 790-890 (STREET) 2021-2027`; Husqvarna/GASGAS `FE 450` → `HUSQVARNA 450-570 (FE) 2009`. Cross-brand: `KTM … \| HUSQVARNA … \| GASGAS …`. Zelfde logica in `canonical_product_fits_on.ymm_summary` en Shopify-push. Zie [`supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md). |

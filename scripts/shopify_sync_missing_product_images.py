@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Eén doorloop: shopify_export_all-CSV ↔ live Shopify → ontbrekende productafbeeldingen
+Eén doorloop: delta-CSV ↔ live Shopify → ontbrekende productafbeeldingen
 toevoegen (zelfde logica als shopify_compare_export_images + shopify_apply_missing_images).
 
 Per ontbrekende URL (t.o.v. CSV, genormaliseerde bestandsnaam):
@@ -11,7 +11,7 @@ Per ontbrekende URL (t.o.v. CSV, genormaliseerde bestandsnaam):
 Voorbeelden (vanaf projectroot):
 
   python3 scripts/shopify_sync_missing_product_images.py --dry-run
-  python3 scripts/shopify_sync_missing_product_images.py --csv output/products/shopify_export_all_*.csv
+  python3 scripts/shopify_sync_missing_product_images.py --csv output/products/shopify_export_delta_*.csv
   python3 scripts/shopify_sync_missing_product_images.py --compare-only
   python3 scripts/shopify_sync_missing_product_images.py --apply-workers 12 --limit 100
 
@@ -36,7 +36,7 @@ from modules.shopify_export_images_lib import (  # noqa: E402
     compare_csv_missing_images_against_live,
     default_tasks_path,
     flatten_tasks_from_payload,
-    latest_all_csv,
+    latest_product_csv,
     load_tasks_json,
     save_tasks_json,
 )
@@ -83,7 +83,7 @@ def main() -> None:
     ap.add_argument(
         "--csv",
         metavar="PATH",
-        help=f"shopify_export_all_*.csv (default: nieuwste in {config.PRODUCTS_OUTPUT_DIR})",
+        help=f"Product-CSV (default: nieuwste shopify_export_delta_*.csv in {config.PRODUCTS_OUTPUT_DIR})",
     )
     ap.add_argument(
         "--tasks-out",
@@ -168,10 +168,10 @@ def main() -> None:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt (.env).", file=sys.stderr)
         raise SystemExit(1)
 
-    csv_path = args.csv or latest_all_csv(config.PRODUCTS_OUTPUT_DIR)
+    csv_path = args.csv or latest_product_csv(config.PRODUCTS_OUTPUT_DIR)
     if not csv_path or not os.path.isfile(csv_path):
         print(
-            "Geen CSV: geef --csv of zet shopify_export_all_*.csv in output/products/.",
+            "Geen CSV: geef --csv of zet shopify_export_delta_*.csv in output/products/.",
             file=sys.stderr,
         )
         raise SystemExit(1)

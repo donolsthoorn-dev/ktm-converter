@@ -25,22 +25,25 @@ Python-versie: zie `requires-python` in `pyproject.toml` (≥ 3.10).
 2. Staging → input: `python3 scripts/prepare_input_from_ftp.py --extract-xml-from-zips`
 3. Export: `python3 -u main.py`
 4. Shopify Admin → Products → Import: `output/products/shopify_export_delta_*.csv` (wacht tot klaar)
-5. Delta YMM + metafields (aanbevolen; vervang de timestamp):
+5. Fitment naar Shopify (na de productimport). Vervang de timestamp:
 
    ```bash
-   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
-     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
+   python3 scripts/queue_supabase_job.py shopify_catalog_mirror --trigger manual
+   python3 scripts/supabase_job_worker.py
+   python3 scripts/run_canonical_ymm_pipeline.py --sync-only --write
+   python3 scripts/run_canonical_ymm_pipeline.py --push-only --write
+   ```
 
-   python3 -u scripts/export_product_metafields.py \
+   Backup-CSV voor Metafields Manager:
+
+   ```bash
+   python3 -u scripts/export_product_metafields.py --refresh-shopify-cache \
      --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
    ```
 
-6. Apps: YMM → `output/ymm/ymm_APP_import_DELTA*.csv`; Metafields Manager → `output/metafields/product_metafields_metafields_manager_delta.csv`
-7. Optioneel KTM prijs-CSV → Shopify API (ETA): na nieuwe productimport eerst `python3 scripts/shopify_refresh_variant_cache.py`, daarna `python3 scripts/shopify_sync_eta_from_pricelist_csv.py` (zie §3b)
+6. Optioneel KTM prijs-CSV → Shopify API (ETA): na nieuwe productimport eerst `python3 scripts/shopify_refresh_variant_cache.py`, daarna `python3 scripts/shopify_sync_eta_from_pricelist_csv.py` (zie §3b)
 
-**Alternatief — hele catalogus:** `export_product_ids_and_ymm.py` en `export_product_metafields.py` zonder `--delta-handles-csv` (zie `docs/metafields_manager_export.md`).
-
-**Filter zonder opnieuw te genereren:** `python3 scripts/export_delta_app_imports.py` → o.a. `ymm_APP_import_delta_latest.csv`, `product_metafields_delta_latest.csv`.
+**Alternatief — hele catalogus:** `export_product_metafields.py` zonder `--delta-handles-csv` (zie `docs/metafields_manager_export.md`). Zie ook [`docs/supabase-ymm-pipeline.md`](supabase-ymm-pipeline.md).
 
 ---
 
@@ -65,8 +68,8 @@ Download naar `downloads/ftp/`. Configuratie in `.env` (o.a. `KTM_TRANSFER_PROTO
 
 ```bash
 python3 scripts/prepare_input_from_ftp.py
-# XML in zips:
-python3 scripts/prepare_input_from_ftp.py --extract-xml-from-zips
+# XML uit een zip in downloads/ftp. De zip gaat niet naar input/ en wordt na het uitpakken verwijderd:
+python3 scripts/prepare_input_from_ftp.py --files XML_Export_PIM_KTM_International.zip --extract-xml-from-zips
 ```
 
 Opties: `--dry-run`, `--move`, `--files "a.zip,b.csv"`.
@@ -123,13 +126,13 @@ python3 scripts/shopify_sync_empfart_complementary.py --force-refresh-cache --fo
 python3 -u main.py
 ```
 
-Output o.a.: `output/products/shopify_export_delta_<timestamp>.csv`, `shopify_export_all_<timestamp>.csv`.
+Output: `output/products/shopify_export_delta_<timestamp>.csv`.
 
 ---
 
 ## 5–6. YMM, product-ID’s en metafields
 
-Uitgebreide commando’s, delta vs. volledig, `export_delta_app_imports.py`: **`docs/metafields_manager_export.md`**.
+Uitgebreide commando’s, delta vs. volledig: **`docs/metafields_manager_export.md`**. Fitment-push: **`docs/supabase-ymm-pipeline.md`**.
 
 ---
 
@@ -143,9 +146,8 @@ Uitgebreide commando’s, delta vs. volledig, `export_delta_app_imports.py`: **`
 
 ## 8. Upload / import
 
-- **Shopify:** Admin → Import; meestal delta-CSV; ALL alleen bewust.
-- **YMM-app:** delta- of `ALL_part_*.csv` in volgorde, nadat producten in Shopify staan.
-- **Metafields Manager:** delta- of volledige CSV uit `output/metafields/`.
+- **Shopify:** Admin → Import van de delta-CSV, zonder bestaande handles te overschrijven.
+- **Metafields:** Supabase-push (`run_canonical_ymm_pipeline.py`) of, als backup, de CSV uit `output/metafields/` in Metafields Manager.
 
 ---
 
@@ -158,7 +160,7 @@ Uitgebreide commando’s, delta vs. volledig, `export_delta_app_imports.py`: **`
 | Missende images | Bestanden echt onder `input/` |
 | API/cache | `--refresh-shopify-cache` bij export-scripts |
 | ETA-sync slaat SKU’s over | `shopify_refresh_variant_cache.py` opnieuw |
-| Time-outs YMM/metafields | Delta-flow met `--delta-handles-csv` |
+| Time-outs metafields-CSV | Delta-flow met `--delta-handles-csv`, of de Supabase-push |
 
 ---
 
@@ -167,9 +169,8 @@ Uitgebreide commando’s, delta vs. volledig, `export_delta_app_imports.py`: **`
 1. `fetch_input_sftp.py` → `prepare_input_from_ftp.py --extract-xml-from-zips`
 2. `main.py`
 3. Shopify: delta-CSV importeren (wachten)
-4. `export_product_ids_and_ymm.py` + `export_product_metafields.py` met jouw delta-pad
-5. Outputs controleren; YMM + metafields uploaden
-6. Optioneel §3b: variant-cache → `shopify_sync_eta_from_pricelist_csv.py`
+4. Fitment: `run_canonical_ymm_pipeline.py` (of backup `export_product_metafields.py` met jouw delta-pad)
+5. Optioneel §3b: variant-cache → `shopify_sync_eta_from_pricelist_csv.py`
 
 Eerste keer / volledige resync: zonder delta-flags; zie `docs/metafields_manager_export.md`.
 

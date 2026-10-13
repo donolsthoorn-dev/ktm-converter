@@ -2,7 +2,7 @@
 """
 Motox: live producten zonder YMM-metafields, aangevuld uit e-bihr CSV's.
 
-Maakt YMM-app + Metafields Manager importbestanden met echte Shopify product-IDs.
+Maakt een Metafields Manager-import met echte Shopify product-IDs.
 
   python3 scripts/motox_ebihr_missing_ymm_imports.py
 
@@ -348,7 +348,6 @@ def main() -> int:
     filt = _load_ebihr_filter()
     print(f"  metafields handles: {len(mf)}; filter tokens: {len(filt)}", flush=True)
 
-    ymm_rows: list[list[str]] = []
     meta_rows: list[list[str]] = []
     report_rows: list[dict] = []
     matched = 0
@@ -378,8 +377,6 @@ def main() -> int:
         models = {t[1] for t in tuples}
         summary = _ymm_summary(tuples)
         mpn = (p["skus"][0] if p["skus"] else handle).upper()
-        for make, model, year in sorted(tuples, key=lambda t: (t[0], t[1], t[2])):
-            ymm_rows.append([pid, make, model, year])
         meta = {k: "" for k in METAFIELDS_HEADER}
         meta.update(
             {
@@ -405,11 +402,6 @@ def main() -> int:
             }
         )
 
-    ymm_paths = _write_split_csv(
-        OUT_DIR / "ymm_APP_import_ebihr_missing.csv",
-        ["Product Ids", "Make", "Model", "Year"],
-        ymm_rows,
-    )
     meta_paths = _write_split_csv(
         OUT_DIR / "product_metafields_ebihr_missing.csv",
         METAFIELDS_HEADER,
@@ -428,9 +420,6 @@ def main() -> int:
     print()
     print(f"Gevonden in e-bihr: {matched} producten → importbestanden")
     print(f"Live zonder YMM, niet in e-bihr-bestanden: {unmatched}")
-    print("YMM-app:")
-    for pth in ymm_paths:
-        print(f"  {pth}  ({pth.stat().st_size / 1024 / 1024:.2f} MB)")
     print("Metafields Manager:")
     for pth in meta_paths:
         print(f"  {pth}  ({pth.stat().st_size / 1024 / 1024:.2f} MB)")

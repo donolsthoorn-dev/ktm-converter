@@ -12,9 +12,7 @@ Veel accessoires (o.a. plastic kits) hangen in de structuurboom alleen aan een p
    - YMM van die motor: uit (1) als de motor-SKU ook onder een Bikes-`MODELL` hangt, anders uit **BEZEICHNUNG** + `_parse_year()` (zelfde logica als elders). Als `CULTURE` (bijv. `EN-GB`) geen BEZEICHNUNG heeft, wordt de eerste beschikbare `TEXT` onder `BEZEICHNUNG` gebruikt (vaak `DE-AT` bij motoren).
    - Elke onderdeel-SKU in die lijst krijgt die YMM-tuples **bij** (union met bestaande tuples).
 
-3. **Merge**: `build_merged_sku_to_ymm()` = union van (1) en (2). Gebruikt door:
-   - `export_ymm_fitment()` → `ymm_APP_import_ALL.csv`
-   - `export_product_metafields_csv()` → `fits_on` JSON
+3. **Merge**: `build_merged_sku_to_ymm()` = union van (1) en (2). Gebruikt door `export_product_metafields_csv()` → `fits_on` JSON en door de canonical Supabase-sync.
 
 ## lxml: geneste `PRODUKT`
 
@@ -34,4 +32,4 @@ print('00010000318 tuples:', len(m.get('00010000318', set())))
 
 ## Scope
 
-- **Geen wijziging** aan `output/products/` product-CSV (`xml_loader` / hoofdexport): alleen `output/ids/`, `output/ymm/` en `output/metafields/` en YMM-logica in `modules/ymm_export.py` + `modules/metafields_manager_export.py`.
+- **Geen wijziging** aan `output/products/` product-CSV (`xml_loader` / hoofdexport): alleen `output/metafields/` en YMM-logica in `modules/ymm_export.py` + `modules/metafields_manager_export.py`.

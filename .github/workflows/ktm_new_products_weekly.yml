@@ -1,0 +1,88 @@
+# Wekelijkse nieuwe producten: PIM (XML+PHO) op VPS → rebuild → API-import → YMM → complementary.
+# Draait via SSH op motoxshop-vps2 (zelfde patroon als motox_putoline), zodat grote input/
+# op de VPS-schijf blijft. Prijs/ETA blijft in ktm_price_eta_status_sync (nachtelijk).
+#
+# Secrets: MOTOX_VPS_SSH_KEY (privésleutel voor motoxshop@149.210.206.111).
+# Op de VPS: /home/motoxshop/ktm_project met .env (FTP, Shopify, Supabase).
+
+name: ktm_new_products_weekly
+
+on:
+  schedule:
+    # Maandag 03:30 UTC ≈ 05:30 NL zomer / 04:30 winter — na Putoline 02:15 NL
+    - cron: "30 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      brands:
+        description: "Merken (komma): ktm,hsq,wp"
+        required: false
+        default: "ktm,hsq,wp"
+      skip_pim:
+        description: "PIM-refresh overslaan (alleen rebuild/import/YMM)"
+        type: boolean
+        default: false
+      dry_run_import:
+        description: "Import alleen dry-run (geen productCreate)"
+        type: boolean
+        default: false
+      import_limit:
+        description: "Max nieuwe producten (0=alle)"
+        required: false
+        default: "0"
+
+jobs:
+  weekly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: shopify-write-lock-ktm
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run pipeline on VPS
+        env:
+          SSH_KEY: ${{ secrets.MOTOX_VPS_SSH_KEY }}
+          BRANDS: ${{ github.event.inputs.brands || 'ktm,hsq,wp' }}
+          SKIP_PIM: ${{ github.event.inputs.skip_pim || 'false' }}
+          DRY_IMPORT: ${{ github.event.inputs.dry_run_import || 'false' }}
+          IMPORT_LIMIT: ${{ github.event.inputs.import_limit || '0' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_KEY:-}" ]; then
+            echo "Secret MOTOX_VPS_SSH_KEY ontbreekt."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/ktm_vps
+          chmod 600 ~/.ssh/ktm_vps
+          SSH="ssh -i ~/.ssh/ktm_vps -o StrictHostKeyChecking=accept-new"
+          HOST="motoxshop@149.210.206.111"
+          REMOTE="/home/motoxshop/ktm_project"
+
+          $SSH "$HOST" "test -f $REMOTE/scripts/run_new_products_weekly.py || (echo 'Code ontbreekt op VPS: $REMOTE' && exit 1)"
+
+          PY="$REMOTE/.venv/bin/python"
+          $SSH "$HOST" "test -x $PY || PY=python3; echo using_python"
+
+          FLAGS="--brands ${BRANDS}"
+          if [ "$SKIP_PIM" = "true" ]; then
+            FLAGS="$FLAGS --skip-pim"
+          fi
+          if [ "$DRY_IMPORT" = "true" ]; then
+            FLAGS="$FLAGS --dry-run-import"
+          fi
+          if [ -n "$IMPORT_LIMIT" ] && [ "$IMPORT_LIMIT" != "0" ]; then
+            FLAGS="$FLAGS --import-limit $IMPORT_LIMIT"
+          fi
+
+          # Code sync: rsync from this checkout (VPS heeft geen GitHub SSH-key)
+          rsync -az --delete \
+            --exclude '.git/' --exclude 'input/' --exclude 'downloads/' \
+            --exclude 'output/' --exclude 'cache/' --exclude '.venv/' \
+            --exclude 'ktm/theme/' --exclude 'motox/theme/' \
+            --exclude '__pycache__/' \
+            -e "ssh -i ~/.ssh/ktm_vps -o StrictHostKeyChecking=accept-new" \
+            ./ "$HOST:$REMOTE/"
+
+          $SSH "$HOST" "cd $REMOTE && if [ -x .venv/bin/python ]; then .venv/bin/python scripts/run_new_products_weekly.py $FLAGS; else python3 scripts/run_new_products_weekly.py $FLAGS; fi"

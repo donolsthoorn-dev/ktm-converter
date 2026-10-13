@@ -1,83 +1,30 @@
-Workflow: nieuwe producten (zonder ETA / 0150-API-prijs-sync)
-============================================================
+Nieuwe producten — korte checklist
+==================================
 
-Zie ook:
-  docs/STAPPENPLAN.md        — hoofdstappen 1–6 (KTM + HSQ + WP)
-  docs/workflow.md           — FTP, ETA, fouten
+Zie docs/STAPPENPLAN.md (hoofdbron).
 
-Wat je overslaat
-----------------
-- shopify_refresh_variant_cache.py en shopify_sync_eta_from_pricelist_csv.py — alleen nodig als je
-  levertijden (ETA) vanuit 0150 naar Shopify wilt pushen via de API.
-- Die scripts zijn géén vervanging voor het 0150-bestand in input/: main.py gebruikt nog
-  steeds input/*0150*.csv voor prijzen in de product-CSV.
-
-Cache / --refresh-shopify-cache
---------------------------------
-- Voor YMM + metafields ná een import van nieuwe producten in Shopify is
-  --refresh-shopify-cache op export_product_ids_and_ymm.py juist aan te raden: zo wordt de
-  lokale Shopify-index bijgewerkt zodat nieuwe handles naar product-id’s worden opgelost.
-- Dat is iets anders dan de optionele variant-cache voor de ETA-sync (§3b in workflow.md).
-
-Stapsgewijs (vanaf projectroot)
--------------------------------
-
-1) Bestanden van de server
-
+1) FTP ophalen
    python3 scripts/fetch_input_sftp.py
+   python3 scripts/fetch_input_sftp.py --files "XML_Export_PIM_KTM_International.zip,XML_Export_PIM_HQV_International.zip,XML_Export_PIM_WP_International.zip"
 
-2) Van download naar input/ (zip → XML indien van toepassing)
+2) Klaarzetten
+   python3 scripts/prepare_input_from_ftp.py
+   python3 scripts/prepare_input_from_ftp.py --files XML_Export_PIM_KTM_International.zip --extract-xml-from-zips
+   python3 scripts/prepare_input_from_ftp.py --files XML_Export_PIM_HQV_International.zip --extract-xml-from-zips --input-dir input/hsq
+   python3 scripts/prepare_input_from_ftp.py --files XML_Export_PIM_WP_International.zip --extract-xml-from-zips --input-dir input/wp
 
-   python3 scripts/prepare_input_from_ftp.py --extract-xml-from-zips
+3) Delta-CSV’s
+   python3 -u scripts/rebuild_shopify_deltas.py
 
-3) Product-CSV’s genereren
+4) Producten via API (geen Admin-import):
+   python3 scripts/shopify_import_delta_products.py --brands ktm,hsq,wp
+   Of wekelijks: python3 scripts/run_new_products_weekly.py / GHA ktm_new_products_weekly.
 
-   python3 -u main.py
+5) Fitment
+   python3 scripts/queue_supabase_job.py shopify_catalog_mirror --trigger manual
+   python3 scripts/supabase_job_worker.py
+   python3 scripts/run_canonical_ymm_pipeline.py --sync-only --write
+   python3 scripts/run_canonical_ymm_pipeline.py --push-only --write
 
-   Noteer welk bestand hoort bij deze run, bijv.:
-   output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
-
-4) Shopify — producten importeren
-
-   Admin → import met die delta-CSV. Wacht tot de import klaar is.
-
-5) Alleen delta: YMM + metafields (vul het echte pad naar jouw delta-CSV in)
-
-   python3 -u scripts/export_product_ids_and_ymm.py --refresh-shopify-cache \
-     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
-
-   python3 -u scripts/export_product_metafields.py \
-     --delta-handles-csv output/products/shopify_export_delta_JJJJMMDD_HHMMSS.csv
-
-6) Apps
-
-   - YMM-app: bestand(en) uit output/ymm/ (bijv. ymm_APP_import_DELTA*.csv).
-   - Metafields Manager: output/metafields/product_metafields_metafields_manager_delta.csv
-
-7) Complementary / ET (MUSS, EMPF, ET2ARTIKEL) → side-grid op PDP
-
+6) Bijbehorende producten
    python3 scripts/shopify_sync_empfart_complementary.py --force-refresh-cache --force-write
-
-   Nodig zodat nieuwe artikelen “Bijbehorende of bijpassende producten” tonen.
-   Zie docs/empfart_complementary.md.
-
-Handig: laatste delta-pad vinden (macOS/Linux)
-
-   ls -t output/products/shopify_export_delta_*.csv | head -1
-
-Samenvatting
-------------
-
-  Ophalen          → fetch_input_sftp.py
-  Input klaar      → prepare_input_from_ftp.py --extract-xml-from-zips
-  Export           → main.py
-  Webshop          → delta-CSV importeren in Shopify
-  YMM              → export_product_ids_and_ymm.py met --delta-handles-csv + --refresh-shopify-cache
-  Metafields       → export_product_metafields.py met dezelfde --delta-handles-csv
-  Apps             → YMM-CSV + metafields-CSV uploaden
-  Complementary    → shopify_sync_empfart_complementary.py (--force-refresh-cache --force-write)
-
-Niet nodig in dit scenario (tenzij je alsnog ETA in Shopify wilt):
-
-  python3 scripts/shopify_refresh_variant_cache.py
-  python3 scripts/shopify_sync_eta_from_pricelist_csv.py

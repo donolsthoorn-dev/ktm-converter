@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stap 1: lees shopify_export_all_*.csv, haal live productafbeeldingen op (alleen handles uit CSV),
+Stap 1: lees shopify_export_delta_*.csv, haal live productafbeeldingen op (alleen handles uit CSV),
 vergelijk en rapporteer. Schrijf optioneel een takenbestand voor stap 2.
 
   python3 scripts/shopify_compare_export_images.py
@@ -27,19 +27,19 @@ from modules.shopify_export_images_lib import (  # noqa: E402
     build_tasks_payload,
     compare_csv_missing_images_against_live,
     default_tasks_path,
-    latest_all_csv,
+    latest_product_csv,
     save_tasks_json,
 )
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Vergelijk Image Src in shopify_export_all-CSV met live Shopify (geen wijzigingen in de shop)."
+        description="Vergelijk Image Src in de delta-CSV met live Shopify (geen wijzigingen in de shop)."
     )
     ap.add_argument(
         "--csv",
         metavar="PATH",
-        help=f"Pad naar shopify_export_all_*.csv (default: nieuwste in {config.PRODUCTS_OUTPUT_DIR})",
+        help=f"Product-CSV (default: nieuwste shopify_export_delta_*.csv in {config.PRODUCTS_OUTPUT_DIR})",
     )
     ap.add_argument(
         "--limit",
@@ -102,10 +102,10 @@ def main() -> None:
         print("SHOPIFY_ACCESS_TOKEN ontbreekt (.env).", file=sys.stderr)
         raise SystemExit(1)
 
-    csv_path = args.csv or latest_all_csv(config.PRODUCTS_OUTPUT_DIR)
+    csv_path = args.csv or latest_product_csv(config.PRODUCTS_OUTPUT_DIR)
     if not csv_path or not os.path.isfile(csv_path):
         print(
-            "Geen CSV: geef --csv of zet shopify_export_all_*.csv in output/products/.",
+            "Geen CSV: geef --csv of zet shopify_export_delta_*.csv in output/products/.",
             file=sys.stderr,
         )
         raise SystemExit(1)

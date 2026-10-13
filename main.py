@@ -184,17 +184,17 @@ def main() -> None:
     # -----------------------------------------------------
     # unieke image-paden uit XML (volledige ref, niet alleen basename)
     # -----------------------------------------------------
-    # Ook refs buiten de delta meenemen: shopify_export_all bevat alle producten, maar
-    # image_url_map werd alleen gevuld vanuit delta → ontbrekende Image Src voor veel SKUs.
+    # Alleen de delta-export gaat naar Shopify. Afbeeldingen van niet-verkoopbare
+    # varianten komen niet in die CSV.
     image_refs = set()
 
-    for p in products:
+    for p in delta_products:
         for img in p.get("images", []):
             s = (img or "").strip()
             if s:
                 image_refs.add(s)
 
-    log.info("%s unieke image-referenties in volledige catalogus (uit XML)", len(image_refs))
+    log.info("%s unieke image-referenties in delta (uit XML)", len(image_refs))
 
     def _norm_ref_key(s: str) -> str:
         return s.strip().replace("\\", "/").lower()
@@ -211,6 +211,10 @@ def main() -> None:
     abs_path_to_local: dict[str, Path] = {}
     refs_no_file: list[str] = []
 
+    # Shopify product media: max 20 MB per bestand.
+    _max_image_bytes = 20 * 1024 * 1024
+    images_too_large = 0
+
     for ref in image_refs:
         local_path = None
         for root in image_roots:
@@ -220,6 +224,13 @@ def main() -> None:
             if local_path is not None:
                 break
         if not local_path:
+            refs_no_file.append(ref)
+            continue
+        try:
+            if local_path.stat().st_size > _max_image_bytes:
+                images_too_large += 1
+                continue
+        except OSError:
             refs_no_file.append(ref)
             continue
         ap = str(local_path.resolve())
@@ -362,6 +373,16 @@ def main() -> None:
 
     filtered_delta = []
 
+    def _usable_image_url(url: str | None) -> str | None:
+        """Alleen publieke CDN-URL’s; geen XML-pad en geen fallback-placeholder."""
+        u = (url or "").strip()
+        if not u.startswith(("http://", "https://")):
+            return None
+        name = u.split("?", 1)[0].rsplit("/", 1)[-1].lower()
+        if "fallback_no_picture" in name:
+            return None
+        return u
+
     for handle, items in products_by_handle.items():
         group_has_images = False
 
@@ -373,15 +394,11 @@ def main() -> None:
                 url = image_url_map.get(raw) if raw else None
                 if not url and raw:
                     url = image_url_by_norm.get(_norm_ref_key(raw))
-
-                # Zelfde regel als de ALL-export hieronder: behoud ruwe XML-ref als er nog
-                # geen CDN-URL is. Alleen `if url` zou hier alle ontbrekende refs weggooien op
-                # dicts die *dezelfde objecten* zijn als in `products` — dan verdwijnen extra
-                # gallery-rijen uit shopify_export_all (één Image Src, compare ziet niets te doen).
-                if url:
-                    new_images.append(url)
-                elif raw:
-                    new_images.append(raw)
+                # Geen ruwe XML-ref bewaren: zonder werkende URL hoort het product
+                # niet in de delta (Shopify-import zonder foto).
+                usable = _usable_image_url(url)
+                if usable:
+                    new_images.append(usable)
 
             p["images"] = new_images
 
@@ -413,11 +430,13 @@ def main() -> None:
         "met geldige URL (CDN/cache of na upload): %s\n"
         "nieuw geüpload naar Shopify in deze run: %s\n"
         "geen bestand op schijf onder input/: %s\n"
+        "lokaal te groot (>20 MB, Shopify-limiet): %s\n"
         "lokaal wel bestand, maar geen geldige URL: %s",
         len(image_refs),
         images_resolved,
         images_uploaded,
         images_no_file,
+        images_too_large,
         images_local_failed,
     )
 
@@ -450,25 +469,6 @@ def main() -> None:
     delta_final_skus = {normalize_sku_key(p["sku"]) for p in delta_products if p.get("sku")}
 
     # -----------------------------------------------------
-    # Afbeelding-URL's ook op volledige catalogus (ALL-export)
-    # -----------------------------------------------------
-    # Delta-run zet CDN-URL's alleen op varianten die in delta_products zitten. De exporter
-    # kiest per handle een "primary" op basis van titellengte — die kan een variant zijn die
-    # níet in de delta zat maar wél dezelfde XML-image-ref deelt. Zonder deze stap blijft
-    # Image Src een basename/legacy-pad i.p.v. de geüploade Shopify-URL, of ontbreekt de URL.
-    for p in products:
-        new_images: list[str] = []
-        for img in p.get("images", []) or []:
-            raw = (img or "").strip()
-            if not raw:
-                continue
-            url = image_url_map.get(raw) if raw else None
-            if not url and raw:
-                url = image_url_by_norm.get(_norm_ref_key(raw))
-            new_images.append(url if url else raw)
-        p["images"] = new_images
-
-    # -----------------------------------------------------
     # CSV export
     # -----------------------------------------------------
 
@@ -477,16 +477,12 @@ def main() -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     delta_file = os.path.join(config.PRODUCTS_OUTPUT_DIR, f"shopify_export_delta_{timestamp}.csv")
-    all_file = os.path.join(config.PRODUCTS_OUTPUT_DIR, f"shopify_export_all_{timestamp}.csv")
     excluded_file = os.path.join(
         config.PRODUCTS_OUTPUT_DIR, f"shopify_export_excluded_{timestamp}.csv"
     )
 
     log.info("CSV export delta maken...")
     export(delta_products, delta_file)
-
-    log.info("CSV export ALL maken...")
-    export(products, all_file)
 
     log.info("CSV export uitgesloten (met redenen) maken...")
     write_excluded_report(

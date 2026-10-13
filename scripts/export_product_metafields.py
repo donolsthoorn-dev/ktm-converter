@@ -2,9 +2,8 @@
 """
 Build a Metafields Manager–style product CSV (fits_on JSON + flat YMM columns).
 
-Prerequisite: run scripts/export_product_ids_and_ymm.py first so
-  output/<merk>/ids/product_ids_from_xml.csv
-exists with Product Id + handle mapping (or pass --product-ids).
+Product Id's komen uit --product-ids (als dat bestand er is) en anders uit de
+Shopify-productindex. Na een import van nieuwe producten: --refresh-shopify-cache.
 
 Output default:
   output/<merk>/metafields/product_metafields_metafields_manager.csv

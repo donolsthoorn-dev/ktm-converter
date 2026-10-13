@@ -88,27 +88,19 @@ def main() -> int:
     print(f"Primair type: {result['primary_type'] or '(leeg)'} (langste titel in productgroep)")
     print()
 
-    in_all = result["in_all_csv"]
     in_delta = result["in_delta_csv"]
     print("Berekend (zelfde regels als main.py + exporter.py):")
-    print(f"  In shopify_export ALL:   {'ja' if in_all else 'nee'}")
     print(f"  In shopify_export DELTA: {'ja' if in_delta else 'nee'}")
     reden = (result.get("reden") or "").strip()
     if reden:
         print(f"  Reden (delta / CSV):     {reden}")
     else:
-        print("  Reden (delta / CSV):     — (variant komt in beide exportlijsten voor zover filters)")
+        print("  Reden (delta / CSV):     — (variant komt in de delta-export voor zover filters)")
     print()
 
-    all_path = _latest_csv("shopify_export_all_*.csv", args.products_dir)
     delta_path = _latest_csv("shopify_export_delta_*.csv", args.products_dir)
 
     print(f"Controle op schijf ({args.products_dir}):")
-    if all_path:
-        ok = _sku_in_csv_file(all_path, sku)
-        print(f"  Laatste ALL:   {os.path.basename(all_path)}  →  SKU {'gevonden' if ok else 'niet gevonden'}")
-    else:
-        print("  Laatste ALL:   (geen shopify_export_all_*.csv)")
     if delta_path:
         ok = _sku_in_csv_file(delta_path, sku)
         print(f"  Laatste DELTA: {os.path.basename(delta_path)}  →  SKU {'gevonden' if ok else 'niet gevonden'}")
