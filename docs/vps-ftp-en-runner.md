@@ -4,12 +4,13 @@
 
 | Waar | Wat |
 |------|-----|
-| GitHub Actions `ktm_price_eta_status_sync` | Elke nacht prijs/ETA (kleine CSVs) |
-| VPS `motoxshop-vps2` (`149.210.206.111`) | Wekelijkse PIM-zips (XML + PHO) + pipeline via SSH |
+| GitHub Actions `ktm_price_eta_status_sync` | Prijs/ETA (kleine CSVs; dispatcher/uur) |
+| VPS `motoxshop-vps2` (`149.210.206.111`) | PIM-zips (XML + PHO) + pipeline via SSH |
 | Putoline op dezelfde VPS | Kroon-API (IP-whitelist), 02:15 NL — niet mengen |
 | Overige GHA | SEO, publish, barcodes, … |
 
-Geen permanente self-hosted runner: de weekjob SSHt naar de VPS (zelfde patroon als `motox_putoline.yml`).
+Geen permanente self-hosted runner: `ktm_new_products_weekly` SSHt naar de VPS (zelfde patroon als `motox_putoline.yml`).  
+Schedule: **dagelijks 04:00 UTC** (noop als PIM-zips ongewijzigd). Volle run queued op `shopify-write-lock-ktm` (Motox-lock is apart).
 
 ## VPS-setup
 
@@ -54,9 +55,9 @@ Prepare-flags (intern): `--extract-xml-from-zips --extract-media-from-zips --pru
 
 Workflow: `.github/workflows/ktm_new_products_weekly.yml`
 
-- Schedule: maandag 03:30 UTC
+- Schedule: dagelijks 04:00 UTC (≈ 06:00 NL zomer)
 - Secret: `MOTOX_VPS_SSH_KEY` (zelfde als Putoline)
-- Concurrency: `shopify-write-lock-ktm`
+- Concurrency: `shopify-write-lock-ktm` (queued, geen cancel)
 
 Handmatig: Actions → **ktm_new_products_weekly** → Run workflow.
 

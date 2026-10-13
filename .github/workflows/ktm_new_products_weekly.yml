@@ -1,6 +1,6 @@
-# Wekelijkse nieuwe producten: PIM (XML+PHO) op VPS → rebuild → API-import → YMM → complementary.
-# Draait via SSH op motoxshop-vps2 (zelfde patroon als motox_putoline), zodat grote input/
-# op de VPS-schijf blijft. Prijs/ETA blijft in ktm_price_eta_status_sync (nachtelijk).
+# Nachtelijke nieuwe producten: PIM (XML+PHO) op VPS → rebuild → API-import → YMM → complementary.
+# FTP-fingerprint: ongewijzigde PIM-zips → noop in seconden (geen Shopify-writes).
+# Volle run deelt concurrency shopify-write-lock-ktm (wacht/queued, cancelt anderen niet).
 #
 # Secrets: MOTOX_VPS_SSH_KEY (privésleutel voor motoxshop@149.210.206.111).
 # Op de VPS: /home/motoxshop/ktm_project met .env (FTP, Shopify, Supabase).
@@ -9,8 +9,9 @@ name: ktm_new_products_weekly
 
 on:
   schedule:
-    # Maandag 03:30 UTC ≈ 05:30 NL zomer / 04:30 winter — na Putoline 02:15 NL
-    - cron: "30 3 * * 1"
+    # Dagelijks 04:00 UTC ≈ 06:00 NL zomer / 05:00 winter.
+    # Na typische PIM-drop (~03:15 UTC), na Putoline (02:15 NL), vóór YMM-delivery ma 05:15 UTC.
+    - cron: "0 4 * * *"
   workflow_dispatch:
     inputs:
       brands:

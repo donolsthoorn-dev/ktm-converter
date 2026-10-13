@@ -38,6 +38,10 @@ Vult lege barcodes vanuit de prijslijst. Een barcode die er al staat, blijft sta
 
 Geeft een categorie aan producten die er nog geen hebben. Een categorie die al ingevuld is, blijft staan, ook als die niet de beste keuze is.
 
+### 06:00 — Nieuwe producten (PIM)
+
+Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s en zet nieuwe producten in Shopify (plus YMM/complementary). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_weekly`. Deelt de KTM Shopify-schrijflock met SEO/categorie/prijs — een volle run laat die jobs wachten, Motox niet.
+
 ### 07:00 — Prijzen en levertijd
 
 Werkt prijs en levertijd bij vanuit de prijslijst. De prijs is inclusief btw. Op een deel van de productsoorten komt daar 9% bovenop. Een product zonder soort krijgt die 9% niet. Dit herhaalt zich elk uur tot 23:00. Motox volgt de OEM-prijzen daarna via Synkro.
