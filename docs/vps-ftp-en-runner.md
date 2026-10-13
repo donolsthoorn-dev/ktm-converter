@@ -9,7 +9,7 @@
 | Putoline op dezelfde VPS | Kroon-API (IP-whitelist), 02:15 NL — niet mengen |
 | Overige GHA | SEO, publish, barcodes, … |
 
-Geen permanente self-hosted runner: `ktm_new_products_weekly` SSHt naar de VPS (zelfde patroon als `motox_putoline.yml`).  
+Geen permanente self-hosted runner: `ktm_new_products_daily` SSHt naar de VPS (zelfde patroon als `motox_putoline.yml`).  
 Schedule: **dagelijks 04:00 UTC** (noop als PIM-zips ongewijzigd). Volle run queued op `shopify-write-lock-ktm` (Motox-lock is apart).
 
 ## VPS-setup
@@ -42,24 +42,25 @@ python3 scripts/vps_pim_refresh_weekly.py
 Volledige weekpipeline:
 
 ```bash
-python3 scripts/run_new_products_weekly.py
-python3 scripts/run_new_products_weekly.py --skip-pim --skip-rebuild --dry-run-import --import-limit 5
+python3 scripts/run_new_products_daily.py
+python3 scripts/run_new_products_daily.py --skip-pim --skip-rebuild --dry-run-import --import-limit 5
 # GHA: skip_pim / skip_rebuild / force_pim / dry_run_import / import_limit
 # PIM-zip FTP fingerprint (size/mtime): ongewijzigd → pipeline stopt (~seconden).
-# Prijs-CSV-wijzigingen tellen niet mee (nachtelijke sync). Import created=0 → geen YMM.
+# Prijs-CSV-wijzigingen tellen niet mee (nachtelijke sync).
+# Na echte PIM-refresh: altijd YMM/complementary (ook bij created=0).
 ```
 
 Prepare-flags (intern): `--extract-xml-from-zips --extract-media-from-zips --prune-old-xml`.
 
 ## GitHub Actions
 
-Workflow: `.github/workflows/ktm_new_products_weekly.yml`
+Workflow: `.github/workflows/ktm_new_products_daily.yml`
 
 - Schedule: dagelijks 04:00 UTC (≈ 06:00 NL zomer)
 - Secret: `MOTOX_VPS_SSH_KEY` (zelfde als Putoline)
 - Concurrency: `shopify-write-lock-ktm` (queued, geen cancel)
 
-Handmatig: Actions → **ktm_new_products_weekly** → Run workflow.
+Handmatig: Actions → **ktm_new_products_daily** → Run workflow.
 
 ## Schijf
 

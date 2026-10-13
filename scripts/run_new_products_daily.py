@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Wekelijkse nieuwe-producten pipeline (bedoeld op VPS na PIM-refresh).
+Dagelijkse nieuwe-producten pipeline (VPS na PIM-refresh).
 
   1) optioneel: vps_pim_refresh_weekly.py  (FTP fingerprint → skip als ongewijzigd)
   2) rebuild_shopify_deltas.py
   3) shopify_import_delta_products.py
-  4) catalog mirror + YMM + complementary  (alleen als er nieuwe producten zijn)
+  4) catalog mirror + YMM + complementary
+     — altijd na een echte PIM-refresh (ook bij created=0, voor fitment/EMPF-updates)
+     — overgeslagen bij fingerprint-noop of dry-run (tenzij --force-downstream)
 
-  python3 scripts/run_new_products_weekly.py
-  python3 scripts/run_new_products_weekly.py --skip-pim --brands hsq --dry-run-import
-  python3 scripts/run_new_products_weekly.py --force-pim   # negeer FTP-fingerprint
+  python3 scripts/run_new_products_daily.py
+  python3 scripts/run_new_products_daily.py --skip-pim --brands hsq --dry-run-import
+  python3 scripts/run_new_products_daily.py --force-pim
 """
 
 from __future__ import annotations
@@ -68,7 +70,7 @@ def main() -> int:
     ap.add_argument(
         "--force-downstream",
         action="store_true",
-        help="YMM/complementary ook draaien als import 0 nieuwe producten had",
+        help="YMM/complementary forceren (ook bij dry-run of created=0 zonder PIM-refresh)",
     )
     ap.add_argument("--dry-run-import", action="store_true")
     ap.add_argument("--import-limit", type=int, default=0)
@@ -77,6 +79,7 @@ def main() -> int:
 
     py = sys.executable
     brands = args.brands
+    pim_refreshed = False
 
     if not args.skip_pim:
         pim_cmd = [py, "scripts/vps_pim_refresh_weekly.py", "--brands", brands]
@@ -90,8 +93,9 @@ def main() -> int:
                 "\nFTP-bronnen ongewijzigd — rebuild/import/YMM/complementary overgeslagen.",
                 flush=True,
             )
-            print("Wekelijkse pipeline klaar (noop).", flush=True)
+            print("Dagelijkse pipeline klaar (noop).", flush=True)
             return 0
+        pim_refreshed = True
 
     if not args.skip_rebuild:
         rc = _run([py, "-u", "scripts/rebuild_shopify_deltas.py", "--brands", brands])
@@ -117,22 +121,31 @@ def main() -> int:
             "(gebruik --force-downstream om toch te draaien).",
             flush=True,
         )
-        print("\nWekelijkse nieuwe-producten pipeline klaar.", flush=True)
+        print("\nDagelijkse nieuwe-producten pipeline klaar.", flush=True)
         return 0
 
+    # Gat dicht: na echte PIM-refresh altijd YMM/complementary, ook bij created=0
+    # (fitment/EMPF-wijzigingen op bestaande SKU’s).
     skip_heavy = (
         not args.force_downstream
+        and not pim_refreshed
         and created is not None
         and created == 0
     )
     if skip_heavy:
         print(
-            "\nImport created=0 — YMM/mirror/complementary overgeslagen "
-            "(gebruik --force-downstream om toch te draaien).",
+            "\nImport created=0 en geen PIM-refresh — YMM/mirror/complementary overgeslagen "
+            "(gebruik --force-downstream of laat PIM draaien).",
             flush=True,
         )
-        print("\nWekelijkse nieuwe-producten pipeline klaar.", flush=True)
+        print("\nDagelijkse nieuwe-producten pipeline klaar.", flush=True)
         return 0
+
+    if pim_refreshed and created == 0:
+        print(
+            "\nPIM vernieuwd, created=0 — YMM/complementary draaien voor bestaande producten.",
+            flush=True,
+        )
 
     if not args.skip_ymm:
         rc = _run(
@@ -170,15 +183,14 @@ def main() -> int:
             return rc
 
     if not args.skip_complementary:
-        # Alleen force-refresh als we echt nieuwe producten hebben (of force)
         cmd = [py, "scripts/shopify_sync_empfart_complementary.py", "--force-write"]
-        if created is None or created > 0 or args.force_downstream:
+        if created is None or created > 0 or pim_refreshed or args.force_downstream:
             cmd.append("--force-refresh-cache")
         rc = _run(cmd)
         if rc != 0:
             return rc
 
-    print("\nWekelijkse nieuwe-producten pipeline klaar.", flush=True)
+    print("\nDagelijkse nieuwe-producten pipeline klaar.", flush=True)
     return 0
 
 

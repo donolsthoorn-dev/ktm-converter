@@ -1,7 +1,7 @@
 # Nieuwe producten — stappenplan
 
-**Automatisch (voorkeur):** wekelijks via VPS + GitHub Actions — zie [`vps-ftp-en-runner.md`](vps-ftp-en-runner.md).  
-Prijs/ETA blijft **elke nacht** in Actions (`ktm_price_eta_status_sync`).
+**Automatisch (voorkeur):** dagelijks via VPS + GitHub Actions — zie [`vps-ftp-en-runner.md`](vps-ftp-en-runner.md).  
+Prijs/ETA blijft **apart** via Actions (`ktm_price_eta_status_sync`).
 
 Handmatig (laptop) alleen als noodgreep:
 
@@ -13,7 +13,7 @@ cd ~/Documents/ktm_project
 
 ## 1. Data ophalen (FTP)
 
-Prijs-CSV’s (nacht GHA) of PIM-zips (wekelijks op VPS):
+Prijs-CSV’s (nacht/uur GHA) of PIM-zips (dagelijks op VPS):
 
 ```bash
 python3 scripts/fetch_input_sftp.py
@@ -89,13 +89,13 @@ python3 scripts/shopify_sync_empfart_complementary.py --force-refresh-cache --fo
 
 ---
 
-## Alles-in-één (VPS / weekjob)
+## Alles-in-één (VPS / daily job)
 
 ```bash
-python3 scripts/run_new_products_weekly.py
+python3 scripts/run_new_products_daily.py
 ```
 
-GitHub: workflow **ktm_new_products_weekly** (SSH naar VPS).
+GitHub: workflow **ktm_new_products_daily** (SSH naar VPS).
 
 ---
 

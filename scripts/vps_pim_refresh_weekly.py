@@ -10,7 +10,7 @@ Geen Shopify-writes. Prijs/ETA-*sync* naar Shopify blijft nachtelijke GHA.
   python3 scripts/vps_pim_refresh_weekly.py --force   # negeer FTP-fingerprint
 
 Zonder wijziging op FTP (size/mtime): exit 0 + flag weekly_source_unchanged
-(zodat run_new_products_weekly de zware stappen overslaat).
+(zodat run_new_products_daily de zware stappen overslaat).
 
 Na succesvolle refresh: output/logs/pim_ready_YYYYMMDD + fingerprint opslaan.
 """

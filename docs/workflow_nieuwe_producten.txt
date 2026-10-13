@@ -18,7 +18,7 @@ Zie docs/STAPPENPLAN.md (hoofdbron).
 
 4) Producten via API (geen Admin-import):
    python3 scripts/shopify_import_delta_products.py --brands ktm,hsq,wp
-   Of wekelijks: python3 scripts/run_new_products_weekly.py / GHA ktm_new_products_weekly.
+   Of dagelijks: python3 scripts/run_new_products_daily.py / GHA ktm_new_products_daily.
 
 5) Fitment
    python3 scripts/queue_supabase_job.py shopify_catalog_mirror --trigger manual
