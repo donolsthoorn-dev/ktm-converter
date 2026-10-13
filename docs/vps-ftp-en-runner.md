@@ -42,7 +42,8 @@ Volledige weekpipeline:
 
 ```bash
 python3 scripts/run_new_products_weekly.py
-python3 scripts/run_new_products_weekly.py --skip-pim --dry-run-import --import-limit 5
+python3 scripts/run_new_products_weekly.py --skip-pim --skip-rebuild --dry-run-import --import-limit 5
+# GHA workflow_dispatch: skip_pim / skip_rebuild / dry_run_import / import_limit
 ```
 
 Prepare-flags (intern): `--extract-xml-from-zips --extract-media-from-zips --prune-old-xml`.
