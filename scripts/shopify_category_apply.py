@@ -353,6 +353,7 @@ def main() -> None:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = "reclassify" if args.reclassify else "apply"
     out = ROOT / "output" / f"shopify_category_{suffix}_{args.shop}_{stamp}.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
     fields = [
         "product_id",
         "handle",

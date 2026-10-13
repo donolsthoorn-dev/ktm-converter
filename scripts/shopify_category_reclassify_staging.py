@@ -174,6 +174,7 @@ def main() -> None:
     staging_path = ROOT / "output" / f"shopify_category_reclassify_staging_{args.shop}_{stamp}.csv"
     changes_path = ROOT / "output" / f"shopify_category_reclassify_changes_{args.shop}_{stamp}.csv"
     bulk_path = ROOT / "output" / f".category_bulk_{args.shop}_{stamp}.jsonl"
+    staging_path.parent.mkdir(parents=True, exist_ok=True)
 
     action_counts: Counter[str] = Counter()
     bucket_change: Counter[str] = Counter()

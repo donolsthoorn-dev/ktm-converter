@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload staging CSVs
         if: always() && steps.gate.outputs.run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: shopify-category-reclassify-staging-${{ matrix.shop }}-${{ github.run_id }}
           path: |
@@ -144,7 +144,7 @@ jobs:
 
       - name: Upload apply report
         if: always() && steps.gate.outputs.run == 'true' && env.APPLY == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: shopify-category-reclassify-apply-${{ matrix.shop }}-${{ github.run_id }}
           path: output/shopify_category_reclassify_${{ matrix.shop }}_*.csv
