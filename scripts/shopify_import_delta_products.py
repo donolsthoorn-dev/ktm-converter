@@ -532,6 +532,9 @@ def main() -> int:
 
     created = skipped = failed = 0
     done = 0
+    by_brand: dict[str, dict[str, int]] = {
+        b: {"created": 0, "skipped": 0, "failed": 0} for b in brands
+    }
 
     with out.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(
@@ -566,6 +569,7 @@ def main() -> int:
                     sess, handle, index, live_check=args.live_handle_check
                 ):
                     skipped += 1
+                    by_brand[brand]["skipped"] += 1
                     w.writerow(
                         {
                             "brand": brand,
@@ -582,6 +586,7 @@ def main() -> int:
 
                 if args.dry_run:
                     created += 1
+                    by_brand[brand]["created"] += 1
                     done += 1
                     w.writerow(
                         {
@@ -604,6 +609,7 @@ def main() -> int:
                 if not pid:
                     if _is_already_exists_error(err):
                         skipped += 1
+                        by_brand[brand]["skipped"] += 1
                         index[normalize_shopify_product_handle(handle)] = {"id": ""}
                         w.writerow(
                             {
@@ -620,6 +626,7 @@ def main() -> int:
                         print(f"  SKIP exists {handle}", flush=True)
                     else:
                         failed += 1
+                        by_brand[brand]["failed"] += 1
                         w.writerow(
                             {
                                 "brand": brand,
@@ -661,6 +668,7 @@ def main() -> int:
                     extras.append(f"media:{img_err}")
                 result = "ok" if not extras else "ok_with_warn"
                 created += 1
+                by_brand[brand]["created"] += 1
                 done += 1
                 index[normalize_shopify_product_handle(handle)] = {"id": pid}
                 w.writerow(
@@ -682,6 +690,13 @@ def main() -> int:
                 )
                 time.sleep(args.sleep)
 
+            print(
+                f"{brand}: created={by_brand[brand]['created']} "
+                f"skipped={by_brand[brand]['skipped']} "
+                f"failed={by_brand[brand]['failed']}",
+                flush=True,
+            )
+
             if args.limit and done >= args.limit:
                 break
 
@@ -689,6 +704,12 @@ def main() -> int:
         f"\nKlaar: created={created} skipped={skipped} failed={failed}\nRapport: {out}",
         flush=True,
     )
+    for brand in brands:
+        b = by_brand[brand]
+        print(
+            f"  {brand}: created={b['created']} skipped={b['skipped']} failed={b['failed']}",
+            flush=True,
+        )
     stats_path = ROOT / "output" / "logs" / "last_delta_import_stats.json"
     stats_path.parent.mkdir(parents=True, exist_ok=True)
     stats_path.write_text(
@@ -699,6 +720,7 @@ def main() -> int:
                 "would_create": created if args.dry_run else created,
                 "skipped": skipped,
                 "failed": failed,
+                "by_brand": by_brand,
                 "dry_run": bool(args.dry_run),
                 "report": str(out),
             },

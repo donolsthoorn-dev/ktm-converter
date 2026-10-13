@@ -42,7 +42,8 @@ TRACKED_WORKFLOWS = {
     "motox_shopify_gtin_fill.yml",
     "motox_ymm_derived_fill.yml",
     "ktm_seo.yml",
-    "ktm_new_products_weekly.yml",
+    "ktm_new_products_daily.yml",
+    "ktm_new_products_weekly.yml",  # oude naam (historische runs)
     "ktm_ymm_delivery.yml",
     "ktm_garage_fitment_deploy.yml",
     "ktm_job_worker.yml",
@@ -117,19 +118,42 @@ def _fmt_nl_short(dt: datetime) -> str:
     return f"{local.day} {NL_MONTHS[local.month]}"
 
 
+def _parse_nl_date(value: str) -> datetime:
+    """Parse YYYY-MM-DD as midnight Europe/Amsterdam."""
+    raw = (value or "").strip()
+    try:
+        d = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError as e:
+        raise ValueError(f"Ongeldige datum '{value}' (verwacht YYYY-MM-DD)") from e
+    return datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=NL)
+
+
 def digest_window(
     *,
     until: datetime | None = None,
     hours: float | None = None,
     until_now: bool = False,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> tuple[datetime, datetime]:
     """Return (since, until) as timezone-aware datetimes in UTC-comparable form.
 
     - default: vorige 10:00 NL → vandaag 10:00 NL
-    - until_now: meest recente 10:00 NL → nu (alles sinds de laatste digest-cutoff)
+    - date_from/date_to: kalenderdagen 00:00 → 24:00 NL (eind = middernacht ná date_to)
+    - until_now: meest recente 10:00 NL → nu
     - hours: nu − N uur → nu
     """
     now_nl = (until or datetime.now(tz=NL)).astimezone(NL)
+    df = (date_from or "").strip()
+    dt = (date_to or "").strip()
+    if df or dt:
+        if not df or not dt:
+            raise ValueError("date_from en date_to moeten beide gezet zijn (YYYY-MM-DD)")
+        start = _parse_nl_date(df)
+        end = _parse_nl_date(dt) + timedelta(days=1)  # 24:00 = volgende middernacht
+        if end <= start:
+            raise ValueError(f"date_to ({dt}) moet op of na date_from ({df}) liggen")
+        return start, end
     if hours is not None:
         end = now_nl
         start = end - timedelta(hours=hours)
@@ -357,10 +381,39 @@ def _parse_metrics(wf: str, text: str) -> dict[str, int]:
         for g in re.finditer(r"Done:\s*\d+\s+ok=(\d+)", text):
             m["ok"] = m.get("ok", 0) + int(g.group(1))
         return m
-    if wf == "ktm_new_products_weekly.yml":
-        g = re.search(r"Klaar:\s*geschreven=(\d+)", text)
+    if wf in ("ktm_new_products_daily.yml", "ktm_new_products_weekly.yml"):
+        # Echte productCreate-totalen (niet complementary "geschreven=")
+        g = re.search(r"Klaar:\s*created=(\d+)\s+skipped=(\d+)\s+failed=(\d+)", text)
         if g:
-            m["geschreven"] = int(g.group(1))
+            m["created"] = int(g.group(1))
+        # Per merk (nieuwe import-logs)
+        for brand in ("ktm", "hsq", "wp"):
+            bg = re.search(
+                rf"(?:^|\n)\s*{brand}:\s*created=(\d+)\s+skipped=\d+\s+failed=\d+",
+                text,
+            )
+            if bg:
+                m[f"created_{brand}"] = int(bg.group(1))
+        # Fallback: tel "OK <handle>" per merk (ook als job daarna faalt).
+        # Alleen gebruiken als het optelt tot Klaar.created (anders logs incompleet).
+        if not any(m.get(f"created_{b}") for b in ("ktm", "hsq", "wp")):
+            ok_ktm = ok_hsq = ok_wp = 0
+            for hm in re.finditer(r"(?:^|\n)\s*OK\s+(\S+)", text):
+                handle = hm.group(1).lower()
+                if handle.startswith("hsq-"):
+                    ok_hsq += 1
+                elif handle.startswith("wp-"):
+                    ok_wp += 1
+                else:
+                    ok_ktm += 1
+            ok_sum = ok_ktm + ok_hsq + ok_wp
+            created_total = m.get("created")
+            if ok_sum and (created_total is None or created_total == ok_sum):
+                m["created_ktm"] = ok_ktm
+                m["created_hsq"] = ok_hsq
+                m["created_wp"] = ok_wp
+                if "created" not in m:
+                    m["created"] = ok_sum
         return m
     if wf == "ktm_ymm_delivery.yml":
         g = re.search(r"YMM push klaar.*?\bok=(\d+)", text)
@@ -505,14 +558,28 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
                 80,
             )
         )
-    elif wf == "ktm_new_products_weekly.yml":
-        out.append(
-            DigestItem(
-                GROUP_KTM,
-                f"Nieuwe producten toegevoegd {_nl_num(totals['geschreven'])}",
-                40,
-            )
+    elif wf in ("ktm_new_products_daily.yml", "ktm_new_products_weekly.yml"):
+        brand_labels = (
+            ("created_ktm", "Nieuwe KTM-producten toegevoegd", 40),
+            ("created_hsq", "Nieuwe HSQ-producten toegevoegd", 41),
+            ("created_wp", "Nieuwe WP-producten toegevoegd", 42),
         )
+        brand_any = False
+        for key, label, sort in brand_labels:
+            if totals.get(key):
+                brand_any = True
+                out.append(
+                    DigestItem(GROUP_KTM, f"{label} {_nl_num(totals[key])}", sort)
+                )
+        # Fallback: alleen totaal (oude logs zonder per-merk regels)
+        if not brand_any and totals.get("created"):
+            out.append(
+                DigestItem(
+                    GROUP_KTM,
+                    f"Nieuwe producten toegevoegd {_nl_num(totals['created'])}",
+                    40,
+                )
+            )
     elif wf == "ktm_ymm_delivery.yml":
         out.append(
             DigestItem(
@@ -555,6 +622,13 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
     return out
 
 
+# Jobs die vaak na gedeeltelijk succes falen — creates/updates toch meenemen.
+_INCLUDE_FAILED_WORKFLOWS = {
+    "ktm_new_products_daily.yml",
+    "ktm_new_products_weekly.yml",
+}
+
+
 def aggregate_from_logs(
     *,
     repo: str,
@@ -563,12 +637,18 @@ def aggregate_from_logs(
 ) -> list[DigestItem]:
     by_wf: dict[str, list[int]] = defaultdict(list)
     for r in runs:
-        if (r.get("conclusion") or "") != "success":
-            continue
+        conclusion = r.get("conclusion") or ""
         path = (r.get("path") or "").split("/")[-1]
         if path not in TRACKED_WORKFLOWS:
             continue
-        by_wf[path].append(int(r["id"]))
+        if conclusion == "success":
+            by_wf[path].append(int(r["id"]))
+        elif (
+            conclusion in ("failure", "cancelled")
+            and path in _INCLUDE_FAILED_WORKFLOWS
+        ):
+            # Import kan producten gezet hebben vóór een latere stap faalt.
+            by_wf[path].append(int(r["id"]))
 
     collected: list[DigestItem] = []
 
@@ -694,6 +774,16 @@ def main() -> int:
         help="Venster: laatste 10:00 NL → nu (handig na handmatige jobs)",
     )
     ap.add_argument(
+        "--date-from",
+        default="",
+        help="Startdatum YYYY-MM-DD (00:00 NL); samen met --date-to",
+    )
+    ap.add_argument(
+        "--date-to",
+        default="",
+        help="Einddatum YYYY-MM-DD (t/m 24:00 NL); samen met --date-from",
+    )
+    ap.add_argument(
         "--repo",
         default=os.environ.get("GITHUB_REPOSITORY") or REPO_DEFAULT,
     )
@@ -707,7 +797,16 @@ def main() -> int:
     supabase_url = (os.environ.get("SUPABASE_URL") or "").strip()
     supabase_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
 
-    since, until = digest_window(hours=args.hours, until_now=args.until_now)
+    try:
+        since, until = digest_window(
+            hours=args.hours,
+            until_now=args.until_now,
+            date_from=args.date_from or None,
+            date_to=args.date_to or None,
+        )
+    except ValueError as e:
+        print(f"::error::{e}", file=sys.stderr)
+        return 2
     print(f"Venster: {since.isoformat()} → {until.isoformat()}", flush=True)
 
     runs = fetch_github_runs(

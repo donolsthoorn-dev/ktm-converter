@@ -20,15 +20,23 @@ on:
           - "true"
           - "false"
         default: "false"
+      date_from:
+        description: "Van datum YYYY-MM-DD (00:00 NL). Leeg = standaard 10:00-venster"
+        required: false
+        default: ""
+      date_to:
+        description: "Tot datum YYYY-MM-DD (t/m 24:00 NL). Leeg = standaard 10:00-venster"
+        required: false
+        default: ""
       until_now:
-        description: "true = sinds laatste 10:00 NL tot nu (i.p.v. vaste dag-cutoff)"
+        description: "true = sinds laatste 10:00 NL tot nu (alleen als datums leeg)"
         type: choice
         options:
           - "true"
           - "false"
-        default: "true"
+        default: "false"
       hours:
-        description: "Optioneel venster in uren (leeg = 10:00-logica; negeert until_now)"
+        description: "Optioneel venster in uren (negeert datums/until_now indien gezet)"
         required: false
         default: ""
       dispatch_log_id:
@@ -47,6 +55,8 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       SEND: ${{ github.event.inputs.send || 'false' }}
+      DATE_FROM: ${{ github.event.inputs.date_from || '' }}
+      DATE_TO: ${{ github.event.inputs.date_to || '' }}
       UNTIL_NOW: ${{ github.event.inputs.until_now || 'false' }}
       HOURS: ${{ github.event.inputs.hours || '' }}
     steps:
@@ -101,6 +111,12 @@ jobs:
           fi
           if [[ -n "${HOURS}" ]]; then
             EXTRA+=(--hours "${HOURS}")
+          elif [[ -n "${DATE_FROM}" || -n "${DATE_TO}" ]]; then
+            if [[ -z "${DATE_FROM}" || -z "${DATE_TO}" ]]; then
+              echo "::error::Vul zowel date_from als date_to in (YYYY-MM-DD), of laat beide leeg"
+              exit 1
+            fi
+            EXTRA+=(--date-from "${DATE_FROM}" --date-to "${DATE_TO}")
           elif [[ "${UNTIL_NOW}" == "true" ]]; then
             EXTRA+=(--until-now)
           fi
