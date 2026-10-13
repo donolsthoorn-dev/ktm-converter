@@ -50,20 +50,21 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${SSH_KEY:-}" ]; then
-            echo "Secret MOTOX_VPS_SSH_KEY ontbreekt."
+            echo "::error::Secret MOTOX_VPS_SSH_KEY ontbreekt of is leeg (zelfde secret als motox_putoline)."
             exit 1
           fi
+          echo "SSH_KEY length=${#SSH_KEY}"
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/ktm_vps
+          # Multiline secret: behoud newlines, strip CR
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/ktm_vps
           chmod 600 ~/.ssh/ktm_vps
-          SSH="ssh -i ~/.ssh/ktm_vps -o StrictHostKeyChecking=accept-new"
+          ssh-keygen -y -f ~/.ssh/ktm_vps >/dev/null
+          SSH=(ssh -i ~/.ssh/ktm_vps -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new)
           HOST="motoxshop@149.210.206.111"
           REMOTE="/home/motoxshop/ktm_project"
 
-          $SSH "$HOST" "test -f $REMOTE/scripts/run_new_products_weekly.py || (echo 'Code ontbreekt op VPS: $REMOTE' && exit 1)"
-
-          PY="$REMOTE/.venv/bin/python"
-          $SSH "$HOST" "test -x $PY || PY=python3; echo using_python"
+          echo "SSH connectivity check…"
+          "${SSH[@]}" "$HOST" 'echo ok; hostname; test -d /home/motoxshop/ktm_project'
 
           FLAGS="--brands ${BRANDS}"
           if [ "$SKIP_PIM" = "true" ]; then
@@ -75,14 +76,22 @@ jobs:
           if [ -n "$IMPORT_LIMIT" ] && [ "$IMPORT_LIMIT" != "0" ]; then
             FLAGS="$FLAGS --import-limit $IMPORT_LIMIT"
           fi
+          echo "FLAGS=$FLAGS"
 
-          # Code sync: rsync from this checkout (VPS heeft geen GitHub SSH-key)
+          # Code sync (behoud .env / .venv / input / output op de VPS)
           rsync -az --delete \
-            --exclude '.git/' --exclude 'input/' --exclude 'downloads/' \
-            --exclude 'output/' --exclude 'cache/' --exclude '.venv/' \
-            --exclude 'ktm/theme/' --exclude 'motox/theme/' \
+            --exclude '.git/' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude 'input/' \
+            --exclude 'downloads/' \
+            --exclude 'output/' \
+            --exclude 'cache/' \
+            --exclude '.venv/' \
+            --exclude 'ktm/theme/' \
+            --exclude 'motox/theme/' \
             --exclude '__pycache__/' \
-            -e "ssh -i ~/.ssh/ktm_vps -o StrictHostKeyChecking=accept-new" \
+            -e "ssh -i $HOME/.ssh/ktm_vps -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
             ./ "$HOST:$REMOTE/"
 
-          $SSH "$HOST" "cd $REMOTE && if [ -x .venv/bin/python ]; then .venv/bin/python scripts/run_new_products_weekly.py $FLAGS; else python3 scripts/run_new_products_weekly.py $FLAGS; fi"
+          "${SSH[@]}" "$HOST" "cd $REMOTE && if [ -x .venv/bin/python ]; then .venv/bin/python scripts/run_new_products_weekly.py $FLAGS; else python3 scripts/run_new_products_weekly.py $FLAGS; fi"
