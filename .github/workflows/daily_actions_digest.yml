@@ -1,0 +1,97 @@
+# Dagelijkse digest van gelukte Actions-updates, mail via Resend.
+#
+# Schedule: 10:00 Europe/Amsterdam via Supabase
+# (migratie 037_daily_actions_digest_1000.sql).
+#
+# Secrets:
+#   RESEND_API_KEY, DIGEST_FROM, DIGEST_TO
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (voor prijs/ETA-stats)
+# GITHUB_TOKEN (automatisch) met actions:read voor run-logs.
+
+name: daily_actions_digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "true = mail via Resend, false = alleen rapport"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
+      hours:
+        description: "Optioneel venster in uren (leeg = gisteren 10:00 → vandaag 10:00 NL)"
+        required: false
+        default: ""
+      dispatch_log_id:
+        description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
+        required: false
+        default: ""
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUNBUFFERED: "1"
+      SEND: ${{ github.event.inputs.send || 'false' }}
+      HOURS: ${{ github.event.inputs.hours || '' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check secrets
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ "${SEND}" == "true" ]]; then
+            missing=0
+            for k in RESEND_API_KEY DIGEST_FROM DIGEST_TO; do
+              if [[ -z "${!k}" ]]; then
+                echo "::error::Secret $k ontbreekt"
+                missing=1
+              fi
+            done
+            if [[ "$missing" -ne 0 ]]; then
+              exit 1
+            fi
+          fi
+          if [[ -z "${SUPABASE_URL}" || -z "${SUPABASE_SERVICE_ROLE_KEY}" ]]; then
+            echo "::warning::Supabase-secrets ontbreken; prijs/ETA-stats worden overgeslagen"
+          fi
+
+      - name: Build digest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ "${SEND}" == "true" ]]; then
+            EXTRA+=(--send)
+          fi
+          if [[ -n "${HOURS}" ]]; then
+            EXTRA+=(--hours "${HOURS}")
+          fi
+          python3 scripts/daily_actions_digest.py "${EXTRA[@]}"
