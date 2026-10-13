@@ -3,12 +3,14 @@
 
 Draait op de VPS (149.210.206.111). De Kroon-API accepteert alleen dat
 uitgaande IP-adres. Bestaande producten: prijs, EAN en gewicht als die
-afwijken. Nieuwe artikelnummers met een prijs worden aangemaakt en op de
-online winkel gezet. Voorraadcodes en verdwenen artikelen worden alleen
-gelogd.
+afwijken. Nieuwe artikelnummers met een prijs worden aangemaakt.
 
-De vijf oude kassa-artikelen die niet in de Kroon-lijst staan blijven met rust:
-70630, 74016, 74026, 74036, 74089.
+Kroon levert geen Shopify-aantal, alleen stock_id-codes (0/1/2). Daarom:
+voorraad bijhouden aan, doorverkopen (CONTINUE), geen qty-sync, en
+publiceren op alle kanalen. Verdwenen artikelen alleen loggen.
+
+De vijf oude kassa-artikelen die niet in de Kroon-lijst staan blijven met rust
+voor prijs/verwijderen: 70630, 74016, 74026, 74036, 74089.
 """
 
 from __future__ import annotations
@@ -37,7 +39,6 @@ from putoline_listing import listing_for
 from zoneinfo import ZoneInfo
 
 PROTECTED_SKUS = {"70630", "74016", "74026", "74036", "74089"}
-ONLINE_STORE = "gid://shopify/Publication/41879699541"
 API_HOST = "api.kroon-oil.com"
 
 
@@ -170,6 +171,45 @@ class Shopify:
         self.session = requests.Session() if requests else None
         if self.session:
             self.session.trust_env = False
+        self._publication_ids: list[str] | None = None
+
+    def list_publication_ids(self) -> list[str]:
+        if self._publication_ids is not None:
+            return self._publication_ids
+        body = self.gql(
+            """
+            query {
+              publications(first: 50) {
+                nodes { id name }
+              }
+            }
+            """
+        )
+        if body.get("errors"):
+            raise RuntimeError(str(body.get("errors"))[:300])
+        nodes = (((body.get("data") or {}).get("publications")) or {}).get("nodes") or []
+        self._publication_ids = [n["id"] for n in nodes if n.get("id")]
+        names = ", ".join(f"{n.get('name')}={n.get('id')}" for n in nodes) or "(geen)"
+        print(f"Kanalen: {names}", flush=True)
+        return self._publication_ids
+
+    def publish_to_channels(self, product_id: str, publication_ids: list[str]) -> str:
+        if not publication_ids:
+            return ""
+        body = self.gql(
+            """
+            mutation ($id: ID!, $input: [PublicationInput!]!) {
+              publishablePublish(id: $id, input: $input) {
+                userErrors { field message }
+              }
+            }
+            """,
+            {"id": product_id, "input": [{"publicationId": pid} for pid in publication_ids]},
+        )
+        if body.get("errors"):
+            return str(body.get("errors"))[:300]
+        errors = (((body.get("data") or {}).get("publishablePublish")) or {}).get("userErrors") or []
+        return str(errors)[:300] if errors else ""
 
     def gql(self, query: str, variables: dict | None = None) -> dict:
         payload = {"query": query, "variables": variables or {}}
@@ -232,13 +272,17 @@ def putoline_variants(shop: Shopify) -> dict[str, dict]:
           category { id fullName }
           seo { title description }
           media(first: 5) { nodes { id alt mediaContentType } }
+          resourcePublications(first: 20) {
+            nodes { publication { id } }
+          }
           variants(first: 20) {
             nodes {
               id
               sku
               price
               barcode
-              inventoryItem { id measurement { weight { value } } }
+              inventoryPolicy
+              inventoryItem { id tracked measurement { weight { value } } }
             }
           }
         }
@@ -255,7 +299,13 @@ def putoline_variants(shop: Shopify) -> dict[str, dict]:
                 sku = (variant.get("sku") or "").strip()
                 if not sku or sku in found:
                     continue
-                weight = (((variant.get("inventoryItem") or {}).get("measurement") or {}).get("weight") or {}).get("value")
+                inv = variant.get("inventoryItem") or {}
+                weight = (((inv.get("measurement") or {}).get("weight")) or {}).get("value")
+                published = {
+                    ((node.get("publication") or {}).get("id"))
+                    for node in ((product.get("resourcePublications") or {}).get("nodes") or [])
+                    if (node.get("publication") or {}).get("id")
+                }
                 found[sku] = {
                     "product_id": product["id"],
                     "title": product.get("title") or "",
@@ -270,10 +320,13 @@ def putoline_variants(shop: Shopify) -> dict[str, dict]:
                         {"id": media.get("id"), "alt": media.get("alt") or "", "type": media.get("mediaContentType")}
                         for media in ((product.get("media") or {}).get("nodes") or [])
                     ],
+                    "published_publication_ids": published,
                     "variant_id": variant["id"],
                     "price": variant.get("price"),
                     "barcode": variant.get("barcode") or "",
-                    "inventory_item_id": (variant.get("inventoryItem") or {}).get("id"),
+                    "inventory_policy": (variant.get("inventoryPolicy") or "").upper(),
+                    "inventory_item_id": inv.get("id"),
+                    "tracked": bool(inv.get("tracked")),
                     "weight": weight,
                 }
         page = products.get("pageInfo") or {}
@@ -283,12 +336,21 @@ def putoline_variants(shop: Shopify) -> dict[str, dict]:
     return found
 
 
-def variant_update(shop: Shopify, product_id: str, variant_id: str, price: str | None, barcode: str | None) -> str:
+def variant_update(
+    shop: Shopify,
+    product_id: str,
+    variant_id: str,
+    price: str | None = None,
+    barcode: str | None = None,
+    inventory_policy: str | None = None,
+) -> str:
     variant: dict = {"id": variant_id}
     if price is not None:
         variant["price"] = price
     if barcode is not None:
         variant["barcode"] = barcode
+    if inventory_policy is not None:
+        variant["inventoryPolicy"] = inventory_policy
     body = shop.gql(
         """
         mutation ($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
@@ -305,7 +367,14 @@ def variant_update(shop: Shopify, product_id: str, variant_id: str, price: str |
     return str(errors)[:300] if errors else ""
 
 
-def weight_update(shop: Shopify, inventory_item_id: str, value: str) -> str:
+def inventory_item_update(shop: Shopify, inventory_item_id: str, *, tracked: bool | None = None, weight: str | None = None) -> str:
+    payload: dict = {}
+    if tracked is not None:
+        payload["tracked"] = tracked
+    if weight is not None:
+        payload["measurement"] = {"weight": {"value": float(weight), "unit": "KILOGRAMS"}}
+    if not payload:
+        return ""
     body = shop.gql(
         """
         mutation ($id: ID!, $input: InventoryItemInput!) {
@@ -314,12 +383,16 @@ def weight_update(shop: Shopify, inventory_item_id: str, value: str) -> str:
           }
         }
         """,
-        {"id": inventory_item_id, "input": {"measurement": {"weight": {"value": float(value), "unit": "KILOGRAMS"}}}},
+        {"id": inventory_item_id, "input": payload},
     )
     if body.get("errors"):
         return str(body.get("errors"))[:300]
     errors = (((body.get("data") or {}).get("inventoryItemUpdate")) or {}).get("userErrors") or []
     return str(errors)[:300] if errors else ""
+
+
+def weight_update(shop: Shopify, inventory_item_id: str, value: str) -> str:
+    return inventory_item_update(shop, inventory_item_id, weight=value)
 
 
 def image_type(path: Path) -> tuple[str, str]:
@@ -378,15 +451,17 @@ def create_product(shop: Shopify, row: dict, price: Decimal, barcode: str, weigh
     raw_description = str(row.get("desc_short") or "").strip()
     description = html.escape(raw_description)
     listing = listing_for(title=title, product_type="", body_html=raw_description)
+    inventory_item: dict = {"tracked": True}
+    if weight is not None:
+        inventory_item["measurement"] = {"weight": {"value": float(weight), "unit": "KILOGRAMS"}}
     variant: dict = {
         "optionValues": [{"optionName": "Title", "name": "Default Title"}],
         "sku": sku,
         "price": f"{price:.2f}",
         "barcode": barcode,
         "inventoryPolicy": "CONTINUE",
+        "inventoryItem": inventory_item,
     }
-    if weight is not None:
-        variant["inventoryItem"] = {"measurement": {"weight": {"value": float(weight), "unit": "KILOGRAMS"}}}
     product_input = {
         "title": title,
         "descriptionHtml": f"<p>{description}</p>" if description else "",
@@ -420,20 +495,7 @@ def create_product(shop: Shopify, row: dict, price: Decimal, barcode: str, weigh
     product_id = ((payload.get("product") or {}).get("id")) or ""
     if not product_id:
         return "nieuw product zonder id"
-    published = shop.gql(
-        """
-        mutation ($id: ID!, $input: [PublicationInput!]!) {
-          publishablePublish(id: $id, input: $input) {
-            userErrors { field message }
-          }
-        }
-        """,
-        {"id": product_id, "input": [{"publicationId": ONLINE_STORE}]},
-    )
-    if published.get("errors"):
-        return str(published.get("errors"))[:300]
-    errors = (((published.get("data") or {}).get("publishablePublish")) or {}).get("userErrors") or []
-    return str(errors)[:300] if errors else ""
+    return shop.publish_to_channels(product_id, shop.list_publication_ids())
 
 
 def snapshot_map(rows: list[dict]) -> dict[str, dict]:
@@ -517,6 +579,60 @@ def write_listing(shop: Shopify, product_id: str, product: dict, alts: list[dict
         if errors:
             return str(errors)[:300]
     return ""
+
+
+def sync_sellable_settings(shop: Shopify, existing: dict[str, dict], *, apply: bool) -> tuple[int, int]:
+    """Zet tracked + CONTINUE + alle kanalen op alle Putoline-producten."""
+    all_pubs = shop.list_publication_ids()
+    seen: set[str] = set()
+    changed = failed = shown = 0
+    for sku, have in sorted(existing.items()):
+        product_id = have["product_id"]
+        if product_id in seen:
+            continue
+        seen.add(product_id)
+        need_track = not have.get("tracked") and bool(have.get("inventory_item_id"))
+        need_policy = have.get("inventory_policy") != "CONTINUE"
+        missing_pubs = [pid for pid in all_pubs if pid not in (have.get("published_publication_ids") or set())]
+        if not need_track and not need_policy and not missing_pubs:
+            continue
+        changed += 1
+        bits = []
+        if need_track:
+            bits.append("voorraad bijhouden")
+        if need_policy:
+            bits.append("doorverkopen")
+        if missing_pubs:
+            bits.append(f"kanalen +{len(missing_pubs)}")
+        if shown < 8:
+            shown += 1
+            print(f"{'schrijf' if apply else 'zou'} sellable {sku} {have.get('title')} | {', '.join(bits)}", flush=True)
+        if not apply:
+            continue
+        if need_track:
+            err = inventory_item_update(shop, have["inventory_item_id"], tracked=True)
+            if err:
+                print(f"FAIL tracked {sku} {err}", flush=True)
+                failed += 1
+                changed -= 1
+                continue
+        if need_policy:
+            err = variant_update(shop, product_id, have["variant_id"], inventory_policy="CONTINUE")
+            if err:
+                print(f"FAIL doorverkopen {sku} {err}", flush=True)
+                failed += 1
+                changed -= 1
+                continue
+        if missing_pubs:
+            err = shop.publish_to_channels(product_id, missing_pubs)
+            if err:
+                print(f"FAIL kanalen {sku} {err}", flush=True)
+                failed += 1
+                changed -= 1
+                continue
+        time.sleep(0.12)
+    print(f"sellable {'geschreven' if apply else 'voorstel'} {changed} mislukt {failed}", flush=True)
+    return changed, failed
 
 
 def sync_listings(shop: Shopify, existing: dict[str, dict], *, overwrite: bool, apply: bool) -> tuple[int, int]:
@@ -682,15 +798,22 @@ def main() -> int:
     listing_changed, listing_failed = sync_listings(shop, existing, overwrite=False, apply=args.apply)
     failed += listing_failed
 
+    sellable_changed, sellable_failed = sync_sellable_settings(shop, existing, apply=args.apply)
+    failed += sellable_failed
+
     if removed:
         print("Niet meer in het assortiment, niet aangepast: " + ", ".join(removed), flush=True)
     if stock_changed:
-        print(f"Voorraadindicatie veranderd bij {len(stock_changed)} artikelen, niet als aantal weggeschreven", flush=True)
+        print(
+            f"Kroon stock_id veranderd bij {len(stock_changed)} artikelen "
+            "(geen Shopify-aantal; tracking/doorverkopen blijft aan)",
+            flush=True,
+        )
 
     summary = (
         f"delta prijs={price_n} ean={ean_n} gewicht={weight_n} "
-        f"nieuw={created_n} listing={listing_changed} weg={len(removed)} "
-        f"voorraadindicatie={len(stock_changed)} mislukt={failed}"
+        f"nieuw={created_n} listing={listing_changed} sellable={sellable_changed} "
+        f"weg={len(removed)} voorraadindicatie={len(stock_changed)} mislukt={failed}"
     )
     print(summary, flush=True)
     if args.apply and failed == 0:

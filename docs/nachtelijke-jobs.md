@@ -66,9 +66,10 @@ Haalt het Kroon-assortiment op en werkt Motox bij. De aanroep gaat via de VPS, o
 
 - prijs, barcode en gewicht aanpassen als ze afwijken
 - een lege SEO-titel of meta-omschrijving invullen, en de Shopify-categorie zetten bij de Kroon-soort
-- een nieuw artikelnummer met prijs aanmaken en op de webshop zetten
+- een nieuw artikelnummer met prijs aanmaken
+- alle Putoline-producten: voorraad bijhouden aan, doorverkopen (CONTINUE), publiceren op alle kanalen
 - een artikel dat uit het assortiment verdwijnt alleen melden, niet verbergen
-- de voorraadindicatie alleen melden, niet als aantal wegschrijven
+- Kroon `stock_id` (0/1/2) alleen melden — geen Shopify-aantal (Kroon levert geen qty)
 
 De vijf oude kassa-artikelen 70630, 74016, 74026, 74036 en 74089 blijven staan. Workflow: `motox_putoline.yml`.
 

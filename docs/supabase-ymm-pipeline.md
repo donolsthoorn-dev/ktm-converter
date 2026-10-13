@@ -171,8 +171,9 @@ Optioneel later: oude `shopify_products`-spoken handmatig opruimen (niet verplic
 | Workflow | Wat | Wanneer |
 |----------|-----|---------|
 | **ktm_job_worker** | `shopify_catalog_mirror` | Nachtelijk / handmatig — catalogus spiegelen |
-| **ktm_ymm_delivery** | `shopify_ymm_push_diff_from_supabase` | Wekelijks diff-push (limit default 500) |
-| **ktm_ymm_push** | sync +/of push, optioneel `full_push` | Handmatig |
+| **ktm_ymm_delivery** | `shopify_ymm_push_diff_from_supabase` | Wekelijks / handmatig diff-push (limit default 500) |
+
+Full push (na parser/summary-fix) en XML→Supabase-sync: via queue of `run_canonical_ymm_pipeline.py` (zie hieronder), niet via Actions.
 
 ### ktm_ymm_delivery (alleen diff-push)
 
@@ -185,18 +186,6 @@ Optioneel later: oude `shopify_products`-spoken handmatig opruimen (niet verplic
 | `limit` | `500` of `0` |
 
 ≈ `--push-only --write` (geen XML-sync).
-
-### ktm_ymm_push (handmatig)
-
-| Input | Sync | Push | Gebruik |
-|-------|------|------|---------|
-| `run_xml_sync=true`, `skip_shopify_push=true` | ja | nee | XML → Supabase (XML moet op runner in `input/`) |
-| `run_xml_sync=false`, `full_push=false` | nee | diff | Na lokale sync |
-| `run_xml_sync=false`, `full_push=true` | nee | alles | Na parser/summary-fix |
-| `handles` | leeg = hele catalogus | | |
-| `dry_run` | `false` voor productie | | |
-
-Timeout: **6 uur**. Logs van de push-job komen in één keer vrij (shell buffert worker-output); Shopify wordt wel live bijgewerkt.
 
 Secrets: `SUPABASE_*`, `SHOPIFY_*` (zelfde als job worker).
 

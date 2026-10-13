@@ -19,7 +19,7 @@ Python-scripts houden hun bestaande bestandsnaam. Alleen de workflowbestanden zi
 | `shopify_gtin_fill.yml` | `ktm_shopify_gtin_fill.yml` |
 | `shopify_publish_sellable_active_products.yml` | `ktm_shopify_publish_sellable_active_products.yml` |
 | `ymm-delivery-schedule.yml` (Actions: YMM delivery) | `ktm_ymm_delivery.yml` |
-| `ymm-push-shopify.yml` (Actions: YMM push to Shopify) | `ktm_ymm_push.yml` |
+| `ymm-push-shopify.yml` / `ktm_ymm_push.yml` | *verwijderd* — gebruik `ktm_ymm_delivery` (diff) of queue/CLI (full push) |
 
 ## Hernoemd naar `shops_`
 
