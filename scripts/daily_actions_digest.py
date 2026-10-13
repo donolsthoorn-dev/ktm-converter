@@ -414,6 +414,17 @@ def _parse_metrics(wf: str, text: str) -> dict[str, int]:
                 m["created_wp"] = ok_wp
                 if "created" not in m:
                     m["created"] = ok_sum
+        # Ontbrekende foto’s op bestaande producten (na PIM-refresh)
+        for g in re.finditer(
+            r"DIGEST_METRIC missing_images_ok=(\d+) missing_images_fail=(\d+)",
+            text,
+        ):
+            m["images_ok"] = m.get("images_ok", 0) + int(g.group(1))
+            m["images_fail"] = m.get("images_fail", 0) + int(g.group(2))
+        if "images_ok" not in m:
+            for g in re.finditer(r"Klaar:\s*OK=(\d+),\s*mislukt=(\d+)", text):
+                m["images_ok"] = m.get("images_ok", 0) + int(g.group(1))
+                m["images_fail"] = m.get("images_fail", 0) + int(g.group(2))
         return m
     if wf == "ktm_ymm_delivery.yml":
         g = re.search(r"YMM push klaar.*?\bok=(\d+)", text)
@@ -578,6 +589,14 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
                     GROUP_KTM,
                     f"Nieuwe producten toegevoegd {_nl_num(totals['created'])}",
                     40,
+                )
+            )
+        if totals.get("images_ok"):
+            out.append(
+                DigestItem(
+                    GROUP_KTM,
+                    f"Extra foto’s toegevoegd {_nl_num(totals['images_ok'])}",
+                    43,
                 )
             )
     elif wf == "ktm_ymm_delivery.yml":

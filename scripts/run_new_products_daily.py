@@ -5,7 +5,8 @@ Dagelijkse nieuwe-producten pipeline (VPS na PIM-refresh).
   1) optioneel: vps_pim_refresh_weekly.py  (FTP fingerprint → skip als ongewijzigd)
   2) rebuild_shopify_deltas.py
   3) shopify_import_delta_products.py
-  4) catalog mirror + YMM + complementary
+  4) shopify_sync_missing_product_images.py  (na PIM-refresh: ontbrekende foto’s op bestaande)
+  5) catalog mirror + YMM + complementary
      — altijd na een echte PIM-refresh (ook bij created=0, voor fitment/EMPF-updates)
      — overgeslagen bij fingerprint-noop of dry-run (tenzij --force-downstream)
 
@@ -17,8 +18,10 @@ Dagelijkse nieuwe-producten pipeline (VPS na PIM-refresh).
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -35,6 +38,18 @@ load_dotenv()
 
 UNCHANGED_FLAG = ROOT / "output" / "logs" / "weekly_source_unchanged"
 IMPORT_STATS = ROOT / "output" / "logs" / "last_delta_import_stats.json"
+IMAGES_STATS = ROOT / "output" / "logs" / "last_missing_images_stats.json"
+
+_PRODUCTS_DIR = {
+    "ktm": ROOT / "output" / "products",
+    "hsq": ROOT / "output" / "hsq" / "products",
+    "wp": ROOT / "output" / "wp" / "products",
+}
+_INPUT_DIR = {
+    "ktm": "input",
+    "hsq": "input/hsq",
+    "wp": "input/wp",
+}
 
 
 def _run(cmd: list[str], *, dry_run: bool = False) -> int:
@@ -54,6 +69,89 @@ def _read_created_count() -> int | None:
         return None
 
 
+def _latest_delta(brand: str) -> Path | None:
+    folder = _PRODUCTS_DIR.get(brand)
+    if not folder:
+        return None
+    paths = glob.glob(str(folder / "shopify_export_delta_*.csv"))
+    if not paths:
+        return None
+    return Path(max(paths, key=os.path.getmtime))
+
+
+def _sync_missing_images(py: str, brands: list[str], *, dry_run: bool) -> int:
+    """Voeg ontbrekende delta-foto’s toe aan bestaande Shopify-producten. Exit 0 tenzij hard fail."""
+    total_ok = total_fail = 0
+    by_brand: dict[str, dict[str, int]] = {}
+    log_dir = ROOT / "output" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    for brand in brands:
+        csv_path = _latest_delta(brand)
+        if not csv_path:
+            print(f"missing-images {brand}: geen delta-CSV, overslaan", flush=True)
+            continue
+        tasks_out = log_dir / f"missing_image_tasks_{brand}.json"
+        cmd = [
+            py,
+            "scripts/shopify_sync_missing_product_images.py",
+            "--csv",
+            str(csv_path),
+            "--input-dir",
+            _INPUT_DIR[brand],
+            "--tasks-out",
+            str(tasks_out),
+        ]
+        if dry_run:
+            cmd.append("--dry-run")
+        print("\n+", " ".join(cmd), flush=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        sys.stdout.write(proc.stdout or "")
+        sys.stderr.write(proc.stderr or "")
+        if proc.returncode != 0:
+            print(
+                f"missing-images {brand}: exit {proc.returncode} (pipeline gaat door)",
+                flush=True,
+            )
+            by_brand[brand] = {"ok": 0, "fail": 0, "error": proc.returncode}
+            continue
+        ok = fail = 0
+        combined = (proc.stdout or "") + (proc.stderr or "")
+        m = re.search(
+            r"DIGEST_METRIC missing_images_ok=(\d+) missing_images_fail=(\d+)",
+            combined,
+        )
+        if m:
+            ok, fail = int(m.group(1)), int(m.group(2))
+        else:
+            m2 = re.search(r"Klaar:\s*OK=(\d+),\s*mislukt=(\d+)", combined)
+            if m2:
+                ok, fail = int(m2.group(1)), int(m2.group(2))
+        total_ok += ok
+        total_fail += fail
+        by_brand[brand] = {"ok": ok, "fail": fail}
+        print(f"missing-images {brand}: ok={ok} fail={fail}", flush=True)
+
+    print(
+        f"missing-images totaal: ok={total_ok} fail={total_fail}",
+        flush=True,
+    )
+    IMAGES_STATS.write_text(
+        json.dumps(
+            {
+                "ok": total_ok,
+                "fail": total_fail,
+                "by_brand": by_brand,
+                "dry_run": dry_run,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--brands", default="ktm,hsq,wp")
@@ -65,12 +163,13 @@ def main() -> int:
     )
     ap.add_argument("--skip-rebuild", action="store_true")
     ap.add_argument("--skip-import", action="store_true")
+    ap.add_argument("--skip-missing-images", action="store_true")
     ap.add_argument("--skip-ymm", action="store_true")
     ap.add_argument("--skip-complementary", action="store_true")
     ap.add_argument(
         "--force-downstream",
         action="store_true",
-        help="YMM/complementary forceren (ook bij dry-run of created=0 zonder PIM-refresh)",
+        help="YMM/complementary/images forceren (ook bij dry-run of created=0 zonder PIM-refresh)",
     )
     ap.add_argument("--dry-run-import", action="store_true")
     ap.add_argument("--import-limit", type=int, default=0)
@@ -79,6 +178,7 @@ def main() -> int:
 
     py = sys.executable
     brands = args.brands
+    brand_list = [b.strip().lower() for b in brands.split(",") if b.strip()]
     pim_refreshed = False
 
     if not args.skip_pim:
@@ -90,7 +190,7 @@ def main() -> int:
             return rc
         if UNCHANGED_FLAG.is_file():
             print(
-                "\nFTP-bronnen ongewijzigd — rebuild/import/YMM/complementary overgeslagen.",
+                "\nFTP-bronnen ongewijzigd — rebuild/import/images/YMM/complementary overgeslagen.",
                 flush=True,
             )
             print("Dagelijkse pipeline klaar (noop).", flush=True)
@@ -117,15 +217,14 @@ def main() -> int:
 
     if args.dry_run_import and not args.force_downstream:
         print(
-            "\nDry-run import — YMM/mirror/complementary overgeslagen "
+            "\nDry-run import — images/YMM/complementary overgeslagen "
             "(gebruik --force-downstream om toch te draaien).",
             flush=True,
         )
         print("\nDagelijkse nieuwe-producten pipeline klaar.", flush=True)
         return 0
 
-    # Gat dicht: na echte PIM-refresh altijd YMM/complementary, ook bij created=0
-    # (fitment/EMPF-wijzigingen op bestaande SKU’s).
+    # Gat dicht: na echte PIM-refresh altijd images/YMM/complementary, ook bij created=0
     skip_heavy = (
         not args.force_downstream
         and not pim_refreshed
@@ -134,7 +233,7 @@ def main() -> int:
     )
     if skip_heavy:
         print(
-            "\nImport created=0 en geen PIM-refresh — YMM/mirror/complementary overgeslagen "
+            "\nImport created=0 en geen PIM-refresh — images/YMM/complementary overgeslagen "
             "(gebruik --force-downstream of laat PIM draaien).",
             flush=True,
         )
@@ -143,9 +242,12 @@ def main() -> int:
 
     if pim_refreshed and created == 0:
         print(
-            "\nPIM vernieuwd, created=0 — YMM/complementary draaien voor bestaande producten.",
+            "\nPIM vernieuwd, created=0 — images/YMM/complementary voor bestaande producten.",
             flush=True,
         )
+
+    if not args.skip_missing_images and (pim_refreshed or args.force_downstream):
+        _sync_missing_images(py, brand_list, dry_run=False)
 
     if not args.skip_ymm:
         rc = _run(

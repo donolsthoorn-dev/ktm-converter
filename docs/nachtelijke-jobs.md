@@ -40,7 +40,7 @@ Geeft een categorie aan producten die er nog geen hebben. Een categorie die al i
 
 ### 06:00 — Nieuwe producten (PIM)
 
-Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s en zet nieuwe producten in Shopify (plus YMM/complementary, ook als er geen nieuwe handles zijn). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily`. Deelt de KTM Shopify-schrijflock met SEO/categorie/prijs — een volle run laat die jobs wachten, Motox niet.
+Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s, zet nieuwe producten in Shopify, vult ontbrekende foto’s op bestaande producten, plus YMM/complementary (ook zonder nieuwe handles). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily`. Deelt de KTM Shopify-schrijflock met SEO/categorie/prijs — een volle run laat die jobs wachten, Motox niet. Foto-bijwerkingen verschijnen in de ochtenddigest.
 
 ### 07:00 — Prijzen en levertijd
 

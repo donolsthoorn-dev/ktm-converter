@@ -226,6 +226,8 @@ def main() -> None:
         prefer_input=prefer_input,
     )
     print(f"\nKlaar: OK={ok}, mislukt={fail}.", flush=True)
+    # Stabiele regel voor daily_actions_digest / run_new_products_daily
+    print(f"DIGEST_METRIC missing_images_ok={ok} missing_images_fail={fail}", flush=True)
 
 
 if __name__ == "__main__":

@@ -47,7 +47,8 @@ python3 scripts/run_new_products_daily.py --skip-pim --skip-rebuild --dry-run-im
 # GHA: skip_pim / skip_rebuild / force_pim / dry_run_import / import_limit
 # PIM-zip FTP fingerprint (size/mtime): ongewijzigd → pipeline stopt (~seconden).
 # Prijs-CSV-wijzigingen tellen niet mee (nachtelijke sync).
-# Na echte PIM-refresh: altijd YMM/complementary (ook bij created=0).
+# Na echte PIM-refresh: missing images + YMM/complementary (ook bij created=0).
+# Digest toont “Extra foto’s toegevoegd N” als er images zijn bijgezet.
 ```
 
 Prepare-flags (intern): `--extract-xml-from-zips --extract-media-from-zips --prune-old-xml`.

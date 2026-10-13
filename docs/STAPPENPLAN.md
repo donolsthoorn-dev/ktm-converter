@@ -68,6 +68,14 @@ python3 scripts/shopify_import_delta_products.py --brands ktm,hsq,wp
 
 Bestaande handles worden overgeslagen.
 
+Ontbrekende foto’s op bestaande producten (na PIM/rebuild):
+
+```bash
+python3 scripts/shopify_sync_missing_product_images.py --csv output/products/shopify_export_delta_….csv
+```
+
+(In de daily job automatisch voor ktm/hsq/wp.)
+
 ---
 
 ## 5. Fitment (YMM-metafields)
