@@ -59,8 +59,8 @@ GROUP_MOTOX = "motox"
 GROUP_PUTOLINE = "putoline"
 
 GROUP_TITLES = {
-    GROUP_KTM: "KTM aanpassingen aan producten",
-    GROUP_MOTOX: "Motox aanpassingen aan producten",
+    GROUP_KTM: "KTM producten",
+    GROUP_MOTOX: "Motox producten",
     GROUP_PUTOLINE: "Putoline",
 }
 
@@ -280,12 +280,12 @@ def items_price_eta(rows: list[dict[str, Any]]) -> list[DigestItem]:
         agg["product_status"] += _sum_int(stats, "product_status_success")
     items: list[DigestItem] = []
     mapping = [
-        ("price", "prijs", 10),
-        ("eta", "ETA", 11),
-        ("gtin", "barcodes", 12),
-        ("policy", "voorraadbeleid", 13),
-        ("customs", "HS/herkomst", 14),
-        ("product_status", "productstatus", 15),
+        ("price", "Nieuwe prijs", 10),
+        ("eta", "ETA aangepast", 11),
+        ("gtin", "Barcodes toegevoegd", 12),
+        ("policy", "Voorraadbeleid aangepast", 13),
+        ("customs", "HS/herkomst aangepast", 14),
+        ("product_status", "Productstatus", 15),
     ]
     for key, label, sort in mapping:
         if agg.get(key):
@@ -413,7 +413,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"Synkro POS-kopieën {_nl_num(totals['getagd'])} getagd",
+                f"Synkro POS-kopieën getagd {_nl_num(totals['getagd'])}",
                 50,
             )
         )
@@ -421,7 +421,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"SEO {_nl_num(totals['geschreven'])} producten",
+                f"SEO verbeterd voor {_nl_num(totals['geschreven'])} producten",
                 30,
             )
         )
@@ -429,20 +429,20 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_MOTOX,
-                f"SEO {_nl_num(totals['geschreven'])} producten",
+                f"Betere SEO voor {_nl_num(totals['geschreven'])} producten",
                 30,
             )
         )
     elif wf == "motox_ebihr_sync.yml":
         mapping = [
-            ("created", "nieuw", 20),
-            ("price", "prijzen", 21),
-            ("stock_policy", "voorraadbeleid", 22),
-            ("fitment", "fitment", 23),
-            ("customs", "HS/herkomst", 24),
-            ("articles", "artikelen", 25),
-            ("images", "foto’s", 26),
-            ("drafted", "op draft", 27),
+            ("created", "Nieuwe producten toegevoegd", 20),
+            ("price", "Prijzen aangepast", 21),
+            ("stock_policy", "Voorraadbeleid aangepast", 22),
+            ("fitment", "YMM fitment aangepast", 23),
+            ("customs", "HS/herkomst aangepast", 24),
+            ("articles", "Artikelnummers bijgewerkt", 25),
+            ("images", "Extra foto’s toegevoegd", 26),
+            ("drafted", "Producten op draft gezet", 27),
         ]
         for k, label, sort in mapping:
             if totals.get(k):
@@ -453,7 +453,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"barcodes vullen {_nl_num(totals['ok'])}",
+                f"Barcodes gevuld {_nl_num(totals['ok'])}",
                 70,
             )
         )
@@ -461,7 +461,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_MOTOX,
-                f"barcodes vullen {_nl_num(totals['ok'])}",
+                f"Barcodes gevuld {_nl_num(totals['ok'])}",
                 70,
             )
         )
@@ -469,16 +469,15 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_MOTOX,
-                f"YMM-velden {_nl_num(totals['ok'])}",
+                f"YMM-velden bijgewerkt {_nl_num(totals['ok'])}",
                 92,
             )
         )
     elif wf == "ktm_shopify_auto_deactivate_invalid_products.yml":
-        # Merge visually with price/ETA productstatus: same label family
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"productstatus {_nl_num(totals['ok'])} aangepast",
+                f"Productstatus {_nl_num(totals['ok'])} aangepast",
                 60,
             )
         )
@@ -486,7 +485,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"leverbare producten publiceren {_nl_num(totals['published'])}",
+                f"Leverbare producten gepubliceerd {_nl_num(totals['published'])}",
                 61,
             )
         )
@@ -494,16 +493,15 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_MOTOX,
-                f"zonder foto op draft {_nl_num(totals['draft'])}",
+                f"Producten zonder foto op draft gezet {_nl_num(totals['draft'])}",
                 91,
             )
         )
     elif wf == "shops_category_fill_empty.yml":
-        # Beide shops; toon onder KTM (één regel)
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"category vullen {_nl_num(totals['ok'])}",
+                f"Category gevuld {_nl_num(totals['ok'])}",
                 80,
             )
         )
@@ -511,7 +509,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"nieuwe producten {_nl_num(totals['geschreven'])}",
+                f"Nieuwe producten toegevoegd {_nl_num(totals['geschreven'])}",
                 40,
             )
         )
@@ -519,18 +517,18 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"YMM-levering {_nl_num(totals['ok'])}",
+                f"YMM gepusht {_nl_num(totals['ok'])}",
                 93,
             )
         )
     elif wf == "motox_putoline.yml":
         mapping = [
-            ("price", "prijzen", 10),
-            ("ean", "EAN", 11),
-            ("weight", "gewicht", 12),
-            ("new", "nieuw", 13),
-            ("listing", "listing/SEO", 14),
-            ("sellable", "verkoopbaar", 15),
+            ("price", "Prijzen aangepast", 10),
+            ("ean", "EAN bijgewerkt", 11),
+            ("weight", "Gewicht bijgewerkt", 12),
+            ("new", "Nieuwe producten toegevoegd", 13),
+            ("listing", "Listing/SEO bijgewerkt", 14),
+            ("sellable", "Verkoopbaar gemaakt", 15),
         ]
         for k, label, sort in mapping:
             if totals.get(k):
@@ -541,7 +539,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"catalogus-spiegel ~{_nl_num(totals['products'])} producten",
+                f"Catalogus-spiegel gemaakt voor ~{_nl_num(totals['products'])} producten",
                 95,
             )
         )
@@ -550,7 +548,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
             out.append(
                 DigestItem(
                     GROUP_KTM,
-                    f"HS/herkomst aanvullen {_nl_num(totals['written'])}",
+                    f"HS/herkomst aangepast {_nl_num(totals['written'])}",
                     72,
                 )
             )
