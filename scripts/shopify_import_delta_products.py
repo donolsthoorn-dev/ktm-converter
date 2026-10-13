@@ -234,6 +234,7 @@ def _create_product(sess: requests.Session, group: dict[str, Any]) -> tuple[str 
         policy = (v.get("inventory_policy") or "continue").upper()
         if policy not in ("CONTINUE", "DENY"):
             policy = "CONTINUE"
+        # Zelfde als CSV-export: Variant Inventory Tracker = shopify
         set_variants.append(
             {
                 "optionValues": [{"optionName": opt_name, "name": v["option1_value"]}],
@@ -241,6 +242,7 @@ def _create_product(sess: requests.Session, group: dict[str, Any]) -> tuple[str 
                 "barcode": v.get("barcode") or "",
                 "price": v.get("price") or "0.00",
                 "inventoryPolicy": policy,
+                "inventoryItem": {"tracked": True},
             }
         )
 
