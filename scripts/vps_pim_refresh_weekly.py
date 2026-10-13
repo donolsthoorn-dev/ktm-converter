@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Wekelijkse PIM-refresh op de VPS: FTP → XML+PHO extract → zip weg → oude XML prune.
+Wekelijkse PIM-refresh op de VPS: FTP → XML+PHO extract → zip weg → oude XML prune,
+plus prijs-CSV’s (0150/1100/0910/0140) voor rebuild/main.py.
 
-Geen Shopify-writes. Prijs/ETA blijft in de nachtelijke GHA.
+Geen Shopify-writes. Prijs/ETA-*sync* naar Shopify blijft nachtelijke GHA.
 
   python3 scripts/vps_pim_refresh_weekly.py
   python3 scripts/vps_pim_refresh_weekly.py --brands hsq --dry-run
@@ -25,6 +26,7 @@ os.chdir(ROOT)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from modules.brand_config import PRICELIST_CSV_MERGE_ORDER  # noqa: E402
 from modules.env_loader import load_dotenv  # noqa: E402
 
 load_dotenv()
@@ -35,6 +37,9 @@ PIM_ZIPS: dict[str, tuple[str, str]] = {
     "hsq": ("XML_Export_PIM_HQV_International.zip", "input/hsq"),
     "wp": ("XML_Export_PIM_WP_International.zip", "input/wp"),
 }
+
+# main.py / rebuild heeft deze CSV’s nodig (niet in de PIM-zip).
+PRICE_CSVS: tuple[str, ...] = tuple(PRICELIST_CSV_MERGE_ORDER)
 
 
 def _run(cmd: list[str], *, dry_run: bool) -> int:
@@ -106,12 +111,40 @@ def main() -> int:
             print(f"Prepare mislukt voor {brand} (exit {rc})", file=sys.stderr)
             return rc
 
+    # Prijs-CSV’s (0150/1100/0910/0140) — zelfde FTP als nachtelijke prijs-sync
+    print("\n=== Prijs-CSV’s ===", flush=True)
+    price_files = ",".join(PRICE_CSVS)
+    if not args.skip_fetch:
+        rc = _run(
+            [py, "scripts/fetch_input_sftp.py", "--files", price_files],
+            dry_run=args.dry_run,
+        )
+        if rc != 0:
+            print(f"Fetch prijs-CSV’s mislukt (exit {rc})", file=sys.stderr)
+            return rc
+    rc = _run(
+        [
+            py,
+            "scripts/prepare_input_from_ftp.py",
+            "--staging",
+            str(staging),
+            "--input-dir",
+            "input",
+            "--files",
+            price_files,
+        ],
+        dry_run=args.dry_run,
+    )
+    if rc != 0:
+        print(f"Prepare prijs-CSV’s mislukt (exit {rc})", file=sys.stderr)
+        return rc
+
     # Staging opruimen (restanten)
     if not args.dry_run and staging.is_dir():
         for p in staging.iterdir():
-            if p.is_file() and p.suffix.lower() == ".zip":
+            if p.is_file() and p.suffix.lower() in {".zip", ".csv"}:
                 p.unlink(missing_ok=True)
-                print(f"Staging zip weg: {p.name}")
+                print(f"Staging weg: {p.name}")
 
     day = datetime.now(ZoneInfo("Europe/Amsterdam")).strftime("%Y%m%d")
     ready = log_dir / f"pim_ready_{day}"

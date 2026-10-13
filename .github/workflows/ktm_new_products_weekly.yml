@@ -62,7 +62,6 @@ jobs:
             exit 1
           fi
 
-          # Keepalives + korte poll-SSH: lange stille FTP anders → Broken pipe
           SSH_OPTS=(
             -i "$HOME/.ssh/ktm_vps"
             -o IdentitiesOnly=yes
@@ -107,57 +106,45 @@ jobs:
             -e "ssh ${SSH_OPTS[*]}" \
             ./ "$HOST:$REMOTE/"
 
-          # Detach: pipeline blijft draaien als GHA-SSH wegvalt; we poll'en het log.
+          # Detach: lange stille FTP mag GHA-SSH niet killen; poll korte sessies.
           RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)_${GITHUB_RUN_ID:-local}"
           LOG="$REMOTE/output/logs/weekly_${RUN_ID}.log"
           EXITF="$REMOTE/output/logs/weekly_${RUN_ID}.exit"
           PIDF="$REMOTE/output/logs/weekly_${RUN_ID}.pid"
           echo "Remote log: $LOG"
 
-          ssh "${SSH_OPTS[@]}" "$HOST" bash -s <<EOF
-          set -e
-          mkdir -p "$REMOTE/output/logs"
-          cd "$REMOTE"
-          rm -f "$EXITF"
-          nohup bash -c '
-            set +e
-            if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=python3; fi
-            \$PY -u scripts/run_new_products_weekly.py $FLAGS
-            echo \$? > "$EXITF"
-          ' > "$LOG" 2>&1 < /dev/null &
-          echo \$! > "$PIDF"
-          echo "started pid=\$(cat "$PIDF")"
-          EOF
+          ssh "${SSH_OPTS[@]}" "$HOST" \
+            "mkdir -p '$REMOTE/output/logs' && cd '$REMOTE' && rm -f '$EXITF' && \
+             nohup env bash -c 'set +e; PY=.venv/bin/python; [ -x \"\$PY\" ] || PY=python3; \
+               \$PY -u scripts/run_new_products_weekly.py $FLAGS; echo \$? > \"$EXITF\"' \
+               > '$LOG' 2>&1 < /dev/null & echo \$! > '$PIDF' && echo started pid=\$(cat '$PIDF')"
 
           OFFSET=0
           while true; do
-            META="$(mktemp)"
-            # Short SSH: dump new log bytes + status (survives NAT better than one long session)
-            ssh "${SSH_OPTS[@]}" "$HOST" \
-              "python3 -c \"
-          import sys
-          from pathlib import Path
-          log, ex, off = Path('$LOG'), Path('$EXITF'), $OFFSET
-          data = log.read_bytes() if log.is_file() else b''
-          sys.stdout.buffer.write(data[off:])
-          sys.stdout.buffer.flush()
-          print(f'OFFSET {len(data)}', file=sys.stderr)
-          print(f'DONE {int(ex.is_file())}', file=sys.stderr)
-          if ex.is_file():
-              print(f'RC {ex.read_text().strip()}', file=sys.stderr)
-          \"" 2>"$META" || true
+            # Statusregel: DONE|RC|BYTES
+            STATUS="$(ssh "${SSH_OPTS[@]}" "$HOST" \
+              "python3 -c \"from pathlib import Path; log,ex=Path('$LOG'),Path('$EXITF'); n=log.stat().st_size if log.is_file() else 0; d=1 if ex.is_file() else 0; r=(ex.read_text().strip() if d else ''); print(f'{d}|{r}|{n}')\"" \
+              | tail -1)" || STATUS="0||${OFFSET}"
 
-            OFFSET="$(awk '/^OFFSET /{print \$2}' "$META" | tail -1)"
-            OFFSET="${OFFSET:-0}"
-            DONE="$(awk '/^DONE /{print \$2}' "$META" | tail -1)"
-            if [ "${DONE:-0}" = "1" ]; then
-              RC="$(awk '/^RC /{print \$2}' "$META" | tail -1)"
-              rm -f "$META"
+            DONE="${STATUS%%|*}"
+            REST="${STATUS#*|}"
+            RC="${REST%%|*}"
+            BYTES="${REST##*|}"
+            DONE="${DONE:-0}"
+            BYTES="${BYTES:-0}"
+
+            if [ "$BYTES" -gt "$OFFSET" ] 2>/dev/null; then
+              ssh "${SSH_OPTS[@]}" "$HOST" \
+                "dd if='$LOG' bs=1 skip=$OFFSET count=$((BYTES - OFFSET)) 2>/dev/null" || true
+              OFFSET="$BYTES"
+            fi
+
+            if [ "$DONE" = "1" ]; then
               echo ""
               echo "Remote finished with exit=${RC:-1}"
               exit "${RC:-1}"
             fi
-            rm -f "$META"
+
             echo "[poll] log_bytes=$OFFSET" >&2
             sleep 20
           done
