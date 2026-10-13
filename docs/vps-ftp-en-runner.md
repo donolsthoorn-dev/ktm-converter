@@ -43,7 +43,9 @@ Volledige weekpipeline:
 ```bash
 python3 scripts/run_new_products_weekly.py
 python3 scripts/run_new_products_weekly.py --skip-pim --skip-rebuild --dry-run-import --import-limit 5
-# GHA workflow_dispatch: skip_pim / skip_rebuild / dry_run_import / import_limit
+# GHA: skip_pim / skip_rebuild / force_pim / dry_run_import / import_limit
+# PIM-zip FTP fingerprint (size/mtime): ongewijzigd → pipeline stopt (~seconden).
+# Prijs-CSV-wijzigingen tellen niet mee (nachtelijke sync). Import created=0 → geen YMM.
 ```
 
 Prepare-flags (intern): `--extract-xml-from-zips --extract-media-from-zips --prune-old-xml`.

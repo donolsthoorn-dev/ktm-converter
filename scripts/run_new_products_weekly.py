@@ -2,21 +2,20 @@
 """
 Wekelijkse nieuwe-producten pipeline (bedoeld op VPS na PIM-refresh).
 
-  1) optioneel: vps_pim_refresh_weekly.py
+  1) optioneel: vps_pim_refresh_weekly.py  (FTP fingerprint → skip als ongewijzigd)
   2) rebuild_shopify_deltas.py
   3) shopify_import_delta_products.py
-  4) catalog mirror queue + worker (tot idle of max rounds)
-  5) run_canonical_ymm_pipeline --sync-only --write
-  6) run_canonical_ymm_pipeline --push-only --write
-  7) shopify_sync_empfart_complementary --force-refresh-cache --force-write
+  4) catalog mirror + YMM + complementary  (alleen als er nieuwe producten zijn)
 
   python3 scripts/run_new_products_weekly.py
   python3 scripts/run_new_products_weekly.py --skip-pim --brands hsq --dry-run-import
+  python3 scripts/run_new_products_weekly.py --force-pim   # negeer FTP-fingerprint
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -32,6 +31,9 @@ from modules.env_loader import load_dotenv  # noqa: E402
 
 load_dotenv()
 
+UNCHANGED_FLAG = ROOT / "output" / "logs" / "weekly_source_unchanged"
+IMPORT_STATS = ROOT / "output" / "logs" / "last_delta_import_stats.json"
+
 
 def _run(cmd: list[str], *, dry_run: bool = False) -> int:
     print("\n+", " ".join(cmd), flush=True)
@@ -40,14 +42,34 @@ def _run(cmd: list[str], *, dry_run: bool = False) -> int:
     return subprocess.call(cmd)
 
 
+def _read_created_count() -> int | None:
+    if not IMPORT_STATS.is_file():
+        return None
+    try:
+        data = json.loads(IMPORT_STATS.read_text(encoding="utf-8"))
+        return int(data.get("created") or 0)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--brands", default="ktm,hsq,wp")
     ap.add_argument("--skip-pim", action="store_true", help="PIM-refresh overslaan")
+    ap.add_argument(
+        "--force-pim",
+        action="store_true",
+        help="PIM altijd draaien (negeer FTP-fingerprint)",
+    )
     ap.add_argument("--skip-rebuild", action="store_true")
     ap.add_argument("--skip-import", action="store_true")
     ap.add_argument("--skip-ymm", action="store_true")
     ap.add_argument("--skip-complementary", action="store_true")
+    ap.add_argument(
+        "--force-downstream",
+        action="store_true",
+        help="YMM/complementary ook draaien als import 0 nieuwe producten had",
+    )
     ap.add_argument("--dry-run-import", action="store_true")
     ap.add_argument("--import-limit", type=int, default=0)
     ap.add_argument("--worker-rounds", type=int, default=40, help="Max supabase_job_worker loops")
@@ -57,16 +79,28 @@ def main() -> int:
     brands = args.brands
 
     if not args.skip_pim:
-        rc = _run([py, "scripts/vps_pim_refresh_weekly.py", "--brands", brands])
+        pim_cmd = [py, "scripts/vps_pim_refresh_weekly.py", "--brands", brands]
+        if args.force_pim:
+            pim_cmd.append("--force")
+        rc = _run(pim_cmd)
         if rc != 0:
             return rc
+        if UNCHANGED_FLAG.is_file():
+            print(
+                "\nFTP-bronnen ongewijzigd — rebuild/import/YMM/complementary overgeslagen.",
+                flush=True,
+            )
+            print("Wekelijkse pipeline klaar (noop).", flush=True)
+            return 0
 
     if not args.skip_rebuild:
         rc = _run([py, "-u", "scripts/rebuild_shopify_deltas.py", "--brands", brands])
         if rc != 0:
             return rc
 
+    created: int | None = None
     if not args.skip_import:
+        IMPORT_STATS.unlink(missing_ok=True)
         cmd = [py, "scripts/shopify_import_delta_products.py", "--brands", brands]
         if args.dry_run_import:
             cmd.append("--dry-run")
@@ -75,6 +109,30 @@ def main() -> int:
         rc = _run(cmd)
         if rc != 0:
             return rc
+        created = _read_created_count()
+
+    if args.dry_run_import and not args.force_downstream:
+        print(
+            "\nDry-run import — YMM/mirror/complementary overgeslagen "
+            "(gebruik --force-downstream om toch te draaien).",
+            flush=True,
+        )
+        print("\nWekelijkse nieuwe-producten pipeline klaar.", flush=True)
+        return 0
+
+    skip_heavy = (
+        not args.force_downstream
+        and created is not None
+        and created == 0
+    )
+    if skip_heavy:
+        print(
+            "\nImport created=0 — YMM/mirror/complementary overgeslagen "
+            "(gebruik --force-downstream om toch te draaien).",
+            flush=True,
+        )
+        print("\nWekelijkse nieuwe-producten pipeline klaar.", flush=True)
+        return 0
 
     if not args.skip_ymm:
         rc = _run(
@@ -112,14 +170,11 @@ def main() -> int:
             return rc
 
     if not args.skip_complementary:
-        rc = _run(
-            [
-                py,
-                "scripts/shopify_sync_empfart_complementary.py",
-                "--force-refresh-cache",
-                "--force-write",
-            ]
-        )
+        # Alleen force-refresh als we echt nieuwe producten hebben (of force)
+        cmd = [py, "scripts/shopify_sync_empfart_complementary.py", "--force-write"]
+        if created is None or created > 0 or args.force_downstream:
+            cmd.append("--force-refresh-cache")
+        rc = _run(cmd)
         if rc != 0:
             return rc
 

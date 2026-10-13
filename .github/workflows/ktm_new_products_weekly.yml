@@ -25,6 +25,10 @@ on:
         description: "Delta-rebuild overslaan (hergebruik bestaande shopify_export_delta_*.csv op VPS)"
         type: boolean
         default: false
+      force_pim:
+        description: "FTP-fingerprint negeren (altijd PIM ophalen)"
+        type: boolean
+        default: false
       dry_run_import:
         description: "Import alleen dry-run (geen productCreate)"
         type: boolean
@@ -50,6 +54,7 @@ jobs:
           BRANDS: ${{ github.event.inputs.brands || 'ktm,hsq,wp' }}
           SKIP_PIM: ${{ github.event.inputs.skip_pim || 'false' }}
           SKIP_REBUILD: ${{ github.event.inputs.skip_rebuild || 'false' }}
+          FORCE_PIM: ${{ github.event.inputs.force_pim || 'false' }}
           DRY_IMPORT: ${{ github.event.inputs.dry_run_import || 'false' }}
           IMPORT_LIMIT: ${{ github.event.inputs.import_limit || '0' }}
         run: |
@@ -90,6 +95,9 @@ jobs:
           fi
           if [ "$SKIP_REBUILD" = "true" ]; then
             FLAGS="$FLAGS --skip-rebuild"
+          fi
+          if [ "$FORCE_PIM" = "true" ]; then
+            FLAGS="$FLAGS --force-pim"
           fi
           if [ "$DRY_IMPORT" = "true" ]; then
             FLAGS="$FLAGS --dry-run-import"

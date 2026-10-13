@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import os
 import socket
 import stat
@@ -28,6 +29,7 @@ import sys
 import time
 from ftplib import FTP, FTP_TLS
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -239,6 +241,76 @@ def _skip_if_exists(dest: Path) -> bool:
     return False
 
 
+def _ftp_mdtm(ftp, name: str) -> str | None:
+    try:
+        resp = ftp.sendcmd(f"MDTM {name}")
+        # "213 YYYYMMDDHHMMSS"
+        parts = (resp or "").strip().split()
+        if len(parts) >= 2 and parts[0] == "213":
+            return parts[1]
+    except Exception:
+        return None
+    return None
+
+
+def collect_remote_fingerprints(names: list[str], remote_dir: str | None = None) -> dict[str, Any]:
+    """
+    Remote size (+ mtime indien beschikbaar) zonder download.
+    Return: {filename: {"size": int, "mtime": str|None}, ...}
+    """
+    wanted = [n.strip() for n in names if n and n.strip()]
+    if not wanted:
+        return {}
+    protocol = _protocol()
+    rd = _norm_remote(remote_dir or _env("KTM_SFTP_REMOTE_DIR", "/"))
+    out: dict[str, Any] = {}
+
+    if protocol == "sftp":
+        client, sftp = _connect_sftp()
+        try:
+            for name in wanted:
+                rpath = _join_remote(rd, name)
+                try:
+                    st = sftp.stat(rpath)
+                except OSError:
+                    out[name] = {"size": None, "mtime": None, "missing": True}
+                    continue
+                out[name] = {
+                    "size": int(getattr(st, "st_size", 0) or 0),
+                    "mtime": int(getattr(st, "st_mtime", 0) or 0) or None,
+                    "missing": False,
+                }
+        finally:
+            sftp.close()
+            client.close()
+        return out
+
+    use_tls = protocol == "ftps"
+    ftp = _connect_ftp(use_tls=use_tls)
+    try:
+        ftp.cwd(rd)
+        for name in wanted:
+            size: int | None
+            try:
+                size_val = ftp.size(name)
+                size = int(size_val) if size_val is not None else None
+            except Exception:
+                size = None
+            mtime = _ftp_mdtm(ftp, name)
+            missing = size is None and mtime is None
+            # Probeer bestaan via nlst fallback
+            if missing:
+                try:
+                    names = {n.split("/")[-1] for n in ftp.nlst() if n not in (".", "..")}
+                    missing = name not in names
+                except Exception:
+                    missing = True
+            out[name] = {"size": size, "mtime": mtime, "missing": missing}
+    finally:
+        _close_ftp_quietly(ftp)
+    return out
+
+
 def _list_remote_sftp(sftp, remote_dir: str) -> None:
     rd = _norm_remote(remote_dir)
     print(f"Inhoud van {rd}:")
@@ -386,9 +458,22 @@ def main() -> int:
         metavar="NAMEN",
         help="Komma-gescheiden bestandsnamen (alleen deze). Overschrijft KTM_SFTP_FILES.",
     )
+    ap.add_argument(
+        "--fingerprint",
+        action="store_true",
+        help="Alleen remote size/mtime JSON voor --files (geen download).",
+    )
     args = ap.parse_args()
 
     file_list = _parse_file_list(args.files) or _parse_file_list(_env("KTM_SFTP_FILES"))
+
+    if args.fingerprint:
+        if not file_list:
+            print("--fingerprint vereist --files", file=sys.stderr)
+            return 2
+        fp = collect_remote_fingerprints(file_list, remote_dir=args.remote)
+        print(json.dumps(fp, indent=2, sort_keys=True))
+        return 0
 
     protocol = _protocol()
     remote_dir = _norm_remote(args.remote)

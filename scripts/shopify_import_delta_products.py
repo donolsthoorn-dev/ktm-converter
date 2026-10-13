@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import json
 import os
 import sys
 import time
@@ -687,6 +688,24 @@ def main() -> int:
     print(
         f"\nKlaar: created={created} skipped={skipped} failed={failed}\nRapport: {out}",
         flush=True,
+    )
+    stats_path = ROOT / "output" / "logs" / "last_delta_import_stats.json"
+    stats_path.parent.mkdir(parents=True, exist_ok=True)
+    stats_path.write_text(
+        json.dumps(
+            {
+                "at": datetime.now().isoformat(timespec="seconds"),
+                "created": created if not args.dry_run else 0,
+                "would_create": created if args.dry_run else created,
+                "skipped": skipped,
+                "failed": failed,
+                "dry_run": bool(args.dry_run),
+                "report": str(out),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
     )
     return 1 if failed else 0
 
