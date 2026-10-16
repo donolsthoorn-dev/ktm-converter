@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 """
-Publiceer ACTIVE Shopify-producten op het Online Store-kanaal wanneer ze dat volgens ERP
-zouden moeten zijn, maar published_at nog leeg is (Webshop UIT in admin).
+Publiceer ACTIVE Shopify-producten op álle verkoopkanalen (Webshop, Shop, Facebook,
+POS, Google, …) wanneer ze dat volgens ERP zouden moeten zijn.
 
-Criteria per product (publiceren):
-  - status ACTIVE
-  - published_at leeg
-  - minstens één variant-SKU met ArticleStatus in CSV, en niet overal 80
-  - niet volledig uitverkocht in Shopify en niet overal ERP StockAvailable=0
-  - product_type niet leeg en niet in config.DELTA_EXCLUDED_TYPES (o.a. Archive, Archiv,
-    Additional, Motorcycles, Software enhancements)
-  - minstens één productafbeelding in Shopify
+Kandidaten:
+  - status ACTIVE + ERP-verkoopbaar + type/afbeelding OK, én
+  - published_at leeg (nog niet op Webshop), of
+  - wel op Webshop maar nog ontbrekende publicatiekanalen (Shop/Facebook/…)
 
-Niet op Online Store (overslaan bij publiceren; bij --apply expliciet unpublish):
+Niet publiceren / bij --apply depubliceren van alle kanalen:
   - uitgesloten type, leeg type, geen afbeelding, uitverkocht, of ERP StockAvailable=0
 
-Mutatie: GraphQL productUpdate met status ACTIVE + published: true/false
-(werkt met bestaande product-scopes; geen read/write_publications nodig).
+Mutatie: publishablePublish / publishableUnpublish op alle publications
+(vereist read_publications + write_publications). Fallback: alleen Online Store
+via productUpdate published true/false.
 
 Standaard dry-run. Met --apply worden producten echt gepubliceerd.
 
@@ -73,8 +70,8 @@ ADMIN_API_VERSION = config.SHOPIFY_ADMIN_API_VERSION
 _GRAPHQL_URL = f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/graphql.json"
 _REQUEST_TIMEOUT = (12, 120)
 
-_GQL_PUBLISH = """
-mutation KtmPublishProduct($input: ProductInput!) {
+_GQL_PRODUCT_PUBLISHED = """
+mutation KtmSetOnlineStorePublished($input: ProductInput!) {
   productUpdate(input: $input) {
     product {
       id
@@ -89,7 +86,57 @@ mutation KtmPublishProduct($input: ProductInput!) {
 }
 """
 
+_GQL_PUBLICATIONS = """
+query KtmPublications {
+  publications(first: 50) {
+    nodes { id name }
+  }
+}
+"""
+
+_GQL_PUBLISHABLE_PUBLISH = """
+mutation KtmPublishablePublish($id: ID!, $input: [PublicationInput!]!) {
+  publishablePublish(id: $id, input: $input) {
+    userErrors { field message }
+  }
+}
+"""
+
+_GQL_PUBLISHABLE_UNPUBLISH = """
+mutation KtmPublishableUnpublish($id: ID!, $input: [PublicationInput!]!) {
+  publishableUnpublish(id: $id, input: $input) {
+    userErrors { field message }
+  }
+}
+"""
+
+_GQL_PRODUCTS_MISSING_CHANNELS = """
+query KtmProductsMissingChannels($cursor: String) {
+  products(first: 50, after: $cursor, query: "status:active") {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      legacyResourceId
+      handle
+      title
+      productType
+      publishedAt
+      featuredImage { url }
+      variants(first: 100) {
+        nodes { sku inventoryQuantity }
+      }
+      unpublishedPublications(first: 20) {
+        nodes { id name }
+      }
+    }
+  }
+}
+"""
+
 _TYPE_PREFIXES = ("HSQ - ", "WP - ", "KTM - ")
+
+# Cache: None = nog niet opgehaald; [] = geen scope / leeg.
+_PUBLICATION_IDS: list[str] | None = None
+_PUBLICATION_NAMES: dict[str, str] = {}
 
 
 def _http_session() -> requests.Session:
@@ -238,6 +285,7 @@ def _collect_candidates_rest(
     status_by_sku: dict[str, str],
     stock_by_sku: dict[str, int],
 ) -> tuple[list[dict], list[dict]]:
+    """ACTIVE + published_at leeg + ERP-verkoopbaar (Webshop nog uit)."""
     headers = {"X-Shopify-Access-Token": TOKEN}
     url = (
         f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
@@ -277,7 +325,7 @@ def _collect_candidates_rest(
             if reason:
                 skipped.append({**row, "exclusion_reason": reason})
                 continue
-            candidates.append(row)
+            candidates.append({**row, "publish_reason": "webshop_uit"})
 
         if scanned % 5000 == 0 and scanned:
             print(
@@ -289,10 +337,146 @@ def _collect_candidates_rest(
         time.sleep(0.2)
 
     print(
-        f"ACTIVE gescand: {scanned}; publish-kandidaten {len(candidates)}, "
+        f"ACTIVE gescand (Webshop uit): {scanned}; publish-kandidaten {len(candidates)}, "
         f"uitgesloten (zelfde scan) {len(skipped)}",
         flush=True,
     )
+    return candidates, skipped
+
+
+def _gql_node_to_rest_product(node: dict) -> dict:
+    """Map GraphQL product-node naar REST-achtige dict voor bestaande filters."""
+    images = []
+    feat = node.get("featuredImage") or {}
+    feat_url = (feat.get("url") or "").strip()
+    if feat_url:
+        images.append({"src": feat_url})
+    variants = []
+    for v in ((node.get("variants") or {}).get("nodes")) or []:
+        variants.append(
+            {
+                "sku": v.get("sku") or "",
+                "inventory_quantity": v.get("inventoryQuantity"),
+            }
+        )
+    return {
+        "id": str(node.get("legacyResourceId") or ""),
+        "handle": (node.get("handle") or "").strip(),
+        "title": (node.get("title") or "").strip(),
+        "product_type": (node.get("productType") or "").strip(),
+        "published_at": node.get("publishedAt") or "",
+        "images": images,
+        "variants": variants,
+    }
+
+
+def _collect_missing_channel_candidates(
+    sess: requests.Session,
+    status_by_sku: dict[str, str],
+    stock_by_sku: dict[str, int],
+    *,
+    already: set[str],
+) -> tuple[list[dict], list[dict]]:
+    """
+    ACTIVE die al op Webshop staan maar nog ontbrekende kanalen hebben
+    (Shop, Facebook, …). Vereist read_publications.
+    """
+    if not _list_publication_ids(sess):
+        return [], []
+
+    scanned = 0
+    candidates: list[dict] = []
+    skipped: list[dict] = []
+    cursor: str | None = None
+    pages = 0
+
+    while True:
+        body = _graphql_post(
+            sess,
+            _GQL_PRODUCTS_MISSING_CHANNELS,
+            {"cursor": cursor},
+        )
+        if body.get("errors"):
+            err_s = str(body.get("errors"))
+            if "ACCESS" in err_s.upper() or "publication" in err_s.lower():
+                print(
+                    f"  skip ontbrekende-kanalen-scan (geen publications-scope): {err_s[:200]}",
+                    flush=True,
+                )
+                return [], []
+            print(f"  warn missing-channels scan: {err_s[:300]}", flush=True)
+            break
+
+        conn = ((body.get("data") or {}).get("products")) or {}
+        nodes = conn.get("nodes") or []
+        page = conn.get("pageInfo") or {}
+        pages += 1
+
+        for node in nodes:
+            scanned += 1
+            unpublished = ((node.get("unpublishedPublications") or {}).get("nodes")) or []
+            if not unpublished:
+                continue
+            if not (node.get("publishedAt") or "").strip():
+                # Webshop-uit wordt al door REST-scan opgepakt
+                continue
+            pid = str(node.get("legacyResourceId") or "")
+            if not pid or pid in already:
+                continue
+            p = _gql_node_to_rest_product(node)
+            variants = p.get("variants") or []
+            if not _product_is_sellable_per_csv(
+                variants, status_by_sku, stock_by_sku=stock_by_sku
+            ):
+                continue
+            row = _row_from_product(p, status_by_sku=status_by_sku)
+            reason = _online_store_exclusion_reason(p, stock_by_sku=stock_by_sku)
+            if reason:
+                skipped.append({**row, "exclusion_reason": reason})
+                continue
+            missing_names = ", ".join(
+                (n.get("name") or n.get("id") or "?") for n in unpublished[:8]
+            )
+            candidates.append(
+                {
+                    **row,
+                    "publish_reason": f"kanalen_missen:{missing_names}",
+                }
+            )
+
+        if pages % 40 == 0 and pages:
+            print(
+                f"  ... missing-channels pages={pages} scanned={scanned} "
+                f"kandidaten={len(candidates)}",
+                flush=True,
+            )
+        if not page.get("hasNextPage"):
+            break
+        cursor = page.get("endCursor")
+        if not cursor:
+            break
+        time.sleep(0.15)
+
+    print(
+        f"Ontbrekende kanalen: {scanned} ACTIVE bekeken; "
+        f"+{len(candidates)} kandidaten, {len(skipped)} uitgesloten",
+        flush=True,
+    )
+    return candidates, skipped
+
+
+def _collect_all_publish_candidates(
+    sess: requests.Session,
+    status_by_sku: dict[str, str],
+    stock_by_sku: dict[str, int],
+) -> tuple[list[dict], list[dict]]:
+    candidates, skipped = _collect_candidates_rest(sess, status_by_sku, stock_by_sku)
+    have = {r["product_id"] for r in candidates if r.get("product_id")}
+    extra, skipped2 = _collect_missing_channel_candidates(
+        sess, status_by_sku, stock_by_sku, already=have
+    )
+    candidates.extend(extra)
+    skipped.extend(skipped2)
     return candidates, skipped
 
 
@@ -430,7 +614,40 @@ def _apply_online_store_rules(
     return candidates, skipped
 
 
-def _set_product_published(
+def _list_publication_ids(sess: requests.Session) -> list[str]:
+    """Alle sales-channel publication IDs. Leeg als read_publications ontbreekt."""
+    global _PUBLICATION_IDS
+    if _PUBLICATION_IDS is not None:
+        return _PUBLICATION_IDS
+    body = _graphql_post(sess, _GQL_PUBLICATIONS)
+    if body.get("errors"):
+        print(f"  warn publications: {body.get('errors')}", flush=True)
+        _PUBLICATION_IDS = []
+        return _PUBLICATION_IDS
+    nodes = (((body.get("data") or {}).get("publications") or {}).get("nodes")) or []
+    ids: list[str] = []
+    for n in nodes:
+        pid = (n.get("id") or "").strip()
+        if not pid:
+            continue
+        ids.append(pid)
+        name = (n.get("name") or "").strip()
+        if name:
+            _PUBLICATION_NAMES[pid] = name
+    _PUBLICATION_IDS = ids
+    if ids:
+        names = ", ".join(_PUBLICATION_NAMES.get(i, i) for i in ids)
+        print(f"Publicatiekanalen: {len(ids)} ({names})", flush=True)
+    else:
+        print(
+            "Publicatiekanalen: 0 — app mist read_publications/write_publications; "
+            "fallback alleen Online Store (Webshop).",
+            flush=True,
+        )
+    return _PUBLICATION_IDS
+
+
+def _set_online_store_published(
     sess: requests.Session,
     product_id: str,
     *,
@@ -439,7 +656,7 @@ def _set_product_published(
     gid = f"gid://shopify/Product/{product_id}"
     body = _graphql_post(
         sess,
-        _GQL_PUBLISH,
+        _GQL_PRODUCT_PUBLISHED,
         {
             "input": {
                 "id": gid,
@@ -464,12 +681,57 @@ def _set_product_published(
     return True, "", str(pub) if pub else None
 
 
+def _publishable_set_channels(
+    sess: requests.Session,
+    product_id: str,
+    publication_ids: list[str],
+    *,
+    publish: bool,
+) -> str:
+    if not publication_ids:
+        return ""
+    mutation = _GQL_PUBLISHABLE_PUBLISH if publish else _GQL_PUBLISHABLE_UNPUBLISH
+    field = "publishablePublish" if publish else "publishableUnpublish"
+    body = _graphql_post(
+        sess,
+        mutation,
+        {
+            "id": f"gid://shopify/Product/{product_id}",
+            "input": [{"publicationId": pid} for pid in publication_ids],
+        },
+    )
+    if body.get("errors"):
+        err_s = str(body.get("errors"))
+        if "ACCESS" in err_s.upper() or "publication" in err_s.lower():
+            return f"scope:{err_s[:200]}"
+        return err_s[:300]
+    uerr = (((body.get("data") or {}).get(field)) or {}).get("userErrors") or []
+    return str(uerr)[:400] if uerr else ""
+
+
 def _publish_product(sess: requests.Session, product_id: str) -> tuple[bool, str, str | None]:
-    return _set_product_published(sess, product_id, published=True)
+    """ACTIVE + alle verkoopkanalen (fallback: alleen Online Store)."""
+    ok, err, pub_at = _set_online_store_published(sess, product_id, published=True)
+    if not ok:
+        return False, err, None
+    pub_ids = _list_publication_ids(sess)
+    if not pub_ids:
+        return True, "", pub_at
+    ch_err = _publishable_set_channels(sess, product_id, pub_ids, publish=True)
+    if ch_err:
+        # Shop/Facebook weigeren soms (eligibility); Webshop staat al aan → waarschuwing.
+        print(f"  warn kanalen product {product_id}: {ch_err}", flush=True)
+    return True, "", pub_at
 
 
 def _unpublish_product(sess: requests.Session, product_id: str) -> tuple[bool, str]:
-    ok, err, _ = _set_product_published(sess, product_id, published=False)
+    """Van alle kanalen af + Online Store uit."""
+    pub_ids = _list_publication_ids(sess)
+    if pub_ids:
+        ch_err = _publishable_set_channels(sess, product_id, pub_ids, publish=False)
+        if ch_err and not ch_err.startswith("scope:"):
+            print(f"  warn unpublish kanalen {product_id}: {ch_err}", flush=True)
+    ok, err, _ = _set_online_store_published(sess, product_id, published=False)
     return ok, err
 
 
@@ -719,8 +981,21 @@ def main() -> int:
         "skus",
         "article_statuses",
         "variant_count",
+        "publish_reason",
     ]
-    skipped_fields = [*report_fields, "exclusion_reason"]
+    skipped_fields = [
+        "product_id",
+        "handle",
+        "title",
+        "product_type",
+        "skus",
+        "article_statuses",
+        "variant_count",
+        "exclusion_reason",
+    ]
+
+    # Warm publications cache early (duidelijke logregel vóór lange scan).
+    _list_publication_ids(sess)
 
     skipped: list[dict] = []
     if csv_source is not None:
@@ -732,13 +1007,15 @@ def main() -> int:
             status_by_sku=status_by_sku,
             stock_by_sku=stock_by_sku,
         )
+        for row in candidates:
+            row.setdefault("publish_reason", "csv")
     else:
         print(
-            "Catalogusscan: ACTIVE + published_at leeg + ERP verkoopbaar "
-            "+ type/afbeelding OK...",
+            "Catalogusscan: ACTIVE verkoopbaar + Webshop uit óf ontbrekende "
+            "kanalen (Shop/Facebook/…)…",
             flush=True,
         )
-        candidates, skipped = _collect_candidates_rest(
+        candidates, skipped = _collect_all_publish_candidates(
             sess, status_by_sku, stock_by_sku
         )
 
@@ -768,7 +1045,8 @@ def main() -> int:
         for row in candidates[:10]:
             print(
                 f"  publish {row['handle']}: {row['title'][:45]} | "
-                f"{row.get('product_type', '')} | ERP {row['article_statuses']}",
+                f"{row.get('product_type', '')} | ERP {row['article_statuses']} | "
+                f"{row.get('publish_reason', '')}",
                 flush=True,
             )
         if len(candidates) > 10:
@@ -793,7 +1071,7 @@ def main() -> int:
         unpublish_ok: list[dict] = []
         unpublish_err: list[dict] = []
         mirror_unpub: list[str] = []
-        print(f"Depubliceren Online Store: {len(to_unpublish)} producten...", flush=True)
+        print(f"Depubliceren alle kanalen: {len(to_unpublish)} producten...", flush=True)
         for idx, row in enumerate(to_unpublish, start=1):
             pid = row["product_id"]
             ok, err = _unpublish_product(sess, pid)
@@ -831,7 +1109,7 @@ def main() -> int:
     error_rows: list[dict] = []
     mirror_flush: list[tuple[str, str]] = []
 
-    print(f"Publiceren: {len(to_publish)} producten...", flush=True)
+    print(f"Publiceren op alle kanalen: {len(to_publish)} producten...", flush=True)
     for idx, row in enumerate(to_publish, start=1):
         pid = row["product_id"]
         ok, err, pub_at = _publish_product(sess, pid)

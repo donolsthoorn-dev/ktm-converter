@@ -1,5 +1,7 @@
-# Publiceer ACTIVE + ERP-verkoopbare producten op Webshop (published_at leeg).
-# Trigger: Supabase 04:30 NL (migratie 032) of handmatige workflow_dispatch.
+# Publiceer ACTIVE + ERP-verkoopbare producten op alle verkoopkanalen
+# (Webshop, Shop, Facebook, POS, Google, …). Ook producten die al op Webshop
+# staan maar kanalen missen. Trigger: Supabase 04:30 NL (migratie 032) of
+# handmatige workflow_dispatch. Vereist app-scopes read/write_publications.
 # Zie docs/supabase-scheduler.md voor NL-planning via Supabase-cron.
 
 name: ktm_shopify_publish_sellable_active_products
@@ -8,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       apply:
-        description: "true = publiceer op Webshop, false = alleen scan/rapport"
+        description: "true = publiceer alle kanalen, false = alleen scan/rapport"
         type: choice
         options:
           - "true"

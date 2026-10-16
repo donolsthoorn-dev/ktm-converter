@@ -59,16 +59,16 @@ Producten die **niet geschikt** zijn om online te staan, worden op **concept** g
 
 ---
 
-### 3. Om 04:30 — “Wat moet juist wél op de webshop?”
+### 3. Om 04:30 — “Wat moet juist wél in de shop?”
 
-Producten die in Shopify **actief** zijn maar nog **niet op het Online Store-kanaal** staan, worden **zichtbaar** gemaakt — als ze voldoen aan de regels:
+Producten die in Shopify **actief** zijn maar nog **niet op alle verkoopkanalen** staan (Webshop, Shop, Facebook, POS, Google, …), worden **zichtbaar** gemaakt — als ze voldoen aan de regels:
 
 - artikel is **verkoopbaar** volgens KTM (niet overal status “80”);
 - er is **voorraad in Shopify** of het is niet overal uitverkocht / leeg;
 - product heeft een **toegestaan producttype** (geen archief, geen motorfietsen, enz.);
 - er is minstens **één productafbeelding**.
 
-Omgekeerd: producten die **wel online staan** maar dat niet meer mogen (verkeerd type, geen foto, uitverkocht, geen KTM-voorraad terwijl Shopify ook leeg is), worden **van de webshop gehaald**.
+Omgekeerd: producten die **wel online staan** maar dat niet meer mogen (verkeerd type, geen foto, uitverkocht, geen KTM-voorraad terwijl Shopify ook leeg is), worden **van alle kanalen gehaald**.
 
 **Volgorde:** eerst opruimen (04:00), daarna publiceren (04:30). Zo worden uitverkochte artikelen niet direct daarna weer online gezet.
 

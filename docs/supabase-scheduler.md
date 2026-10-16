@@ -54,7 +54,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
    - `converter/supabase/migrations/024_github_dispatch_pg_net_collect_response.sql`
    - `converter/supabase/migrations/025_github_dispatch_bounded_wait.sql` (verplicht na 024; voorkomt SQL-hang)
    - `converter/supabase/migrations/027_github_dispatch_fire_and_forget.sql` (verplicht na 025/026; pg_net + cron-compatibel)
-   - `converter/supabase/migrations/032_publish_sellable_active_after_deactivate.sql` (Webshop-publish 04:30 NL)
+   - `converter/supabase/migrations/032_publish_sellable_active_after_deactivate.sql` (alle verkoopkanalen 04:30 NL)
    - `converter/supabase/migrations/033_gtin_fill_nightly_and_staging.sql` (GTIN-fill 05:30 NL + staging `proposed_barcode`)
    - `converter/supabase/migrations/034_motox_synkro_clone_missing_hourly.sql` (Synkro tag-clone 07:30–22:30 NL)
    - `converter/supabase/migrations/035_rename_github_workflow_files.sql` (workflowbestanden `ktm_` / `shops_`; zie `docs/workflow-namen.md`)

@@ -22,9 +22,9 @@ Maakt een kopie van de ktm-shop, zodat de prijsjob later kan zien wat er verande
 
 Verbergt een product als geen enkele uitvoering een bruikbare prijs heeft, als alles uitverkocht is, of als de leverancier het niet meer levert en er ook in de shop geen voorraad is. Eén uitvoering zonder prijs blijft van de productpagina af en is niet te bestellen; de andere uitvoeringen blijven te koop. Zet het product weer zichtbaar als dat niet meer zo is. Ligt er van één uitvoering nog voorraad, dan blijft het product zichtbaar.
 
-### 04:30 — Op de webshop zetten
+### 04:30 — Op alle verkoopkanalen zetten
 
-Zet producten op de webshop die verkoopbaar zijn en daar nog niet op staan.
+Zet verkoopbare producten op alle Shopify-kanalen (Webshop, Shop, Facebook, POS, Google, …). Ook producten die al op de webshop staan maar nog kanalen missen, worden aangevuld.
 
 ### 05:00 — Douanegegevens
 
