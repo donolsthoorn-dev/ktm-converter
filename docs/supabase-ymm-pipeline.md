@@ -171,11 +171,15 @@ Optioneel later: oude `shopify_products`-spoken handmatig opruimen (niet verplic
 | Workflow | Wat | Wanneer |
 |----------|-----|---------|
 | **ktm_job_worker** | `shopify_catalog_mirror` | Nachtelijk / handmatig — catalogus spiegelen |
-| **ktm_ymm_delivery** | `shopify_ymm_push_diff_from_supabase` | Wekelijks / handmatig diff-push (limit default 500) |
+| **ktm_ymm_delivery** | `ymm_ensure_updatable` (diff-push + backfill) | Dagelijks 05:15 UTC / handmatig (limit default 500) |
 
 Full push (na parser/summary-fix) en XML→Supabase-sync: via queue of `run_canonical_ymm_pipeline.py` (zie hieronder), niet via Actions.
 
-### ktm_ymm_delivery (alleen diff-push)
+### ktm_ymm_delivery (pending-check + diff-push + backfill)
+
+Dagelijks 05:15 UTC. Roept `scripts/ymm_ensure_updatable.py` aan: telt canonical diffs (`DIGEST_METRIC ymm_pending=`), pusht die, en backfillt daarna lege Shopify-velden.
+
+### ktm_ymm_delivery — handles / klassieke queue
 
 **Actions → ktm_ymm_delivery**
 

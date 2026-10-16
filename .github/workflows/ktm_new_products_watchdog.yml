@@ -1,0 +1,63 @@
+# Als ktm_new_products_daily vandaag (UTC) nog geen succesvolle run heeft,
+# triggert deze watchdog hem. GHA-schedules missen soms; dit vangt dat op.
+#
+# Venster: elk uur 05:00–11:00 UTC (na primaire cron 04:00).
+
+name: ktm_new_products_watchdog
+
+on:
+  schedule:
+    - cron: "10 5-11 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  ensure_daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check today's ktm_new_products_daily runs
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DAY="$(date -u +%Y-%m-%d)"
+          echo "UTC day=$DAY"
+
+          # Succes vandaag (schedule of dispatch of watchdog-trigger)
+          OK_JSON="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ktm_new_products_daily.yml/runs?per_page=30&created=${DAY}T00:00:00Z..${DAY}T23:59:59Z" \
+            --jq '[.workflow_runs[] | select(.conclusion=="success")] | length')"
+          echo "success_today=$OK_JSON"
+
+          # Al bezig of in de wachtrij?
+          BUSY_JSON="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ktm_new_products_daily.yml/runs?per_page=10" \
+            --jq '[.workflow_runs[] | select(.status=="in_progress" or .status=="queued")] | length')"
+          echo "busy=$BUSY_JSON"
+
+          if [ "$OK_JSON" != "0" ]; then
+            echo "should_trigger=false" >> "$GITHUB_OUTPUT"
+            echo "Vandaag al een succesvolle daily — klaar."
+            exit 0
+          fi
+          if [ "$BUSY_JSON" != "0" ]; then
+            echo "should_trigger=false" >> "$GITHUB_OUTPUT"
+            echo "Daily staat al queued/in_progress — niet opnieuw triggeren."
+            exit 0
+          fi
+          echo "should_trigger=true" >> "$GITHUB_OUTPUT"
+          echo "Geen succesvolle daily vandaag — triggeren."
+
+      - name: Trigger ktm_new_products_daily
+        if: steps.check.outputs.should_trigger == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run ktm_new_products_daily.yml --ref "${GITHUB_REF_NAME}"
+          echo "Triggered ktm_new_products_daily on ${GITHUB_REF_NAME}"

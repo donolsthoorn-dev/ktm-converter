@@ -430,6 +430,18 @@ def _parse_metrics(wf: str, text: str) -> dict[str, int]:
         g = re.search(r"YMM push klaar.*?\bok=(\d+)", text)
         if g:
             m["ok"] = int(g.group(1))
+        g2 = re.search(r"DIGEST_METRIC ymm_pending=(\d+)", text)
+        if g2:
+            m["pending"] = int(g2.group(1))
+        g3 = re.search(r"DIGEST_METRIC ymm_backfill_updated=(\d+)", text)
+        if g3:
+            m["backfill"] = int(g3.group(1))
+        if "ok" not in m:
+            g4 = re.search(
+                r"YMM bij te werken \(canonical diff\):\s*(\d+)", text
+            )
+            if g4:
+                m["pending"] = int(g4.group(1))
         return m
     if wf == "motox_putoline.yml":
         # Summary: delta prijs=N ean=N gewicht=N nieuw=N listing=N sellable=N …
@@ -600,13 +612,30 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
                 )
             )
     elif wf == "ktm_ymm_delivery.yml":
-        out.append(
-            DigestItem(
-                GROUP_KTM,
-                f"YMM gepusht {_nl_num(totals['ok'])}",
-                93,
+        if totals.get("ok"):
+            out.append(
+                DigestItem(
+                    GROUP_KTM,
+                    f"YMM gepusht {_nl_num(totals['ok'])}",
+                    93,
+                )
             )
-        )
+        elif totals.get("pending") is not None:
+            out.append(
+                DigestItem(
+                    GROUP_KTM,
+                    f"YMM te pushen {_nl_num(totals['pending'])}",
+                    93,
+                )
+            )
+        if totals.get("backfill"):
+            out.append(
+                DigestItem(
+                    GROUP_KTM,
+                    f"YMM lege velden gevuld {_nl_num(totals['backfill'])}",
+                    94,
+                )
+            )
     elif wf == "motox_putoline.yml":
         mapping = [
             ("price", "Prijzen aangepast", 10),

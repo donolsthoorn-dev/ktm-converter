@@ -1,6 +1,8 @@
 # Dagelijkse nieuwe producten: PIM (XML+PHO) op VPS → rebuild → API-import → YMM → complementary.
 # FTP-fingerprint: ongewijzigde PIM-zips → noop in seconden (geen Shopify-writes).
 # Na echte PIM-refresh altijd YMM/complementary (ook bij 0 nieuwe producten).
+# Meerdere crons (04:00 / 05:30 / 08:00 UTC): GHA-schedules missen soms; backup-runs
+# skippen via VPS OK-marker als de pipeline vandaag al substantieel slaagde.
 # Volle run deelt concurrency shopify-write-lock-ktm (wacht/queued, cancelt anderen niet).
 #
 # Secrets: MOTOX_VPS_SSH_KEY (privésleutel voor motoxshop@149.210.206.111).
@@ -10,9 +12,10 @@ name: ktm_new_products_daily
 
 on:
   schedule:
-    # Dagelijks 04:00 UTC ≈ 06:00 NL zomer / 05:00 winter.
-    # Na typische PIM-drop (~03:15 UTC), na Putoline (02:15 NL), vóór YMM-delivery ma 05:15 UTC.
+    # Primair na PIM-drop (~03:15 UTC). Backup als GHA de eerste mist of de run faalt.
     - cron: "0 4 * * *"
+    - cron: "30 5 * * *"
+    - cron: "0 8 * * *"
   workflow_dispatch:
     inputs:
       brands:
@@ -39,6 +42,10 @@ on:
         description: "Max nieuwe producten (0=alle)"
         required: false
         default: "0"
+      ignore_ok_marker:
+        description: "Negeer VPS OK-marker (forceer opnieuw vandaag)"
+        type: boolean
+        default: false
 
 jobs:
   daily:
@@ -59,6 +66,7 @@ jobs:
           FORCE_PIM: ${{ github.event.inputs.force_pim || 'false' }}
           DRY_IMPORT: ${{ github.event.inputs.dry_run_import || 'false' }}
           IMPORT_LIMIT: ${{ github.event.inputs.import_limit || '0' }}
+          IGNORE_OK: ${{ github.event.inputs.ignore_ok_marker || 'false' }}
         run: |
           set -euo pipefail
           if [ -z "${SSH_KEY:-}" ]; then
@@ -103,6 +111,9 @@ jobs:
           fi
           if [ "$DRY_IMPORT" = "true" ]; then
             FLAGS="$FLAGS --dry-run-import"
+          fi
+          if [ "$IGNORE_OK" = "true" ]; then
+            FLAGS="$FLAGS --ignore-ok-marker"
           fi
           if [ -n "$IMPORT_LIMIT" ] && [ "$IMPORT_LIMIT" != "0" ]; then
             FLAGS="$FLAGS --import-limit $IMPORT_LIMIT"

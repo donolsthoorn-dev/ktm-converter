@@ -1,14 +1,14 @@
-# Periodiek: push gewijzigde canonical YMM naar Shopify (diff op content_hash).
-# Vereist: migratie 028 + eerst canonical_ymm_sync_to_supabase (na nieuwe XML).
+# Periodiek: controleer of er YMM bij te werken is, push diffs, backfill lege velden.
+# Vereist: migratie 028 + canonical sync (na nieuwe XML / daily pipeline).
 # Catalog mirror (producten/prijzen/ETA) blijft in ktm_job_worker.yml.
-# De maandagrun schrijft en pakt shopify-write-lock-ktm. Een dry-run niet.
+# Schedule schrijft en pakt shopify-write-lock-ktm. Een dry-run niet.
 
 name: ktm_ymm_delivery
 
 on:
   schedule:
-    # Maandag 05:15 UTC (na weekend XML-sync indien handmatig)
-    - cron: "15 5 * * 1"
+    # Dagelijks 05:15 UTC — na primary new-products (04:00), vangt gemiste YMM op.
+    - cron: "15 5 * * *"
   workflow_dispatch:
     inputs:
       handles:
@@ -43,7 +43,8 @@ jobs:
       - name: Install requests
         run: pip install "requests>=2.28,<3"
 
-      - name: Build job payload
+      - name: Build job payload (handles path)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.handles != '' }}
         run: |
           python3 - <<'PY'
           import json, os
@@ -59,21 +60,15 @@ jobs:
               payload["only_handles"] = handles
           with open("job_payload.json", "w") as f:
               json.dump(payload, f)
+          print(json.dumps(payload, indent=2))
           PY
         env:
           HANDLES: ${{ inputs.handles }}
-          DRY_RUN: ${{ inputs.dry_run }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
           LIMIT: ${{ inputs.limit }}
 
-      - name: Queue shopify_ymm_push_diff_from_supabase
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          python scripts/queue_supabase_job.py shopify_ymm_push_diff_from_supabase \
-            --trigger schedule --payload-json "$(cat job_payload.json)"
-
-      - name: Process queued jobs
+      - name: Queue + worker (specific handles)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.handles != '' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -83,6 +78,9 @@ jobs:
           SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
           SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
         run: |
+          set -euo pipefail
+          python scripts/queue_supabase_job.py shopify_ymm_push_diff_from_supabase \
+            --trigger schedule --payload-json "$(cat job_payload.json)"
           failed=0
           for i in 1 2 3 4 5 6; do
             set +e
@@ -94,3 +92,25 @@ jobs:
             case "$out" in *"Geen queued jobs."*) break ;; esac
           done
           exit "$failed"
+
+      - name: Report pending + push + backfill
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.handles == '' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_PRODUCT_FITS_ON_NAMESPACE: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_NAMESPACE }}
+          SHOPIFY_PRODUCT_FITS_ON_KEY: ${{ secrets.SHOPIFY_PRODUCT_FITS_ON_KEY }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+          LIMIT: ${{ inputs.limit || '500' }}
+        run: |
+          set -euo pipefail
+          LIMIT_ARG="${LIMIT:-500}"
+          if [ "${DRY_RUN:-true}" = "true" ]; then
+            echo "Dry-run: alleen pending-rapport."
+            python scripts/ymm_ensure_updatable.py --report-only --limit "$LIMIT_ARG"
+          else
+            python scripts/ymm_ensure_updatable.py --write --push --backfill --limit "$LIMIT_ARG"
+          fi

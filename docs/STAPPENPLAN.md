@@ -85,6 +85,7 @@ python3 scripts/queue_supabase_job.py shopify_catalog_mirror --trigger manual
 python3 scripts/supabase_job_worker.py
 python3 scripts/run_canonical_ymm_pipeline.py --sync-only --write
 python3 scripts/run_canonical_ymm_pipeline.py --push-only --write
+python3 scripts/ymm_ensure_updatable.py --write --push --backfill --limit 500
 ```
 
 ---

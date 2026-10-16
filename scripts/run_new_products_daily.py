@@ -9,6 +9,7 @@ Dagelijkse nieuwe-producten pipeline (VPS na PIM-refresh).
   5) catalog mirror + YMM + complementary
      — altijd na een echte PIM-refresh (ook bij created=0, voor fitment/EMPF-updates)
      — overgeslagen bij fingerprint-noop of dry-run (tenzij --force-downstream)
+     — na YMM: controleer pending diffs + backfill lege velden
 
   python3 scripts/run_new_products_daily.py
   python3 scripts/run_new_products_daily.py --skip-pim --brands hsq --dry-run-import
@@ -25,6 +26,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +41,33 @@ load_dotenv()
 UNCHANGED_FLAG = ROOT / "output" / "logs" / "weekly_source_unchanged"
 IMPORT_STATS = ROOT / "output" / "logs" / "last_delta_import_stats.json"
 IMAGES_STATS = ROOT / "output" / "logs" / "last_missing_images_stats.json"
+LOG_DIR = ROOT / "output" / "logs"
+
+
+def _ok_marker_path() -> Path:
+    day = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return LOG_DIR / f"new_products_daily_ok_{day}"
+
+
+def _mark_ok(*, pim_refreshed: bool, created: int | None) -> None:
+    """Markeer substantiële succesvolle run (niet FTP-noop), zodat backup-crons kunnen skippen."""
+    if not pim_refreshed and not (created and created > 0):
+        return
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    path = _ok_marker_path()
+    path.write_text(
+        json.dumps(
+            {
+                "utc": datetime.now(timezone.utc).isoformat(),
+                "pim_refreshed": pim_refreshed,
+                "created": created,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    print(f"OK-marker: {path}", flush=True)
 
 _PRODUCTS_DIR = {
     "ktm": ROOT / "output" / "products",
@@ -174,12 +203,31 @@ def main() -> int:
     ap.add_argument("--dry-run-import", action="store_true")
     ap.add_argument("--import-limit", type=int, default=0)
     ap.add_argument("--worker-rounds", type=int, default=40, help="Max supabase_job_worker loops")
+    ap.add_argument(
+        "--ignore-ok-marker",
+        action="store_true",
+        help="Negeer new_products_daily_ok_YYYYMMDD (backup-cron skip uitzetten)",
+    )
     args = ap.parse_args()
 
     py = sys.executable
     brands = args.brands
     brand_list = [b.strip().lower() for b in brands.split(",") if b.strip()]
     pim_refreshed = False
+
+    ok_marker = _ok_marker_path()
+    if (
+        ok_marker.is_file()
+        and not args.ignore_ok_marker
+        and not args.force_pim
+        and not args.force_downstream
+    ):
+        print(
+            f"\nAl succesvol gedraaid vandaag ({ok_marker.name}) — skip "
+            "(gebruik --ignore-ok-marker / --force-pim / --force-downstream).",
+            flush=True,
+        )
+        return 0
 
     if not args.skip_pim:
         pim_cmd = [py, "scripts/vps_pim_refresh_weekly.py", "--brands", brands]
@@ -250,37 +298,83 @@ def main() -> int:
         _sync_missing_images(py, brand_list, dry_run=False)
 
     if not args.skip_ymm:
-        rc = _run(
-            [
-                py,
-                "scripts/queue_supabase_job.py",
-                "shopify_catalog_mirror",
-                "--trigger",
-                "manual",
-            ]
-        )
-        if rc != 0:
-            return rc
-        for i in range(max(1, args.worker_rounds)):
-            print(f"\n--- supabase_job_worker round {i + 1}/{args.worker_rounds} ---", flush=True)
-            proc = subprocess.run(
-                [py, "scripts/supabase_job_worker.py"],
-                capture_output=True,
-                text=True,
+        mirror_ok = False
+        for attempt in range(1, 4):
+            print(f"\n=== Catalog mirror poging {attempt}/3 ===", flush=True)
+            rc = _run(
+                [
+                    py,
+                    "scripts/queue_supabase_job.py",
+                    "shopify_catalog_mirror",
+                    "--trigger",
+                    "manual",
+                ]
             )
-            sys.stdout.write(proc.stdout or "")
-            sys.stderr.write(proc.stderr or "")
-            if proc.returncode != 0:
-                return proc.returncode
-            combined = (proc.stdout or "") + (proc.stderr or "")
-            if "Geen queued jobs." in combined:
+            if rc != 0:
+                print(
+                    f"Mirror queue mislukt (exit {rc}); opnieuw proberen…",
+                    flush=True,
+                )
+                time.sleep(10)
+                continue
+
+            worker_failed = False
+            for i in range(max(1, args.worker_rounds)):
+                print(
+                    f"\n--- supabase_job_worker round {i + 1}/{args.worker_rounds} ---",
+                    flush=True,
+                )
+                proc = subprocess.run(
+                    [py, "scripts/supabase_job_worker.py"],
+                    capture_output=True,
+                    text=True,
+                )
+                sys.stdout.write(proc.stdout or "")
+                sys.stderr.write(proc.stderr or "")
+                combined = (proc.stdout or "") + (proc.stderr or "")
+                if proc.returncode != 0:
+                    worker_failed = True
+                    print(
+                        f"Mirror worker exit {proc.returncode} "
+                        f"(poging {attempt}/3) — YMM gaat door als sync/push kan.",
+                        flush=True,
+                    )
+                    break
+                if "Geen queued jobs." in combined:
+                    break
+                time.sleep(2)
+
+            if not worker_failed:
+                mirror_ok = True
                 break
-            time.sleep(2)
+            time.sleep(15)
+
+        if not mirror_ok:
+            print(
+                "\nWAARSCHUWING: catalog mirror niet gelukt na 3 pogingen. "
+                "YMM sync/push draait toch (nieuwe handles missen dan mogelijk fitment "
+                "tot een latere mirror).",
+                flush=True,
+            )
 
         rc = _run([py, "scripts/run_canonical_ymm_pipeline.py", "--sync-only", "--write"])
         if rc != 0:
             return rc
         rc = _run([py, "scripts/run_canonical_ymm_pipeline.py", "--push-only", "--write"])
+        if rc != 0:
+            return rc
+        # Pending diffs + lege Shopify-velden (vangt gemiste pushes / halflege producten).
+        rc = _run(
+            [
+                py,
+                "scripts/ymm_ensure_updatable.py",
+                "--write",
+                "--push",
+                "--backfill",
+                "--limit",
+                "500",
+            ]
+        )
         if rc != 0:
             return rc
 
@@ -292,6 +386,7 @@ def main() -> int:
         if rc != 0:
             return rc
 
+    _mark_ok(pim_refreshed=pim_refreshed, created=created)
     print("\nDagelijkse nieuwe-producten pipeline klaar.", flush=True)
     return 0
 

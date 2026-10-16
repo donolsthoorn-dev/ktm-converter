@@ -10,7 +10,7 @@
 | Overige GHA | SEO, publish, barcodes, … |
 
 Geen permanente self-hosted runner: `ktm_new_products_daily` SSHt naar de VPS (zelfde patroon als `motox_putoline.yml`).  
-Schedule: **dagelijks 04:00 UTC** (noop als PIM-zips ongewijzigd). Volle run queued op `shopify-write-lock-ktm` (Motox-lock is apart).
+Schedule: **dagelijks 04:00 / 05:30 / 08:00 UTC** (noop als PIM-zips ongewijzigd; backup-crons skippen via OK-marker als vandaag al een substantiële run slaagde). Watchdog `ktm_new_products_watchdog` triggert de daily als er tot 05–11 UTC nog geen succes was. Volle run queued op `shopify-write-lock-ktm` (Motox-lock is apart).
 
 ## VPS-setup
 
@@ -57,9 +57,10 @@ Prepare-flags (intern): `--extract-xml-from-zips --extract-media-from-zips --pru
 
 Workflow: `.github/workflows/ktm_new_products_daily.yml`
 
-- Schedule: dagelijks 04:00 UTC (≈ 06:00 NL zomer)
+- Schedule: 04:00 / 05:30 / 08:00 UTC (+ watchdog 05–11 UTC)
 - Secret: `MOTOX_VPS_SSH_KEY` (zelfde als Putoline)
 - Concurrency: `shopify-write-lock-ktm` (queued, geen cancel)
+- Na YMM-push: `ymm_ensure_updatable.py` (pending diffs + backfill lege velden)
 
 Handmatig: Actions → **ktm_new_products_daily** → Run workflow.
 

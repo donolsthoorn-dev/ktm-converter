@@ -40,7 +40,7 @@ Geeft een categorie aan producten die er nog geen hebben. Een categorie die al i
 
 ### 06:00 — Nieuwe producten (PIM)
 
-Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s, zet nieuwe producten in Shopify, vult ontbrekende foto’s op bestaande producten, plus YMM/complementary (ook zonder nieuwe handles). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily`. Deelt de KTM Shopify-schrijflock met SEO/categorie/prijs — een volle run laat die jobs wachten, Motox niet. Foto-bijwerkingen verschijnen in de ochtenddigest.
+Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s, zet nieuwe producten in Shopify, vult ontbrekende foto’s op bestaande producten, plus YMM/complementary (ook zonder nieuwe handles). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily` (crons 04:00 / 05:30 / 08:00 UTC; watchdog elk uur 05–11 UTC als er nog geen succes was). Catalog-mirror wordt tot 3× geprobeerd; bij blijvende fout gaat YMM toch door. Daarna controle op pending YMM-diffs + backfill van lege velden. Deelt de KTM Shopify-schrijflock met SEO/categorie/prijs — een volle run laat die jobs wachten, Motox niet. Foto-bijwerkingen verschijnen in de ochtenddigest.
 
 ### 07:00 — Prijzen en levertijd
 
@@ -50,9 +50,9 @@ Werkt prijs en levertijd bij vanuit de prijslijst. De prijs is inclusief btw. Op
 
 Dezelfde controle als om 00:15. Ook om 12:15 en 18:15.
 
-### Maandag 07:15 — Fits-on
+### 07:15 — Fits-on (YMM delivery)
 
-Werkt bij op welke motor een product past, als dat veranderd is. Maximaal 500 producten.
+Controleert of er producten zijn die YMM-bijwerking kunnen krijgen (canonical diff), pusht die, en vult daarna lege Shopify-velden bij (backfill). Maximaal 500 per run. Workflow: `ktm_ymm_delivery` (dagelijks 05:15 UTC).
 
 ### 06:45 — KTM garage-filter
 
