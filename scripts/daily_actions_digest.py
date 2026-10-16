@@ -306,10 +306,10 @@ def items_price_eta(rows: list[dict[str, Any]]) -> list[DigestItem]:
     mapping = [
         ("price", "Nieuwe prijs", 10),
         ("eta", "ETA aangepast", 11),
-        ("gtin", "Barcodes toegevoegd", 12),
+        ("gtin", "Barcodes meegeschreven met prijsupdate", 12),
         ("policy", "Voorraadbeleid aangepast", 13),
         ("customs", "HS/herkomst aangepast", 14),
-        ("product_status", "Productstatus", 15),
+        ("product_status", "Productstatus aangepast", 15),
     ]
     for key, label, sort in mapping:
         if agg.get(key):
@@ -529,7 +529,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"Barcodes gevuld {_nl_num(totals['ok'])}",
+                f"Lege barcodes aangevuld {_nl_num(totals['ok'])}",
                 70,
             )
         )
@@ -537,7 +537,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_MOTOX,
-                f"Barcodes gevuld {_nl_num(totals['ok'])}",
+                f"Lege barcodes aangevuld {_nl_num(totals['ok'])}",
                 70,
             )
         )
@@ -553,7 +553,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_KTM,
-                f"Productstatus {_nl_num(totals['ok'])} aangepast",
+                f"Productstatus aangepast {_nl_num(totals['ok'])}",
                 60,
             )
         )
