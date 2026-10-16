@@ -3,9 +3,13 @@
 # Na echte PIM-refresh altijd YMM/complementary (ook bij 0 nieuwe producten).
 # Meerdere crons (04:00 / 05:30 / 08:00 UTC): GHA-schedules missen soms; backup-runs
 # skippen via VPS OK-marker als de pipeline vandaag al substantieel slaagde.
-# Volle run deelt concurrency shopify-write-lock-ktm (wacht/queued, cancelt anderen niet).
 #
-# Secrets: MOTOX_VPS_SSH_KEY (privésleutel voor motoxshop@149.210.206.111).
+# Concurrency: eigen groep ktm-new-products-daily (niet shopify-write-lock-ktm).
+# Op de gedeelde lock cancelt GHA oudere *pending* runs als er een nieuwere bij komt
+# (uurlijkse prijs/ETA) — daardoor sneuvelde deze lange job. Soft lock via Supabase
+# + wait-stap voorkomt parallelle Shopify-writes zonder in die wachtrij te staan.
+#
+# Secrets: MOTOX_VPS_SSH_KEY; SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (soft lock).
 # Op de VPS: /home/motoxshop/ktm_project met .env (FTP, Shopify, Supabase).
 
 name: ktm_new_products_daily
@@ -52,12 +56,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
-      group: shopify-write-lock-ktm
+      group: ktm-new-products-daily
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
+      - name: Claim Shopify soft lock
+        id: lock
+        if: ${{ github.event.inputs.dry_run_import != true && github.event.inputs.dry_run_import != 'true' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 scripts/gha_ktm_new_products_write_guard.py claim
+
+      - name: Wacht tot andere KTM Shopify-schrijfjobs klaar zijn
+        if: ${{ github.event.inputs.dry_run_import != true && github.event.inputs.dry_run_import != 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/gha_ktm_new_products_write_guard.py wait --timeout-minutes 180
+
       - name: Run pipeline on VPS
+        id: pipeline
         env:
           SSH_KEY: ${{ secrets.MOTOX_VPS_SSH_KEY }}
           BRANDS: ${{ github.event.inputs.brands || 'ktm,hsq,wp' }}
@@ -177,3 +197,18 @@ jobs:
             echo "[poll] log_bytes=$OFFSET" >&2
             sleep 20
           done
+
+      - name: Release Shopify soft lock
+        if: ${{ always() && steps.lock.outputs.log_id != '' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "${{ steps.pipeline.outcome }}" = "success" ]; then
+            EXTRA=(--ok)
+          fi
+          python3 scripts/gha_ktm_new_products_write_guard.py release \
+            --log-id "${{ steps.lock.outputs.log_id }}" \
+            "${EXTRA[@]}"

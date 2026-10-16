@@ -21,7 +21,7 @@ Alle onderstaande tijden zijn **Europe/Amsterdam** (Nederlandse tijd, met zomer-
 | `daily_actions_digest` | `daily_actions_digest.yml` (Resend-mail: gelukte updates sinds gisteren 10:00) | Dagelijks **10:00** |
 
 - dispatch stuurt `dispatch_log_id` mee → GitHub-run koppelt aan de juiste `workflow_dispatch_log`-rij (geen “laatste rij”-verwarring meer)
-- `shopify_write_lock_busy`: geen nieuwe dispatch naar GitHub zolang een Shopify-write-run `run_state=running` is (log `skipped`, geen spook-`queued`). Lock-lijst: price/ETA, customs, auto-deactivate, publish, GTIN-fill, Synkro clone-missing (`shops_synkro_clone_missing.yml`), Putoline (`motox_putoline.yml`).
+- `shopify_write_lock_busy`: geen nieuwe dispatch naar GitHub zolang een Shopify-write-run `run_state=running` is (log `skipped`, geen spook-`queued`). Lock-lijst: price/ETA, customs, auto-deactivate, publish, GTIN-fill, Synkro clone-missing (`shops_synkro_clone_missing.yml`), Putoline (`motox_putoline.yml`), nieuwe producten (`ktm_new_products_daily.yml`, migratie 039).
 - Synkro clone-missing (`shops_synkro_clone_missing`): dry-run lokaal met `python3 scripts/motox_synkro_clone_missing.py`; apply tagt max 40 KTM-producten met `synkro-clone-ktm-shop-nederland`. Telling-CSV of `motox/telling_skus.txt` moet in de repo staan voor CI.
 - verweesde `queued` zonder `github_run_id` (>2u) → `dispatch_never_started`
 - guard: `price_eta` start niet als er al een `scope=policy` run in progress is (tussenliggende uren worden dan bewust overgeslagen)

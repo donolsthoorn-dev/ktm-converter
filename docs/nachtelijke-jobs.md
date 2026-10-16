@@ -40,7 +40,7 @@ Geeft een categorie aan producten die er nog geen hebben. Een categorie die al i
 
 ### 06:00 — Nieuwe producten (PIM)
 
-Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s, zet nieuwe producten in Shopify, vult ontbrekende foto’s op bestaande producten, plus YMM/complementary (ook zonder nieuwe handles). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily` (crons 04:00 / 05:30 / 08:00 UTC; watchdog elk uur 05–11 UTC als er nog geen succes was). Catalog-mirror wordt tot 3× geprobeerd; bij blijvende fout gaat YMM toch door. Daarna controle op pending YMM-diffs + backfill van lege velden. Deelt de KTM Shopify-schrijflock met SEO/categorie/prijs — een volle run laat die jobs wachten, Motox niet. Foto-bijwerkingen verschijnen in de ochtenddigest.
+Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s, zet nieuwe producten in Shopify, vult ontbrekende foto’s op bestaande producten, plus YMM/complementary (ook zonder nieuwe handles). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily` (crons 04:00 / 05:30 / 08:00 UTC; watchdog elk uur 05–11 UTC als er nog geen succes was). Catalog-mirror wordt tot 3× geprobeerd; bij blijvende fout gaat YMM toch door. Daarna controle op pending YMM-diffs + backfill van lege velden. Eigen concurrency-groep (wordt niet gecanceld door uurlijkse prijsjobs); blokkeert andere KTM Shopify-writes via Supabase soft lock + wacht tot lopende schrijfjobs klaar zijn. Motox niet. Foto-bijwerkingen verschijnen in de ochtenddigest.
 
 ### 07:00 — Prijzen en levertijd
 
