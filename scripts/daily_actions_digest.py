@@ -777,6 +777,28 @@ def build_digest(
     return subject, text_body, html_body
 
 
+# Korte inbox-naam; onderwerp heeft al “Overzicht updates webshops — …”.
+_DEFAULT_FROM_NAME = "Webshop-updates"
+_GENERIC_FROM_NAMES = frozenset(
+    {"digest", "noreply", "no-reply", "no_reply", "donotreply", "do-not-reply"}
+)
+
+
+def normalize_from_addr(from_addr: str) -> str:
+    """Zet kale e-mail of digest/noreply om naar 'Webshop-updates <email@…>'."""
+    raw = (from_addr or "").strip()
+    if not raw:
+        return raw
+    if "<" in raw and raw.endswith(">"):
+        name, _, rest = raw.partition("<")
+        email = rest[:-1].strip()
+        display = name.strip().strip('"').strip("'")
+        if email and (not display or display.lower() in _GENERIC_FROM_NAMES):
+            return f"{_DEFAULT_FROM_NAME} <{email}>"
+        return raw
+    return f"{_DEFAULT_FROM_NAME} <{raw}>"
+
+
 def send_resend(
     *,
     api_key: str,
@@ -790,7 +812,7 @@ def send_resend(
         "https://api.resend.com/emails",
         headers={"Authorization": f"Bearer {api_key}"},
         json={
-            "from": from_addr,
+            "from": normalize_from_addr(from_addr),
             "to": to_addrs,
             "subject": subject,
             "text": text,

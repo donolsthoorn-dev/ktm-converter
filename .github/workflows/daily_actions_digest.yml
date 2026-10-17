@@ -5,6 +5,7 @@
 #
 # Secrets:
 #   RESEND_API_KEY, DIGEST_FROM, DIGEST_TO
+#   DIGEST_FROM: e-mail of "Naam <email@domein>" (kale/digest → display "Webshop-updates")
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (voor prijs/ETA-stats)
 # GITHUB_TOKEN (automatisch) met actions:read voor run-logs.
 
