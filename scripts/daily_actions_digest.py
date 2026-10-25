@@ -18,6 +18,7 @@ import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -26,6 +27,12 @@ try:
 except ImportError:
     print("Installeer requests: pip install requests", file=sys.stderr)
     raise SystemExit(2)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from modules.shopify_unmapped_types import unmapped_active_types  # noqa: E402
 
 NL = ZoneInfo("Europe/Amsterdam")
 UTC = timezone.utc
@@ -66,6 +73,8 @@ GROUP_TITLES = {
 }
 
 GROUP_ORDER = (GROUP_KTM, GROUP_MOTOX, GROUP_PUTOLINE)
+
+UNMAPPED_TYPES_HEADING = "Types die niet aan een collectie zijn gekoppeld"
 
 NL_MONTHS = {
     1: "jan",
@@ -729,15 +738,39 @@ def _escape_html(s: str) -> str:
     )
 
 
+def _append_unmapped_section(
+    text_parts: list[str],
+    html_parts: list[str],
+    types: list[str],
+) -> None:
+    text_parts.append(UNMAPPED_TYPES_HEADING)
+    html_parts.append(f"<p><em>{_escape_html(UNMAPPED_TYPES_HEADING)}</em></p>")
+    html_parts.append("<ul>")
+    if types:
+        for t in types:
+            text_parts.append(f"• {t}")
+            html_parts.append(f"<li>{_escape_html(t)}</li>")
+    else:
+        text_parts.append("• geen")
+        html_parts.append("<li>geen</li>")
+    html_parts.append("</ul>")
+
+
 def build_digest(
     *,
     since: datetime,
     until: datetime,
     items: list[DigestItem],
+    unmapped_types: dict[str, list[str]] | None = None,
 ) -> tuple[str, str, str]:
-    """Return (subject, text_body, html_body)."""
+    """Return (subject, text_body, html_body).
+
+    unmapped_types: group → lijst types (alleen shops waar de check gelukt is).
+    Lege lijst → sectie met “geen”. Ontbrekende key → geen sectie.
+    """
     subject = f"Overzicht updates webshops — {_fmt_nl_short(until)}"
     period = f"Periode: {_fmt_nl(since)} → {_fmt_nl(until)}"
+    unmapped = unmapped_types or {}
 
     by_group: dict[str, list[DigestItem]] = defaultdict(list)
     for it in items:
@@ -751,17 +784,21 @@ def build_digest(
     any_content = False
     for group in GROUP_ORDER:
         group_items = sorted(by_group.get(group, []), key=lambda x: x.sort_key)
-        if not group_items:
+        has_unmapped = group in unmapped
+        if not group_items and not has_unmapped:
             continue
         any_content = True
         title = GROUP_TITLES[group]
         text_parts.append(title)
         html_parts.append(f"<p><strong>{_escape_html(title)}</strong></p>")
-        html_parts.append("<ul>")
-        for it in group_items:
-            text_parts.append(f"• {it.text}")
-            html_parts.append(f"<li>{_escape_html(it.text)}</li>")
-        html_parts.append("</ul>")
+        if group_items:
+            html_parts.append("<ul>")
+            for it in group_items:
+                text_parts.append(f"• {it.text}")
+                html_parts.append(f"<li>{_escape_html(it.text)}</li>")
+            html_parts.append("</ul>")
+        if has_unmapped:
+            _append_unmapped_section(text_parts, html_parts, unmapped[group])
         text_parts.append("")
 
     if not any_content:
@@ -775,6 +812,123 @@ def build_digest(
     text_body = "\n".join(text_parts)
     html_body = "\n".join(html_parts)
     return subject, text_body, html_body
+
+
+def _parse_dotenv_file(path: Path) -> dict[str, str]:
+    """Parse KEY=value uit een .env-bestand zonder os.environ te wijzigen."""
+    out: dict[str, str] = {}
+    if not path.is_file():
+        return out
+    try:
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            val = val.strip()
+            if (val.startswith('"') and val.endswith('"')) or (
+                val.startswith("'") and val.endswith("'")
+            ):
+                val = val[1:-1]
+            out[key] = val
+    except OSError:
+        return {}
+    return out
+
+
+def _first_nonempty(*values: str) -> str:
+    for v in values:
+        s = (v or "").strip()
+        if s:
+            return s
+    return ""
+
+
+def _ktm_shop_creds() -> tuple[str, str, str] | None:
+    """KTM: lokaal .env heeft voorrang (voorkomt verwarring na source .env.motox).
+
+    In GHA staat geen .env; dan SHOPIFY_* uit de omgeving.
+    """
+    file_vars = _parse_dotenv_file(PROJECT_ROOT / ".env")
+    token = _first_nonempty(
+        file_vars.get("SHOPIFY_ACCESS_TOKEN") or "",
+        os.environ.get("SHOPIFY_ACCESS_TOKEN") or "",
+    )
+    domain = _first_nonempty(
+        file_vars.get("SHOPIFY_SHOP_DOMAIN") or "",
+        os.environ.get("SHOPIFY_SHOP_DOMAIN") or "",
+    )
+    api = _first_nonempty(
+        file_vars.get("SHOPIFY_ADMIN_API_VERSION") or "",
+        os.environ.get("SHOPIFY_ADMIN_API_VERSION") or "",
+        "2024-10",
+    )
+    if not token or not domain:
+        return None
+    return domain, token, api
+
+
+def _motox_shop_creds() -> tuple[str, str, str] | None:
+    """Motox: GHA SHOPIFY_MOTOX_* of lokaal .env.motox (niet bare SHOPIFY_* uit de shell)."""
+    file_vars = _parse_dotenv_file(PROJECT_ROOT / ".env.motox")
+    token = _first_nonempty(
+        os.environ.get("SHOPIFY_MOTOX_ACCESS_TOKEN") or "",
+        file_vars.get("SHOPIFY_ACCESS_TOKEN") or "",
+    )
+    domain = _first_nonempty(
+        os.environ.get("SHOPIFY_MOTOX_SHOP_DOMAIN") or "",
+        file_vars.get("SHOPIFY_SHOP_DOMAIN") or "",
+    )
+    api = _first_nonempty(
+        os.environ.get("SHOPIFY_MOTOX_ADMIN_API_VERSION") or "",
+        file_vars.get("SHOPIFY_ADMIN_API_VERSION") or "",
+        "2024-10",
+    )
+    if not token or not domain:
+        return None
+    return domain, token, api
+
+
+def fetch_unmapped_types_for_digest() -> dict[str, list[str]]:
+    """Haal unmapped ACTIVE types op voor KTM en Motox. Mislukte shop → weglaten."""
+    out: dict[str, list[str]] = {}
+
+    ktm = _ktm_shop_creds()
+    if ktm:
+        domain, token, api = ktm
+        try:
+            print(f"Unmapped types KTM ({domain})…", flush=True)
+            types = unmapped_active_types(domain, token, api, exclude_oem=False)
+            out[GROUP_KTM] = types
+            print(f"  KTM unmapped Online Store types: {len(types)}", flush=True)
+        except Exception as e:
+            print(f"::warning::Unmapped types KTM mislukt: {e}", flush=True)
+    else:
+        print(
+            "::warning::KTM Shopify-secrets ontbreken; unmapped-types overgeslagen",
+            flush=True,
+        )
+
+    motox = _motox_shop_creds()
+    if motox:
+        domain, token, api = motox
+        try:
+            print(f"Unmapped types Motox ({domain})…", flush=True)
+            types = unmapped_active_types(domain, token, api, exclude_oem=True)
+            out[GROUP_MOTOX] = types
+            print(f"  Motox unmapped Online Store types: {len(types)}", flush=True)
+        except Exception as e:
+            print(f"::warning::Unmapped types Motox mislukt: {e}", flush=True)
+    else:
+        print(
+            "::warning::Motox Shopify-secrets ontbreken; unmapped-types overgeslagen",
+            flush=True,
+        )
+
+    return out
 
 
 # Korte inbox-naam; onderwerp heeft al “Overzicht updates webshops — …”.
@@ -902,8 +1056,13 @@ def main() -> int:
 
     items.extend(aggregate_from_logs(repo=args.repo, token=token, runs=runs))
 
+    unmapped = fetch_unmapped_types_for_digest()
+
     subject, text_body, html_body = build_digest(
-        since=since, until=until, items=items
+        since=since,
+        until=until,
+        items=items,
+        unmapped_types=unmapped,
     )
     print("---", flush=True)
     print(subject, flush=True)

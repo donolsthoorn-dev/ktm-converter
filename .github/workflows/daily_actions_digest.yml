@@ -7,6 +7,9 @@
 #   RESEND_API_KEY, DIGEST_FROM, DIGEST_TO
 #   DIGEST_FROM: e-mail of "Naam <email@domein>" (kale/digest → display "Webshop-updates")
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (voor prijs/ETA-stats)
+#   SHOPIFY_ACCESS_TOKEN, SHOPIFY_SHOP_DOMAIN (KTM unmapped types)
+#   SHOPIFY_MOTOX_ACCESS_TOKEN, SHOPIFY_MOTOX_SHOP_DOMAIN (Motox unmapped types)
+#   optioneel SHOPIFY_ADMIN_API_VERSION / SHOPIFY_MOTOX_ADMIN_API_VERSION
 # GITHUB_TOKEN (automatisch) met actions:read voor run-logs.
 
 name: daily_actions_digest
@@ -77,6 +80,10 @@ jobs:
           DIGEST_TO: ${{ secrets.DIGEST_TO }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
         run: |
           set -euo pipefail
           if [[ "${SEND}" == "true" ]]; then
@@ -94,6 +101,12 @@ jobs:
           if [[ -z "${SUPABASE_URL}" || -z "${SUPABASE_SERVICE_ROLE_KEY}" ]]; then
             echo "::warning::Supabase-secrets ontbreken; prijs/ETA-stats worden overgeslagen"
           fi
+          if [[ -z "${SHOPIFY_ACCESS_TOKEN}" || -z "${SHOPIFY_SHOP_DOMAIN}" ]]; then
+            echo "::warning::KTM Shopify-secrets ontbreken; unmapped-types KTM worden overgeslagen"
+          fi
+          if [[ -z "${SHOPIFY_MOTOX_ACCESS_TOKEN}" || -z "${SHOPIFY_MOTOX_SHOP_DOMAIN}" ]]; then
+            echo "::warning::Motox Shopify-secrets ontbreken; unmapped-types Motox worden overgeslagen"
+          fi
 
       - name: Build digest
         env:
@@ -104,6 +117,12 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
           DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_ADMIN_API_VERSION }}
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
         run: |
           set -euo pipefail
           EXTRA=()
