@@ -68,7 +68,7 @@ SHOP = config.SHOPIFY_SHOP_DOMAIN
 TOKEN = config.SHOPIFY_ACCESS_TOKEN
 ADMIN_API_VERSION = config.SHOPIFY_ADMIN_API_VERSION
 _GRAPHQL_URL = f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/graphql.json"
-_REQUEST_TIMEOUT = (12, 120)
+_REQUEST_TIMEOUT = (15, 180)
 
 _GQL_PRODUCT_PUBLISHED = """
 mutation KtmSetOnlineStorePublished($input: ProductInput!) {
@@ -155,16 +155,22 @@ def _graphql_post(
         payload["variables"] = variables
     last: dict = {}
     for attempt in range(25):
-        r = sess.post(
-            _GRAPHQL_URL,
-            headers={
-                "Content-Type": "application/json",
-                "X-Shopify-Access-Token": TOKEN,
-            },
-            json=payload,
-            timeout=_REQUEST_TIMEOUT,
-            proxies={"http": None, "https": None},
-        )
+        try:
+            r = sess.post(
+                _GRAPHQL_URL,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Shopify-Access-Token": TOKEN,
+                },
+                json=payload,
+                timeout=_REQUEST_TIMEOUT,
+                proxies={"http": None, "https": None},
+            )
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            wait = min(2.0 * (attempt + 1), 30.0)
+            print(f"  GraphQL netwerk/timeout ({attempt + 1}/25), {wait:.0f}s… {e}", flush=True)
+            time.sleep(wait)
+            continue
         if r.status_code == 429:
             time.sleep(min(2.0 * (attempt + 1), 30.0))
             continue
@@ -566,22 +572,43 @@ def _fetch_products_by_ids(
     out: dict[str, dict] = {}
     ids = [pid for pid in product_ids if str(pid).isdigit()]
     fields = "id,handle,title,status,published_at,product_type,images,variants"
-    for i in range(0, len(ids), 250):
-        chunk = ids[i : i + 250]
+    chunk_size = 50
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
         url = (
             f"https://{SHOP}/admin/api/{ADMIN_API_VERSION}/products.json"
             f"?ids={','.join(chunk)}&fields={fields}"
         )
-        r = sess.get(
-            url,
-            headers=headers,
-            timeout=_REQUEST_TIMEOUT,
-            proxies={"http": None, "https": None},
-        )
-        r.raise_for_status()
-        for p in r.json().get("products", []):
-            out[str(p.get("id") or "")] = p
-        time.sleep(0.15)
+        for attempt in range(12):
+            try:
+                r = sess.get(
+                    url,
+                    headers=headers,
+                    timeout=_REQUEST_TIMEOUT,
+                    proxies={"http": None, "https": None},
+                )
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                wait = min(2.0 * (attempt + 1), 30.0)
+                print(
+                    f"  REST fetch timeout ({attempt + 1}/12) ids={len(chunk)}, "
+                    f"{wait:.0f}s… {e}",
+                    flush=True,
+                )
+                time.sleep(wait)
+                continue
+            if r.status_code == 429:
+                time.sleep(min(2.0 * (attempt + 1), 30.0))
+                continue
+            if r.status_code >= 500:
+                time.sleep(min(3.0 * (attempt + 1), 30.0))
+                continue
+            r.raise_for_status()
+            for p in r.json().get("products", []):
+                out[str(p.get("id") or "")] = p
+            break
+        else:
+            print(f"  REST fetch opgegeven voor chunk van {len(chunk)} ids", flush=True)
+        time.sleep(0.2)
     return out
 
 
@@ -1112,7 +1139,10 @@ def main() -> int:
     print(f"Publiceren op alle kanalen: {len(to_publish)} producten...", flush=True)
     for idx, row in enumerate(to_publish, start=1):
         pid = row["product_id"]
-        ok, err, pub_at = _publish_product(sess, pid)
+        try:
+            ok, err, pub_at = _publish_product(sess, pid)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            ok, err, pub_at = False, f"timeout:{e}", None
         if ok:
             published_rows.append({**row, "published_at": pub_at or ""})
             if pub_at:
