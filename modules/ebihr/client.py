@@ -26,6 +26,8 @@ V3_CATALOGS = ("Products", "Prices", "Stocks", "SalesCategories")
 VSE_EXPORTS = ("links", "vehicles")
 
 _TIMEOUT = (15, 600)
+_TRANSIENT_HTTP = frozenset({408, 429, 500, 502, 503, 504, 520})
+_HTTP_RETRIES = 5
 _api_call_times: deque[float] = deque(maxlen=5)
 
 
@@ -84,16 +86,67 @@ class BihrClient:
         self.sess = _session()
         self.token: str | None = None
 
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        heavy: bool = True,
+        retries: int = _HTTP_RETRIES,
+        **kwargs,
+    ) -> requests.Response:
+        """HTTP call met retry op tijdelijke 5xx/timeout (o.a. Bihr 504)."""
+        last_exc: Exception | None = None
+        for attempt in range(retries):
+            rate_limit(url, heavy=heavy)
+            try:
+                r = self.sess.request(
+                    method,
+                    url,
+                    timeout=_TIMEOUT,
+                    proxies={"http": None, "https": None},
+                    **kwargs,
+                )
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                last_exc = exc
+                if attempt >= retries - 1:
+                    break
+                wait = min(5.0 * (attempt + 1), 60.0)
+                log.warning(
+                    "Bihr netwerkfout (%s), retry over %.0fs (%s/%s): %s",
+                    type(exc).__name__,
+                    wait,
+                    attempt + 1,
+                    retries,
+                    url,
+                )
+                time.sleep(wait)
+                continue
+            if r.status_code in _TRANSIENT_HTTP and attempt < retries - 1:
+                wait = min(5.0 * (attempt + 1), 60.0)
+                log.warning(
+                    "Bihr HTTP %s, retry over %.0fs (%s/%s): %s",
+                    r.status_code,
+                    wait,
+                    attempt + 1,
+                    retries,
+                    url,
+                )
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"Bihr request mislukt na {retries} pogingen: {url}")
+
     def authenticate(self) -> str:
         url = f"{self.api_base}/v3/Authentication/Token"
-        rate_limit(url)
-        r = self.sess.post(
+        r = self._request(
+            "POST",
             url,
             data={"UserName": self.username, "PassWord": self.password},
-            timeout=_TIMEOUT,
-            proxies={"http": None, "https": None},
         )
-        r.raise_for_status()
         self.token = r.json()["access_token"]
         log.info("Bihr V3 token verkregen")
         return self.token
@@ -125,15 +178,12 @@ class BihrClient:
             "language": language,
             "serializationType": serialization,
         }
-        rate_limit(url)
-        r = self.sess.post(
+        r = self._request(
+            "POST",
             url,
             headers={**self._headers(), "Content-Type": "application/json"},
             json=body,
-            timeout=_TIMEOUT,
-            proxies={"http": None, "https": None},
         )
-        r.raise_for_status()
         data = r.json()
         req_id = data.get("id") or data.get("Id")
         if not req_id:
@@ -145,14 +195,7 @@ class BihrClient:
         """Poll tot Finished; return catalogFileId."""
         url = f"{self.api_base}/v3/Catalogs/Request/{request_id}"
         while True:
-            rate_limit(url, heavy=False)
-            r = self.sess.get(
-                url,
-                headers=self._headers(),
-                timeout=_TIMEOUT,
-                proxies={"http": None, "https": None},
-            )
-            r.raise_for_status()
+            r = self._request("GET", url, heavy=False, headers=self._headers())
             data = r.json()
             status = (data.get("status") or data.get("Status") or "").strip()
             file_id = data.get("catalogFileId") or data.get("CatalogFileId")
@@ -168,20 +211,15 @@ class BihrClient:
 
     def download_catalog_file(self, file_id: str, dest_zip: Path) -> Path:
         url = f"{self.api_base}/v3/Catalogs/File/{file_id}"
-        rate_limit(url)
         dest_zip.parent.mkdir(parents=True, exist_ok=True)
-        with self.sess.get(
-            url,
-            headers=self._headers(),
-            stream=True,
-            timeout=_TIMEOUT,
-            proxies={"http": None, "https": None},
-        ) as r:
-            r.raise_for_status()
+        r = self._request("GET", url, headers=self._headers(), stream=True)
+        try:
             with dest_zip.open("wb") as f:
                 for chunk in r.iter_content(1024 * 256):
                     if chunk:
                         f.write(chunk)
+        finally:
+            r.close()
         log.info("Catalog file opgeslagen: %s (%s bytes)", dest_zip, dest_zip.stat().st_size)
         return dest_zip
 
@@ -221,21 +259,16 @@ class BihrClient:
         if not self.token:
             self.authenticate()
         url = f"{VSE_BASE}/Export/{export}"
-        rate_limit(url)
         out_dir.mkdir(parents=True, exist_ok=True)
         zip_path = out_dir / f"vse_{export}.zip"
-        with self.sess.get(
-            url,
-            headers=self._headers(),
-            stream=True,
-            timeout=_TIMEOUT,
-            proxies={"http": None, "https": None},
-        ) as r:
-            r.raise_for_status()
+        r = self._request("GET", url, headers=self._headers(), stream=True)
+        try:
             with zip_path.open("wb") as f:
                 for chunk in r.iter_content(1024 * 256):
                     if chunk:
                         f.write(chunk)
+        finally:
+            r.close()
         extract_dir = out_dir / f"vse_{export}"
         if extract_dir.exists():
             shutil.rmtree(extract_dir)

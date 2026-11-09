@@ -122,8 +122,14 @@ def gql(sess: requests.Session, query: str, variables: dict | None = None) -> di
             )
             time.sleep(wait)
             continue
-        if r.status_code == 429:
-            time.sleep(2 + attempt)
+        if r.status_code == 429 or r.status_code >= 500:
+            wait = min(2.0 * (attempt + 1), 30.0)
+            print(
+                f"  Shopify HTTP {r.status_code}, opnieuw over {wait:.0f}s "
+                f"(poging {attempt + 1}/20)",
+                flush=True,
+            )
+            time.sleep(wait)
             continue
         r.raise_for_status()
         last = r.json()
@@ -132,7 +138,9 @@ def gql(sess: requests.Session, query: str, variables: dict | None = None) -> di
             time.sleep(min(2.0 * (attempt + 1), 30.0))
             continue
         return last
-    return last
+    if last:
+        return last
+    raise RuntimeError("Shopify GraphQL mislukt na 20 pogingen (timeout/5xx)")
 
 
 def ensure_et_definition(sess: requests.Session) -> None:

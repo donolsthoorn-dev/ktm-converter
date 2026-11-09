@@ -27,7 +27,7 @@ import socket
 import stat
 import sys
 import time
-from ftplib import FTP, FTP_TLS
+from ftplib import FTP, FTP_TLS, error_perm
 from pathlib import Path
 from typing import Any
 
@@ -198,6 +198,24 @@ def _download_ftp_file_with_resume(
                     f"RETR {name}", _write, blocksize=blocksize, rest=offset if offset > 0 else None
                 )
             return
+        except error_perm as e:
+            # 550 = bestand (nog) niet gevonden — vaak tijdelijk tijdens FTP-drop.
+            if attempt > retries:
+                raise RuntimeError(
+                    f"Download FTP-fout na {retries} retries: {name}: {e}"
+                ) from e
+            if dest.exists():
+                dest.unlink(missing_ok=True)
+            wait = max(sleep_sec, 15.0)
+            print(
+                f"Waarschuwing: FTP {e} voor {name} "
+                f"(attempt {attempt}/{retries}); opnieuw over {wait:.0f}s.",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+            _close_ftp_quietly(ftp)
+            ftp = _connect_ftp(use_tls=use_tls)
+            ftp.cwd(remote_dir)
         except (TimeoutError, socket.timeout, OSError) as e:
             if attempt > retries:
                 raise RuntimeError(f"Download gaf timeout/fout na {retries} retries: {name}") from e

@@ -53,11 +53,16 @@ jobs:
           echo "should_trigger=true" >> "$GITHUB_OUTPUT"
           echo "Geen succesvolle daily vandaag — triggeren."
 
+      # gh workflow run wil een git-checkout; zonder .git faalt de trigger
+      # met "fatal: not a git repository". Dispatch via API heeft dat niet nodig.
       - name: Trigger ktm_new_products_daily
         if: steps.check.outputs.should_trigger == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh workflow run ktm_new_products_daily.yml --ref "${GITHUB_REF_NAME}"
-          echo "Triggered ktm_new_products_daily on ${GITHUB_REF_NAME}"
+          REF="${GITHUB_REF_NAME:-main}"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ktm_new_products_daily.yml/dispatches" \
+            -f "ref=${REF}"
+          echo "Triggered ktm_new_products_daily on ${REF}"

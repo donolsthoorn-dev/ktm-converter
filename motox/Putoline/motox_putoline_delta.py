@@ -115,20 +115,36 @@ def kroon_php(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["php", str(script), *args], capture_output=True)
 
 
-def fetch_assortment() -> list[dict]:
-    run = kroon_php("assortment")
-    raw = run.stdout
-    if run.returncode != 0:
-        detail = (run.stderr or raw or b"").decode("utf-8", "replace")[:300]
-        raise RuntimeError(f"assortiment ophalen mislukt: {detail}")
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"assortiment is geen JSON: {raw[:180]!r}") from exc
-    rows = rows_from_payload(payload)
-    if len(rows) < 50:
-        raise RuntimeError(f"assortiment te klein ({len(rows)} rijen), afgebroken")
-    return rows
+def fetch_assortment(*, retries: int = 4, sleep_sec: float = 45.0) -> list[dict]:
+    """Haal Kroon-assortiment op; retry bij lege/te kleine response (tijdelijke API-blip)."""
+    last_err: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            run = kroon_php("assortment")
+            raw = run.stdout
+            if run.returncode != 0:
+                detail = (run.stderr or raw or b"").decode("utf-8", "replace")[:300]
+                raise RuntimeError(f"assortiment ophalen mislukt: {detail}")
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"assortiment is geen JSON: {raw[:180]!r}") from exc
+            rows = rows_from_payload(payload)
+            if len(rows) < 50:
+                raise RuntimeError(f"assortiment te klein ({len(rows)} rijen), afgebroken")
+            return rows
+        except Exception as exc:
+            last_err = exc
+            if attempt >= retries:
+                break
+            print(
+                f"Assortiment-poging {attempt}/{retries} mislukt ({exc}); "
+                f"opnieuw over {sleep_sec:.0f}s",
+                flush=True,
+            )
+            time.sleep(sleep_sec)
+    assert last_err is not None
+    raise last_err
 
 
 def image_url(row: dict) -> str:
