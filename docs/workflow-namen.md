@@ -27,7 +27,7 @@ Python-scripts houden hun bestaande bestandsnaam. Alleen de workflowbestanden zi
 |-----|-------|----------------|
 | `shopify_category_fill_empty.yml` | `shops_category_fill_empty.yml` | Lege category op ktm-shop.nl en Motox |
 | `shopify_category_reclassify.yml` | `shops_category_reclassify.yml` | Herclassificatie op ktm-shop.nl en Motox |
-| `motox_synkro_clone_missing.yml` | `shops_synkro_clone_missing.yml` | Tag op KTM, Synkro kloont naar Motox POS |
+| `motox_synkro_clone_missing.yml` | `shops_synkro_clone_missing.yml` | Tag op KTM (ACTIVE, geen Partstream), Synkro kloont naar Motox POS |
 
 ## Blijft `motox_`
 

@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-Tag-clone: KTM-producten (ktm-shop.nl) die in de winkel-telling staan maar nog
-niet in Motox POS (ktm-shop-nederland) → tag synkro-clone-ktm-shop-nederland.
+Tag-clone: KTM-producten (ktm-shop.nl) die nog niet in Motox POS
+(ktm-shop-nederland) staan → tag synkro-clone-ktm-shop-nederland.
 
-Synkro kloont daarna het product; voorraad landt op Winkelvoorraad POS.
+Standaard-scope ``active``: alle ACTIVE producten behalve Partstream.
+Wordt een product later actief (andere job), dan pakt de halfuur-run het
+alsnog. Scope ``telling`` blijft beschikbaar voor alleen winkel-telling.
+
+Synkro kloont daarna; voorraad landt op Winkelvoorraad POS.
 Niet zelf productCreate. Cap default 40 producten per run (Basic ~1000
 nieuwe varianten/dag op Motox).
 
   python3 scripts/motox_synkro_clone_missing.py
+  python3 scripts/motox_synkro_clone_missing.py --yes --max 40 --scope active
   python3 scripts/motox_synkro_clone_missing.py --yes --max 40 --scope telling
 
 Standaard dry-run tegen lokale caches. --yes haalt Motox-SKU's live op,
@@ -53,6 +58,7 @@ MOTOX_SKUS_CACHE = ROOT / "cache" / "motox" / "shopify_skus.json"
 OUT_DIR = ROOT / "output"
 
 CLONE_TAG_DEFAULT = "synkro-clone-ktm-shop-nederland"
+PARTSTREAM_TYPE = "partstream"
 _REQUEST_TIMEOUT = (15, 120)
 _SKU_KEY_RE = re.compile(r"[\s\-\.]+")
 
@@ -65,6 +71,26 @@ query SynkroCloneNodes($ids: [ID!]!) {
       title
       status
       tags
+      productType
+    }
+  }
+}
+"""
+
+_GQL_ACTIVE_PRODUCTS = """
+query SynkroCloneActive($c: String) {
+  products(first: 50, after: $c, query: "status:active") {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      handle
+      title
+      status
+      tags
+      productType
+      variants(first: 100) {
+        nodes { sku }
+      }
     }
   }
 }
@@ -146,6 +172,10 @@ def tags_list(raw: Any) -> list[str]:
 def has_tag(tags: list[str], tag: str) -> bool:
     want = tag.strip().lower()
     return any(t.strip().lower() == want for t in tags)
+
+
+def is_partstream(product_type: str | None) -> bool:
+    return (product_type or "").strip().casefold() == PARTSTREAM_TYPE
 
 
 def handle_rank(handle: str) -> int:
@@ -376,6 +406,101 @@ def fetch_motox_skus_live() -> set[str]:
     return skus
 
 
+def fetch_ktm_active_products(
+    sess: requests.Session,
+    shop: str,
+    token: str,
+    api: str,
+    sleep_s: float,
+) -> list[ProductRow]:
+    """ACTIVE producten op ktm-shop.nl, zonder Partstream."""
+    print("KTM actieve producten live ophalen…", flush=True)
+    rows: list[ProductRow] = []
+    cursor = None
+    pages = 0
+    skipped_partstream = 0
+    while True:
+        body = gql(sess, shop, token, api, _GQL_ACTIVE_PRODUCTS, {"c": cursor})
+        conn = ((body.get("data") or {}).get("products")) or {}
+        for node in conn.get("nodes") or []:
+            if is_partstream(str(node.get("productType") or "")):
+                skipped_partstream += 1
+                continue
+            skus: list[str] = []
+            for v in ((node.get("variants") or {}).get("nodes")) or []:
+                raw = str(v.get("sku") or "").strip()
+                if raw and raw not in skus:
+                    skus.append(raw)
+            if not skus:
+                continue
+            rows.append(
+                ProductRow(
+                    product_id=_numeric_id(str(node.get("id") or "")),
+                    handle=str(node.get("handle") or "").strip().lower(),
+                    title=str(node.get("title") or "").strip(),
+                    status=str(node.get("status") or "").strip().upper(),
+                    tags=tags_list(node.get("tags")),
+                    skus=skus,
+                    live_found=True,
+                )
+            )
+        pages += 1
+        if pages % 20 == 0:
+            print(f"  KTM actief-pagina {pages}, {len(rows)} producten…", flush=True)
+        info = conn.get("pageInfo") or {}
+        if not info.get("hasNextPage"):
+            break
+        cursor = info.get("endCursor")
+        if not cursor:
+            break
+        time.sleep(max(0.0, sleep_s))
+    print(
+        f"KTM actief live: {len(rows)} producten ({pages} pagina's, "
+        f"partstream overgeslagen={skipped_partstream}).",
+        flush=True,
+    )
+    return rows
+
+
+def active_products_from_cache(
+    handle_to_meta: dict[str, dict[str, Any]],
+    sku_to_pid: dict[str, str],
+) -> list[ProductRow]:
+    """ACTIVE uit lokale KTM-cache (Partstream alleen als productType in de cache staat)."""
+    pid_to_handle_local = {
+        str(meta.get("id") or "").strip(): handle
+        for handle, meta in handle_to_meta.items()
+        if str(meta.get("id") or "").strip()
+    }
+    pid_skus: dict[str, list[str]] = defaultdict(list)
+    for sku, pid in sku_to_pid.items():
+        if sku not in pid_skus[pid]:
+            pid_skus[pid].append(sku)
+    rows: list[ProductRow] = []
+    for pid, skus in pid_skus.items():
+        handle = pid_to_handle_local.get(pid, "")
+        meta = handle_to_meta.get(handle) or {}
+        status = str(meta.get("status") or "").upper()
+        if status and status != "ACTIVE":
+            continue
+        if not status:
+            status = "ACTIVE"
+        ptype = str(meta.get("product_type") or meta.get("productType") or "")
+        if is_partstream(ptype):
+            continue
+        rows.append(
+            ProductRow(
+                product_id=pid,
+                handle=handle,
+                title=str(meta.get("title") or ""),
+                status=status,
+                tags=list(meta.get("tags") or []),
+                skus=skus,
+            )
+        )
+    return rows
+
+
 def lookup_skus_on_ktm(
     sess: requests.Session,
     shop: str,
@@ -559,9 +684,9 @@ def main() -> int:
     ap.add_argument("--max", type=int, default=40, help="Max producten om te taggen (default 40)")
     ap.add_argument(
         "--scope",
-        choices=["telling"],
-        default="telling",
-        help="telling = SKU's uit winkel-telling (tab 1)",
+        choices=["active", "telling"],
+        default="active",
+        help="active = alle ACTIVE (geen Partstream); telling = alleen winkel-telling",
     )
     ap.add_argument("--telling-csv", type=Path, default=None, help="Pad naar telling-CSV")
     ap.add_argument(
@@ -577,7 +702,7 @@ def main() -> int:
     ap.add_argument(
         "--lookup-missing",
         action="store_true",
-        help="SKU's die niet in de KTM-cache zitten één voor één live opzoeken",
+        help="SKU's die niet in de KTM-cache zitten één voor één live opzoeken (alleen scope=telling)",
     )
     ap.add_argument("--clone-tag", default=CLONE_TAG_DEFAULT, help="Synkro clone-tag")
     ap.add_argument("--sleep", type=float, default=0.2, help="Pauze tussen Shopify-calls")
@@ -590,15 +715,22 @@ def main() -> int:
     live_motox = bool(args.yes or args.live_motox)
     live_ktm = bool(args.yes or args.live_ktm)
     clone_tag = (args.clone_tag or CLONE_TAG_DEFAULT).strip()
+    scope = args.scope
 
     ktm_shop, ktm_token, ktm_api = ktm_creds()
     if args.yes and (not ktm_shop or not ktm_token):
         print("SHOPIFY_SHOP_DOMAIN / SHOPIFY_ACCESS_TOKEN ontbreekt (ktm-shop.nl).", file=sys.stderr)
         return 1
 
-    print(f"Telling-SKU's laden ({args.scope})…", flush=True)
-    telling = load_telling_skus(args.telling_csv)
-    print(f"Telling unieke SKU's: {len(telling)}", flush=True)
+    telling: dict[str, str] = {}
+    if scope == "telling":
+        telling = load_telling_skus(args.telling_csv)
+        print(f"Telling unieke SKU's: {len(telling)}", flush=True)
+    elif TELLING_CSV.is_file() or TELLING_SKUS_TXT.is_file():
+        telling = load_telling_skus(args.telling_csv)
+        print(f"Telling unieke SKU's (prioriteit): {len(telling)}", flush=True)
+    else:
+        print("Geen telling-bestand; geen telling-prioriteit.", flush=True)
 
     if live_motox:
         motox = fetch_motox_skus_live()
@@ -612,9 +744,6 @@ def main() -> int:
         )
         return 1
 
-    missing = {k: v for k, v in telling.items() if k not in motox}
-    print(f"Ontbreekt in Motox: {len(missing)}", flush=True)
-
     handle_to_meta, pid_to_handle, pid_to_meta = load_ktm_index()
     sku_to_pid = load_ktm_sku_map(pid_to_handle, handle_to_meta)
     print(
@@ -623,126 +752,171 @@ def main() -> int:
     )
 
     sess = _session() if (live_ktm and ktm_shop and ktm_token) else None
-    if live_ktm:
-        if not ktm_shop or not ktm_token:
-            print("live-ktm gevraagd maar KTM-credentials ontbreken.", file=sys.stderr)
-            return 1
-        assert sess is not None
-        if args.lookup_missing or not sku_to_pid:
-            lookup_skus_on_ktm(
-                sess,
-                ktm_shop,
-                ktm_token,
-                ktm_api,
-                missing,
-                sku_to_pid,
-                handle_to_meta,
-                pid_to_handle,
-                pid_to_meta,
-                args.sleep,
-            )
-        elif missing:
-            cached_hits = sum(1 for k in missing if k in sku_to_pid)
-            print(
-                f"KTM-cache dekt {cached_hits}/{len(missing)} ontbrekende SKU's "
-                f"(geen volledige live-SKU-zoek; gebruik --lookup-missing om de rest te scannen).",
-                flush=True,
-            )
-
-    if not sku_to_pid and not live_ktm:
-        print(
-            "KTM SKU→product-cache ontbreekt. Zet cache/shopify_sku_to_product_id.json "
-            "of gebruik --live-ktm.",
-            file=sys.stderr,
-        )
-        return 1
-
-    pid_skus: dict[str, list[str]] = defaultdict(list)
-    unresolved = 0
-    for key, raw in missing.items():
-        pid = sku_to_pid.get(key)
-        if not pid:
-            unresolved += 1
-            continue
-        pid = prefer_plain_pid(pid, handle_to_meta, pid_to_handle)
-        if raw not in pid_skus[pid]:
-            pid_skus[pid].append(raw)
-
     rows: list[ProductRow] = []
-    for pid, skus in pid_skus.items():
-        meta = pid_to_meta.get(pid) or {}
-        rows.append(
-            ProductRow(
-                product_id=pid,
-                handle=str(meta.get("handle") or pid_to_handle.get(pid) or ""),
-                title=str(meta.get("title") or ""),
-                status=str(meta.get("status") or "").upper(),
-                tags=list(meta.get("tags") or []),
-                skus=skus,
-            )
-        )
-    rows.sort(key=lambda r: (handle_rank(r.handle), r.handle, r.product_id))
+    unresolved = 0
+    missing_count = 0
 
-    if live_ktm and sess is not None:
-        hydrate_products(sess, ktm_shop, ktm_token, ktm_api, rows, args.sleep)
-        gone_rows = [r for r in rows if r.live_found is False]
-        retry_skus: dict[str, str] = {}
-        dead_pids = {r.product_id for r in gone_rows}
-        for r in gone_rows:
-            mark_gone(r)
-            for sku in r.skus:
-                retry_skus[sku_key(sku)] = sku
-        if retry_skus:
+    if scope == "active":
+        use_live_active = live_ktm or bool(ktm_shop and ktm_token and args.yes)
+        if use_live_active:
+            if not ktm_shop or not ktm_token:
+                print("KTM-credentials ontbreken voor scope=active.", file=sys.stderr)
+                return 1
+            if sess is None:
+                sess = _session()
+            rows = fetch_ktm_active_products(sess, ktm_shop, ktm_token, ktm_api, args.sleep)
+        else:
+            if not sku_to_pid:
+                print(
+                    "KTM SKU→product-cache ontbreekt. Gebruik --live-ktm of zet de cache.",
+                    file=sys.stderr,
+                )
+                return 1
+            rows = active_products_from_cache(handle_to_meta, sku_to_pid)
+            print(f"KTM actief uit cache: {len(rows)} producten", flush=True)
+
+        kept: list[ProductRow] = []
+        for r in rows:
+            missing_skus = [s for s in r.skus if sku_key(s) not in motox]
+            if not missing_skus:
+                continue
+            r.skus = missing_skus
+            kept.append(r)
+        missing_count = sum(len(r.skus) for r in kept)
+        rows = kept
+        print(f"Ontbreekt in Motox: {missing_count} SKU's op {len(rows)} actieve producten", flush=True)
+        # Telling-SKU's eerst (POS-voorraad), daarna overige actieve
+        telling_keys = set(telling)
+
+        def _prio(r: ProductRow) -> tuple:
+            in_telling = 0 if any(sku_key(s) in telling_keys for s in r.skus) else 1
+            return (in_telling, handle_rank(r.handle), r.handle, r.product_id)
+
+        rows.sort(key=_prio)
+    else:
+        missing = {k: v for k, v in telling.items() if k not in motox}
+        missing_count = len(missing)
+        print(f"Ontbreekt in Motox: {missing_count}", flush=True)
+
+        if live_ktm:
+            if not ktm_shop or not ktm_token:
+                print("live-ktm gevraagd maar KTM-credentials ontbreken.", file=sys.stderr)
+                return 1
+            assert sess is not None
+            if args.lookup_missing or not sku_to_pid:
+                lookup_skus_on_ktm(
+                    sess,
+                    ktm_shop,
+                    ktm_token,
+                    ktm_api,
+                    missing,
+                    sku_to_pid,
+                    handle_to_meta,
+                    pid_to_handle,
+                    pid_to_meta,
+                    args.sleep,
+                )
+            elif missing:
+                cached_hits = sum(1 for k in missing if k in sku_to_pid)
+                print(
+                    f"KTM-cache dekt {cached_hits}/{len(missing)} ontbrekende SKU's "
+                    f"(geen volledige live-SKU-zoek; gebruik --lookup-missing om de rest te scannen).",
+                    flush=True,
+                )
+
+        if not sku_to_pid and not live_ktm:
             print(
-                f"{len(gone_rows)} verdwenen producten; {len(retry_skus)} SKU's opnieuw opzoeken…",
-                flush=True,
+                "KTM SKU→product-cache ontbreekt. Zet cache/shopify_sku_to_product_id.json "
+                "of gebruik --live-ktm.",
+                file=sys.stderr,
             )
-            remapped: dict[str, str] = {}
-            lookup_skus_on_ktm(
-                sess,
-                ktm_shop,
-                ktm_token,
-                ktm_api,
-                retry_skus,
-                remapped,
-                handle_to_meta,
-                pid_to_handle,
-                pid_to_meta,
-                args.sleep,
-            )
-            by_pid = {r.product_id: r for r in rows if r.action != "skip_gone"}
-            new_rows: list[ProductRow] = []
-            for key, pid in remapped.items():
-                if pid in dead_pids:
-                    continue
-                raw = retry_skus.get(key)
-                if not raw:
-                    continue
-                existing = by_pid.get(pid)
-                if existing is not None:
-                    if raw not in existing.skus:
-                        existing.skus.append(raw)
-                    continue
-                meta = pid_to_meta.get(pid) or {}
-                nr = ProductRow(
+            return 1
+
+        pid_skus: dict[str, list[str]] = defaultdict(list)
+        for key, raw in missing.items():
+            pid = sku_to_pid.get(key)
+            if not pid:
+                unresolved += 1
+                continue
+            pid = prefer_plain_pid(pid, handle_to_meta, pid_to_handle)
+            if raw not in pid_skus[pid]:
+                pid_skus[pid].append(raw)
+
+        for pid, skus in pid_skus.items():
+            meta = pid_to_meta.get(pid) or {}
+            rows.append(
+                ProductRow(
                     product_id=pid,
                     handle=str(meta.get("handle") or pid_to_handle.get(pid) or ""),
                     title=str(meta.get("title") or ""),
                     status=str(meta.get("status") or "").upper(),
                     tags=list(meta.get("tags") or []),
-                    skus=[raw],
+                    skus=skus,
                 )
-                by_pid[pid] = nr
-                new_rows.append(nr)
-            if new_rows:
-                hydrate_products(sess, ktm_shop, ktm_token, ktm_api, new_rows, args.sleep)
-                for nr in new_rows:
-                    if nr.live_found is False:
-                        mark_gone(nr)
-                    rows.append(nr)
-                rows.sort(key=lambda r: (handle_rank(r.handle), r.handle, r.product_id))
+            )
+        rows.sort(key=lambda r: (handle_rank(r.handle), r.handle, r.product_id))
+
+        if live_ktm and sess is not None:
+            hydrate_products(sess, ktm_shop, ktm_token, ktm_api, rows, args.sleep)
+            gone_rows = [r for r in rows if r.live_found is False]
+            retry_skus: dict[str, str] = {}
+            dead_pids = {r.product_id for r in gone_rows}
+            for r in gone_rows:
+                mark_gone(r)
+                for sku in r.skus:
+                    retry_skus[sku_key(sku)] = sku
+            if retry_skus:
+                print(
+                    f"{len(gone_rows)} verdwenen producten; {len(retry_skus)} SKU's opnieuw opzoeken…",
+                    flush=True,
+                )
+                remapped: dict[str, str] = {}
+                lookup_skus_on_ktm(
+                    sess,
+                    ktm_shop,
+                    ktm_token,
+                    ktm_api,
+                    retry_skus,
+                    remapped,
+                    handle_to_meta,
+                    pid_to_handle,
+                    pid_to_meta,
+                    args.sleep,
+                )
+                by_pid = {r.product_id: r for r in rows if r.action != "skip_gone"}
+                new_rows: list[ProductRow] = []
+                for key, pid in remapped.items():
+                    if pid in dead_pids:
+                        continue
+                    raw = retry_skus.get(key)
+                    if not raw:
+                        continue
+                    existing = by_pid.get(pid)
+                    if existing is not None:
+                        if raw not in existing.skus:
+                            existing.skus.append(raw)
+                        continue
+                    meta = pid_to_meta.get(pid) or {}
+                    nr = ProductRow(
+                        product_id=pid,
+                        handle=str(meta.get("handle") or pid_to_handle.get(pid) or ""),
+                        title=str(meta.get("title") or ""),
+                        status=str(meta.get("status") or "").upper(),
+                        tags=list(meta.get("tags") or []),
+                        skus=[raw],
+                    )
+                    by_pid[pid] = nr
+                    new_rows.append(nr)
+                if new_rows:
+                    hydrate_products(sess, ktm_shop, ktm_token, ktm_api, new_rows, args.sleep)
+                    for nr in new_rows:
+                        if nr.live_found is False:
+                            mark_gone(nr)
+                        rows.append(nr)
+                    rows.sort(key=lambda r: (handle_rank(r.handle), r.handle, r.product_id))
 
     skip_archived = 0
+    skip_draft = 0
     skip_tagged = 0
     skip_gone = 0
     candidates: list[ProductRow] = []
@@ -755,6 +929,10 @@ def main() -> int:
         if r.status == "ARCHIVED":
             r.action = "skip_archived"
             skip_archived += 1
+            continue
+        if scope == "active" and r.status != "ACTIVE":
+            r.action = "skip_draft"
+            skip_draft += 1
             continue
         if has_tag(r.tags, clone_tag):
             r.action = "skip_tagged"
@@ -810,13 +988,13 @@ def main() -> int:
 
     mode = "APPLY" if args.yes else "DRY-RUN"
     print(
-        f"{mode}  telling={len(telling)}  motox={len(motox)}  missing={len(missing)}  "
-        f"niet_op_ktm={unresolved}  ktm_producten={len(rows)}",
+        f"{mode}  scope={scope}  telling={len(telling)}  motox={len(motox)}  "
+        f"missing={missing_count}  niet_op_ktm={unresolved}  ktm_producten={len(rows)}",
         flush=True,
     )
     print(
-        f"skip_archived={skip_archived}  skip_tagged={skip_tagged}  skip_gone={skip_gone}  "
-        f"kandidaten={len(candidates)}  deze_run={len(selected)}  max={cap}",
+        f"skip_archived={skip_archived}  skip_draft={skip_draft}  skip_tagged={skip_tagged}  "
+        f"skip_gone={skip_gone}  kandidaten={len(candidates)}  deze_run={len(selected)}  max={cap}",
         flush=True,
     )
     if args.yes:

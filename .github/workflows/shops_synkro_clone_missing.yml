@@ -1,5 +1,6 @@
-# Tag-clone ontbrekende telling-SKU's: ktm-shop.nl → Motox POS (ktm-shop-nederland).
+# Tag-clone ontbrekende producten: ktm-shop.nl → Motox POS (ktm-shop-nederland).
 # Script zet synkro-clone-ktm-shop-nederland op het KTM-product; Synkro kloont.
+# Standaard: alle ACTIVE (geen Partstream). Scope telling = alleen winkel-telling.
 # Trigger: Supabase 07:30–22:30 NL (migratie 034) of handmatige workflow_dispatch.
 # Geen GitHub schedule (onbetrouwbaar op de minuut).
 
@@ -20,11 +21,12 @@ on:
         required: false
         default: "40"
       scope:
-        description: "Bron van SKU's"
+        description: "Bron van producten"
         type: choice
         options:
+          - active
           - telling
-        default: telling
+        default: active
       dispatch_log_id:
         description: "Supabase workflow_dispatch_log.id (geplande dispatch)"
         required: false
@@ -41,7 +43,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       APPLY: ${{ github.event.inputs.apply || 'false' }}
       MAX_PRODUCTS: ${{ github.event.inputs.max_products || '40' }}
-      SCOPE: ${{ github.event.inputs.scope || 'telling' }}
+      SCOPE: ${{ github.event.inputs.scope || 'active' }}
       DISPATCH_LOG_ID: ${{ github.event.inputs.dispatch_log_id || '' }}
     steps:
       - uses: actions/checkout@v6
@@ -54,7 +56,7 @@ jobs:
         # requests + lxml (xml_loader via motox_shopify_cache)
         run: pip install -r requirements.txt
 
-      - name: Check secrets en telling-bestand
+      - name: Check secrets en optioneel telling-bestand
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
@@ -69,9 +71,11 @@ jobs:
               missing=1
             fi
           done
-          if [[ ! -f "motox/Voorraad winkel - WERKDOC EJIS.csv" && ! -f "motox/telling_skus.txt" ]]; then
-            echo "::error::Telling-bestand ontbreekt (motox/Voorraad winkel - WERKDOC EJIS.csv of motox/telling_skus.txt)"
-            missing=1
+          if [[ "${SCOPE}" == "telling" ]]; then
+            if [[ ! -f "motox/Voorraad winkel - WERKDOC EJIS.csv" && ! -f "motox/telling_skus.txt" ]]; then
+              echo "::error::Telling-bestand ontbreekt (motox/Voorraad winkel - WERKDOC EJIS.csv of motox/telling_skus.txt)"
+              missing=1
+            fi
           fi
           exit "$missing"
 
