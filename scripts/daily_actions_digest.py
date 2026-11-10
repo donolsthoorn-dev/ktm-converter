@@ -546,7 +546,7 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
         out.append(
             DigestItem(
                 GROUP_MOTOX,
-                f"Lege barcodes aangevuld {_nl_num(totals['ok'])}",
+                f"Barcodes/GTIN bijgewerkt {_nl_num(totals['ok'])}",
                 70,
             )
         )

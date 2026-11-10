@@ -1,6 +1,7 @@
-# Motox: vul lege barcodes vanuit e-bihr BarCode (EAN/GTIN).
+# Motox: barcodes vanuit e-bihr GtinCodes (fallback BarCode).
 #
-# Alleen fill-if-empty. Bestaande barcodes blijven staan.
+# Lege barcodes vullen. Ongeldige barcodes (artikelnummer, interne code)
+# vervangen als Bihr een echte GTIN heeft. Geldige EAN/GTIN blijft staan.
 # Haalt alleen het Bihr Products-catalogusbestand op, niet prijzen of VSE.
 #
 # Secrets:
@@ -72,7 +73,7 @@ jobs:
           done
           exit $missing
 
-      - name: GTIN fill-if-empty
+      - name: GTIN fill and replace invalid
         env:
           BIHR_USERNAME: ${{ secrets.BIHR_USERNAME }}
           BIHR_PASSWORD: ${{ secrets.BIHR_PASSWORD }}
@@ -82,7 +83,7 @@ jobs:
           SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
         run: |
           set -euo pipefail
-          ARGS=(--fetch --sleep 0.15)
+          ARGS=(--fetch --replace-invalid --sleep 0.15)
           if [[ "${APPLY}" == "true" ]]; then
             ARGS+=(--apply)
           fi

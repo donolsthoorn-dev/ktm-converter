@@ -35,7 +35,7 @@ Python-scripts houden hun bestaande bestandsnaam. Alleen de workflowbestanden zi
 - `motox_ebihr_seo.yml`
 - `motox_ebihr_sync.yml`
 - `motox_deactivate_products_without_image.yml`
-- `motox_shopify_gtin_fill.yml` — lege barcode uit e-bihr `BarCode`
+- `motox_shopify_gtin_fill.yml` — barcode uit e-bihr GtinCodes; leeg vullen en ongeldig vervangen
 - `motox_ymm_derived_fill.yml` — `ymm_summary` en platte fits-velden vanuit `fits_on`
 - `ktm_new_products_watchdog.yml` — triggert `ktm_new_products_daily` als die vandaag nog niet slaagde
 - `motox_oem_price_sync.yml` — eenmalige prijsiinhaal, alleen handmatig
