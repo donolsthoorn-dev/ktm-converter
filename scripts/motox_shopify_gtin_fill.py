@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vul lege Motox-barcodes vanuit e-bihr BarCode (EAN/GTIN).
+Vul lege Motox-barcodes vanuit e-bihr GtinCodes (EAN/GTIN), met BarCode als fallback.
 
 Alleen fill-if-empty: een barcode die al staat wordt niet overschreven.
 Nieuwe producten krijgen de code al bij het aanmaken; deze job is de inhaal
@@ -83,11 +83,11 @@ def main() -> int:
     if raw_dir is None or not raw_dir.is_dir():
         raise SystemExit("Geen raw-dir. Gebruik --fetch of --raw-dir.")
 
-    print("BarCode-index laden…", flush=True)
+    print("GTIN-index laden (GtinCodes, anders BarCode)…", flush=True)
     barcodes = _barcode_index(raw_dir)
     print(f"{len(barcodes)} geldige EAN/GTIN-codes in e-bihr.", flush=True)
     if not barcodes:
-        raise SystemExit("Geen BarCode in het Products-bestand.")
+        raise SystemExit("Geen geldige GTIN in het Products-bestand.")
 
     admin = MotoxAdmin()
     by_product: dict[str, list[tuple[str, str, str, str]]] = defaultdict(list)
@@ -141,7 +141,7 @@ def main() -> int:
     print(
         f"Gescand: {scanned_products} producten, {scanned_variants} varianten. "
         f"Archief overgeslagen: {skipped_archived}. Al barcode: {already}. "
-        f"Geen BarCode bij Bihr: {no_source}. Te vullen: {todo}.",
+        f"Geen GTIN bij Bihr: {no_source}. Te vullen: {todo}.",
         flush=True,
     )
 

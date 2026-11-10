@@ -145,6 +145,7 @@ def _normalize_product(raw: dict, *, brand: str, group: str, family: str, segmen
         "segmentCode": segment_code,
         "htmlDescription": raw.get("HtmlDescription") or raw.get("htmlDescription") or "",
         "barCode": raw.get("BarCode") or raw.get("barCode") or "",
+        "gtinCodes": _norm_gtin_codes(raw),
         "oldPartNumber": str(
             raw.get("OldPartNumber") or raw.get("oldPartNumber") or ""
         ).strip(),
@@ -608,8 +609,64 @@ def _weight_kg(product: dict) -> str:
     return str(wf)
 
 
+_GTIN_TYPE_RANK = {
+    "EAN13": 0,
+    "UPC": 1,
+    "EAN8": 2,
+    "GTIN14": 3,
+    "UNKNOWN": 9,
+}
+
+
+def _norm_gtin_codes(raw: dict) -> list[dict[str, str]]:
+    src = raw.get("gtinCodes") or raw.get("GtinCodes") or raw.get("GTINCodes") or []
+    if not isinstance(src, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in src:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("Code") or item.get("code") or "").strip()
+        if not code:
+            continue
+        typ = str(item.get("Type") or item.get("type") or "UNKNOWN").strip().upper()
+        out.append({"code": code, "type": typ or "UNKNOWN"})
+    return out
+
+
+def _gtin_digits(raw: str | None) -> str:
+    digits = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    if len(digits) in (8, 12, 13, 14):
+        return digits
+    return ""
+
+
+def _gtin_checksum_ok(digits: str) -> bool:
+    if not digits.isdigit() or len(digits) not in (8, 12, 13, 14):
+        return False
+    body, check = digits[:-1], int(digits[-1])
+    total = 0
+    for i, ch in enumerate(reversed(body)):
+        total += int(ch) * (3 if i % 2 == 0 else 1)
+    return (10 - (total % 10)) % 10 == check
+
+
 def _barcode(product: dict) -> str:
-    return str(product.get("barCode") or product.get("BarCode") or product.get("barcode") or "").strip()
+    """Echte GTIN voor Shopify: GtinCodes eerst, daarna BarCode. Geen partnumbers."""
+    ranked: list[tuple[int, str]] = []
+    for item in product.get("gtinCodes") or _norm_gtin_codes(product):
+        digits = _gtin_digits(item.get("code"))
+        if digits and _gtin_checksum_ok(digits):
+            ranked.append((_GTIN_TYPE_RANK.get(item.get("type") or "", 8), digits))
+    if ranked:
+        ranked.sort()
+        return ranked[0][1]
+    fallback = _gtin_digits(
+        product.get("barCode") or product.get("BarCode") or product.get("barcode") or ""
+    )
+    if fallback and _gtin_checksum_ok(fallback):
+        return fallback
+    return ""
 
 
 def _should_include(
