@@ -43,6 +43,7 @@ query ProductsImageBatch($q: String!) {
         images(first: 50) {
           edges {
             node {
+              id
               url
               originalSrc
             }
@@ -229,7 +230,7 @@ def session_for_thread() -> requests.Session:
 def get_product_images_by_handle(
     sess: requests.Session,
     handle: str,
-) -> tuple[set[str], str]:
+) -> tuple[set[str], str, list[dict[str, str]]]:
     url = f"https://{SHOP}/admin/api/{VERSION}/products.json"
     params = {"handle": handle, "fields": "id,handle,images"}
     headers = {"X-Shopify-Access-Token": TOKEN}
@@ -252,20 +253,25 @@ def get_product_images_by_handle(
         data = r.json()
         products = data.get("products") or []
         if not products:
-            return set(), ""
+            return set(), "", []
         p = products[0]
         pid = p.get("id")
         pid_str = str(int(pid)) if isinstance(pid, (int, float)) else str(pid or "")
         norms: set[str] = set()
-        for img in p.get("images") or []:
-            src = img.get("src")
-            if src:
-                n = norm_src(src)
-                if n:
-                    norms.add(n)
-        return norms, pid_str
+        images: list[dict[str, str]] = []
+        ordered = sorted(
+            p.get("images") or [],
+            key=lambda im: int(im.get("position") or 0),
+        )
+        for img in ordered:
+            rec = _live_image_record(img.get("id"), img.get("src"))
+            if not rec:
+                continue
+            images.append(rec)
+            norms.add(rec["norm"])
+        return norms, pid_str, images
 
-    return set(), ""
+    return set(), "", []
 
 
 def _gid_numeric(gid: str) -> str:
@@ -318,26 +324,40 @@ def _build_products_search_query(batch_handles: list[str]) -> str:
     return " OR ".join(parts)
 
 
-def _parse_graphql_product_node(node: dict[str, Any]) -> tuple[str, set[str], str]:
+def _live_image_record(image_id: Any, src: Any) -> dict[str, str] | None:
+    """REST- of GraphQL-image → {id, src, norm}. Zonder id of bestandsnaam: overslaan."""
+    iid = _gid_numeric(str(image_id or ""))
+    raw = str(src or "").strip()
+    ns = norm_src(raw)
+    if not iid or not raw or not ns:
+        return None
+    return {"id": iid, "src": raw, "norm": ns}
+
+
+def _parse_graphql_product_node(
+    node: dict[str, Any],
+) -> tuple[str, set[str], str, list[dict[str, str]]]:
     handle = normalize_shopify_product_handle(node.get("handle") or "")
     pid = _gid_numeric(str(node.get("id") or ""))
     norms: set[str] = set()
+    images: list[dict[str, str]] = []
     for e in ((node.get("images") or {}).get("edges")) or []:
         n = (e or {}).get("node") or {}
         url = n.get("url") or n.get("originalSrc")
-        if url:
-            ns = norm_src(str(url))
-            if ns:
-                norms.add(ns)
-    return handle, norms, pid
+        rec = _live_image_record(n.get("id"), url)
+        if not rec:
+            continue
+        images.append(rec)
+        norms.add(rec["norm"])
+    return handle, norms, pid, images
 
 
 def _graphql_products_batch(
     sess: requests.Session,
     query_string: str,
-) -> dict[str, tuple[set[str], str]]:
-    """Zoekquery → handle -> (norms, product_id)."""
-    out: dict[str, tuple[set[str], str]] = {}
+) -> dict[str, tuple[set[str], str, list[dict[str, str]]]]:
+    """Zoekquery → handle -> (norms, product_id, images in galerijvolgorde)."""
+    out: dict[str, tuple[set[str], str, list[dict[str, str]]]] = {}
     if not query_string.strip():
         return out
     body = _graphql_post(sess, _GQL_PRODUCTS_BY_SEARCH, {"q": query_string})
@@ -349,15 +369,17 @@ def _graphql_products_batch(
         return out
     for e in conn.get("edges") or []:
         node = (e or {}).get("node") or {}
-        handle, norms, pid = _parse_graphql_product_node(node)
+        handle, norms, pid, images = _parse_graphql_product_node(node)
         if handle and pid:
-            out[handle] = (norms, pid)
+            out[handle] = (norms, pid, images)
     return out
 
 
 def fetch_handle_maps_rest_only(
     handles: list[str],
     workers: int,
+    *,
+    images_out: dict[str, list[dict[str, str]]] | None = None,
 ) -> tuple[dict[str, set[str]], dict[str, str]]:
     """Eén REST GET per handle (langzaam bij grote sets)."""
     norms_by_handle: dict[str, set[str]] = {}
@@ -369,24 +391,26 @@ def fetch_handle_maps_rest_only(
     lock = threading.Lock()
     done = 0
 
-    def run_one(h: str) -> tuple[str, set[str], str]:
+    def run_one(h: str) -> tuple[str, set[str], str, list[dict[str, str]]]:
         nonlocal done
         sess = session_for_thread()
-        norms, pid = get_product_images_by_handle(sess, h)
+        norms, pid, images = get_product_images_by_handle(sess, h)
         with lock:
             done += 1
             if done % 250 == 0 or done == total:
                 print(f"  Live opgehaald (REST): {done}/{total} handles...", flush=True)
-        return h, norms, pid
+        return h, norms, pid, images
 
     w = max(1, min(workers, total))
     with ThreadPoolExecutor(max_workers=w) as pool:
         futures = [pool.submit(run_one, h) for h in handles]
         for fut in as_completed(futures):
-            h, norms, pid = fut.result()
+            h, norms, pid, images = fut.result()
             if pid:
                 id_by_handle[h] = pid
                 norms_by_handle[h] = norms
+                if images_out is not None:
+                    images_out[h] = images
 
     return norms_by_handle, id_by_handle
 
@@ -398,6 +422,7 @@ def fetch_handle_maps_for_handles(
     graphql_batch: int = 25,
     fetch_workers: int = 12,
     rest_only: bool = False,
+    images_out: dict[str, list[dict[str, str]]] | None = None,
 ) -> tuple[dict[str, set[str]], dict[str, str]]:
     """
     Haal live image-src’s + product-id’s op voor gegeven handles.
@@ -412,7 +437,7 @@ def fetch_handle_maps_for_handles(
         return norms_by_handle, id_by_handle
 
     if rest_only:
-        return fetch_handle_maps_rest_only(handles, rest_workers)
+        return fetch_handle_maps_rest_only(handles, rest_workers, images_out=images_out)
 
     uniq = list(dict.fromkeys(handles))
     bs = max(3, min(graphql_batch, 50))
@@ -426,7 +451,7 @@ def fetch_handle_maps_for_handles(
 
     lock = threading.Lock()
     done_batches = 0
-    merged: dict[str, tuple[set[str], str]] = {}
+    merged: dict[str, tuple[set[str], str, list[dict[str, str]]]] = {}
 
     def run_batch(batch: list[str]) -> None:
         nonlocal done_batches
@@ -456,10 +481,12 @@ def fetch_handle_maps_for_handles(
     with ThreadPoolExecutor(max_workers=fw) as pool:
         list(pool.map(run_batch, batches))
 
-    for h, (norms, pid) in merged.items():
+    for h, (norms, pid, images) in merged.items():
         if pid:
             id_by_handle[h] = pid
             norms_by_handle[h] = norms
+            if images_out is not None:
+                images_out[h] = images
 
     missing = [h for h in uniq if h not in id_by_handle]
     if missing:
@@ -467,7 +494,9 @@ def fetch_handle_maps_for_handles(
             f"  REST fallback voor {len(missing)} handle(s) (niet in GraphQL-resultaat)…",
             flush=True,
         )
-        n_rest, id_rest = fetch_handle_maps_rest_only(missing, rest_workers)
+        n_rest, id_rest = fetch_handle_maps_rest_only(
+            missing, rest_workers, images_out=images_out
+        )
         norms_by_handle.update(n_rest)
         id_by_handle.update(id_rest)
 
@@ -528,11 +557,189 @@ def compare_csv_missing_images_against_live(
     return missing_report, not_in_shop, expected_by_handle
 
 
+_SHOPIFY_EXTRA_VERSION_RE = re.compile(r"__v\d+$", re.IGNORECASE)
+
+
+def expected_norm_for_live(live_norm: str, expected: set[str]) -> str | None:
+    """
+    Live bestandsnaam hoort bij een XML-foto.
+
+    Shopify zet bij een dubbele upload soms nog een ``__vN`` achter de KTM-naam
+    (``…__v1__v1.jpg``). Eén zo'n suffix telt als dezelfde XML-foto.
+    ``…__v1`` en ``…__v2`` blijven verschillende foto's.
+    """
+    key = (live_norm or "").strip().lower()
+    if not key or not expected:
+        return None
+    if key in expected:
+        return key
+    stem, ext = os.path.splitext(key)
+    collapsed = f"{_SHOPIFY_EXTRA_VERSION_RE.sub('', stem, count=1)}{ext}"
+    if collapsed != key and collapsed in expected:
+        return collapsed
+    return None
+
+
+def plan_product_gallery(
+    expected_urls: list[str],
+    live_images: list[dict[str, str]],
+) -> dict[str, Any]:
+    """
+    XML-fotolijst tegen de live galerij.
+
+    Lege ``expected_urls`` verwijdert niets. Foto's zonder id blijven staan.
+    """
+    expected_norms: list[str] = []
+    seen: set[str] = set()
+    url_by_norm: dict[str, str] = {}
+    for url in expected_urls:
+        n = norm_src(url)
+        if not n or n in seen:
+            continue
+        seen.add(n)
+        expected_norms.append(n)
+        url_by_norm[n] = url.strip()
+
+    keep_id_by_norm: dict[str, str] = {}
+    delete_ids: list[str] = []
+    delete_srcs: list[str] = []
+    if expected_norms:
+        expected_set = set(expected_norms)
+        for img in live_images:
+            iid = str(img.get("id") or "")
+            matched = expected_norm_for_live(str(img.get("norm") or ""), expected_set)
+            if matched and matched not in keep_id_by_norm and iid:
+                keep_id_by_norm[matched] = iid
+                continue
+            if not iid:
+                continue
+            delete_ids.append(iid)
+            delete_srcs.append(str(img.get("src") or ""))
+
+    missing_urls = [url_by_norm[n] for n in expected_norms if n not in keep_id_by_norm]
+    return {
+        "expected_norms": expected_norms,
+        "missing_urls": missing_urls,
+        "delete_ids": delete_ids,
+        "delete_srcs": delete_srcs,
+        "keep_id_by_norm": keep_id_by_norm,
+        "live_images": list(live_images),
+    }
+
+
+def gallery_target_order(plan: dict[str, Any], new_ids_by_norm: dict[str, str]) -> list[str]:
+    keep = plan.get("keep_id_by_norm") or {}
+    order: list[str] = []
+    for norm in plan.get("expected_norms") or []:
+        iid = keep.get(norm) or new_ids_by_norm.get(norm)
+        if iid:
+            order.append(str(iid))
+    return order
+
+
+def gallery_predicted_remaining(
+    plan: dict[str, Any],
+    new_ids_by_norm: dict[str, str],
+) -> list[str]:
+    """Volgorde na deletes, met nieuw toegevoegde foto's achteraan."""
+    delete = {str(i) for i in (plan.get("delete_ids") or [])}
+    keep = plan.get("keep_id_by_norm") or {}
+    remaining = [
+        str(img["id"])
+        for img in plan.get("live_images") or []
+        if str(img.get("id") or "") and str(img["id"]) not in delete
+    ]
+    for norm in plan.get("expected_norms") or []:
+        iid = new_ids_by_norm.get(norm)
+        if iid and norm not in keep:
+            remaining.append(str(iid))
+    return remaining
+
+
+def gallery_needs_reorder(plan: dict[str, Any], new_ids_by_norm: dict[str, str]) -> bool:
+    target = gallery_target_order(plan, new_ids_by_norm)
+    if not target:
+        return False
+    return gallery_predicted_remaining(plan, new_ids_by_norm) != target
+
+
+def gallery_replace_is_safe(plan: dict[str, Any], new_ids_by_norm: dict[str, str]) -> bool:
+    """Verwijder pas als de eerste XML-foto echt op het product staat."""
+    norms = plan.get("expected_norms") or []
+    if not norms:
+        return False
+    first = norms[0]
+    keep = plan.get("keep_id_by_norm") or {}
+    return first in keep or first in new_ids_by_norm
+
+
+def compare_csv_gallery_against_live(
+    csv_path: str,
+    *,
+    limit: int = 0,
+    rest_workers: int = 8,
+    graphql_batch: int = 25,
+    fetch_workers: int = 12,
+    rest_only: bool = False,
+) -> tuple[
+    list[tuple[str, str, list[str]]],
+    list[str],
+    dict[str, list[str]],
+    dict[str, dict[str, Any]],
+]:
+    """
+    Zelfde compare als ``compare_csv_missing_images_against_live``, plus een plan
+    per handle waar de galerij niet gelijk is aan de CSV-foto's.
+
+    ``plans[handle]`` bevat ``product_id`` en de velden van ``plan_product_gallery``.
+    """
+    expected_by_handle = parse_csv_images(csv_path)
+    if not expected_by_handle:
+        return [], [], {}, {}
+    handles_sorted = sorted(expected_by_handle.keys())
+    if limit and limit > 0:
+        handles_sorted = handles_sorted[:limit]
+        expected_by_handle = {h: expected_by_handle[h] for h in handles_sorted}
+
+    print(
+        f"Handles in CSV (met ten minste één image): {len(expected_by_handle)}",
+        flush=True,
+    )
+    print("Live producten ophalen (alleen deze handles)...", flush=True)
+
+    images_by_handle: dict[str, list[dict[str, str]]] = {}
+    _live_norms, live_id_by_handle = fetch_handle_maps_for_handles(
+        handles_sorted,
+        rest_workers,
+        graphql_batch=graphql_batch,
+        fetch_workers=fetch_workers,
+        rest_only=rest_only,
+        images_out=images_by_handle,
+    )
+
+    missing_report: list[tuple[str, str, list[str]]] = []
+    not_in_shop: list[str] = []
+    plans: dict[str, dict[str, Any]] = {}
+    for handle in handles_sorted:
+        urls = expected_by_handle[handle]
+        if handle not in live_id_by_handle:
+            not_in_shop.append(handle)
+            continue
+        plan = plan_product_gallery(urls, images_by_handle.get(handle, []))
+        pid = live_id_by_handle[handle]
+        if plan["missing_urls"]:
+            missing_report.append((handle, pid, plan["missing_urls"]))
+        if plan["missing_urls"] or plan["delete_ids"] or gallery_needs_reorder(plan, {}):
+            plans[handle] = {"product_id": pid, **plan}
+
+    return missing_report, not_in_shop, expected_by_handle, plans
+
+
 def post_product_image(
     sess: requests.Session,
     product_id: str,
     src: str,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str]:
     url = f"https://{SHOP}/admin/api/{VERSION}/products/{product_id}/images.json"
     headers = {
         "X-Shopify-Access-Token": TOKEN,
@@ -547,16 +754,21 @@ def post_product_image(
         proxies={"http": None, "https": None},
     )
     if r.status_code == 429:
-        return False, "429"
+        return False, "429", ""
     if r.status_code >= 500:
-        return False, f"HTTP {r.status_code}"
+        return False, f"HTTP {r.status_code}", ""
     if r.status_code not in (200, 201):
         try:
             err = r.json()
         except Exception:
             err = r.text[:500]
-        return False, str(err)
-    return True, ""
+        return False, str(err), ""
+    image_id = ""
+    try:
+        image_id = str(((r.json() or {}).get("image") or {}).get("id") or "")
+    except Exception:
+        image_id = ""
+    return True, "", image_id
 
 
 def _is_product_locked_error(err: str) -> bool:
@@ -568,12 +780,12 @@ def post_product_image_retries(
     sess: requests.Session,
     product_id: str,
     src: str,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str]:
     max_attempts = 22
     for attempt in range(max_attempts):
-        ok, err = post_product_image(sess, product_id, src)
+        ok, err, image_id = post_product_image(sess, product_id, src)
         if ok:
-            return True, ""
+            return True, "", image_id
         if err == "429":
             time.sleep(2 + min(attempt, 8) * 0.35)
             continue
@@ -583,8 +795,8 @@ def post_product_image_retries(
         if _is_product_locked_error(err):
             time.sleep(0.85 + min(attempt, 12) * 0.45)
             continue
-        return False, err
-    return False, "te veel retries"
+        return False, err, ""
+    return False, "te veel retries", ""
 
 
 _product_post_locks: dict[str, threading.Lock] = {}
@@ -604,6 +816,7 @@ def apply_missing_images_parallel(
     *,
     input_dir: str | None = None,
     prefer_input: bool = True,
+    added_ids: dict[tuple[str, str], str] | None = None,
 ) -> tuple[int, int]:
     total = len(tasks)
     if total == 0:
@@ -676,12 +889,16 @@ def apply_missing_images_parallel(
                         return False, "ensure_image geen URL"
 
         with _product_post_lock(pid):
-            success, err = post_product_image_retries(sess, pid, attach_src)
+            success, err, image_id = post_product_image_retries(sess, pid, attach_src)
 
         with lock:
             done += 1
             if success:
                 ok_c += 1
+                if added_ids is not None and image_id:
+                    key = norm_src(src)
+                    if key:
+                        added_ids[(handle, key)] = str(image_id)
             else:
                 fail_c += 1
                 print(f"  FAIL {handle} id={pid}: {err}", flush=True)
@@ -700,6 +917,178 @@ def apply_missing_images_parallel(
         save_cache_safe(cache)
 
     return ok_c, fail_c
+
+
+def _retry_image_write(call) -> tuple[bool, str]:
+    """call() -> (ok, err). Zelfde retries als een product-image POST."""
+    for attempt in range(22):
+        ok, err = call()
+        if ok:
+            return True, ""
+        if err == "429":
+            time.sleep(2 + min(attempt, 8) * 0.35)
+            continue
+        if err.startswith("HTTP 5"):
+            time.sleep(2 + attempt * 0.25)
+            continue
+        if _is_product_locked_error(err):
+            time.sleep(0.85 + min(attempt, 12) * 0.45)
+            continue
+        return False, err
+    return False, "te veel retries"
+
+
+def delete_product_image(
+    sess: requests.Session,
+    product_id: str,
+    image_id: str,
+) -> tuple[bool, str]:
+    url = f"https://{SHOP}/admin/api/{VERSION}/products/{product_id}/images/{image_id}.json"
+    headers = {"X-Shopify-Access-Token": TOKEN}
+    r = sess.delete(
+        url,
+        headers=headers,
+        timeout=_REQUEST_TIMEOUT,
+        proxies={"http": None, "https": None},
+    )
+    if r.status_code in (200, 204, 404):
+        return True, ""
+    if r.status_code == 429:
+        return False, "429"
+    if r.status_code >= 500:
+        return False, f"HTTP {r.status_code}"
+    try:
+        err = r.json()
+    except Exception:
+        err = r.text[:500]
+    return False, str(err)
+
+
+def set_product_image_position(
+    sess: requests.Session,
+    product_id: str,
+    image_id: str,
+    position: int,
+) -> tuple[bool, str]:
+    url = f"https://{SHOP}/admin/api/{VERSION}/products/{product_id}/images/{image_id}.json"
+    headers = {
+        "X-Shopify-Access-Token": TOKEN,
+        "Content-Type": "application/json",
+    }
+    body = {"image": {"id": int(image_id), "position": position}}
+    r = sess.put(
+        url,
+        headers=headers,
+        json=body,
+        timeout=_REQUEST_TIMEOUT,
+        proxies={"http": None, "https": None},
+    )
+    if r.status_code in (200, 201):
+        return True, ""
+    if r.status_code == 429:
+        return False, "429"
+    if r.status_code >= 500:
+        return False, f"HTTP {r.status_code}"
+    try:
+        err = r.json()
+    except Exception:
+        err = r.text[:500]
+    return False, str(err)
+
+
+def apply_gallery_cleanup(
+    plans: dict[str, dict[str, Any]],
+    added_ids: dict[tuple[str, str], str],
+    workers: int,
+) -> tuple[int, int, int]:
+    """
+    Verwijder foto's die niet meer in de XML staan en zet de XML-volgorde.
+
+    Returns ``(verwijderd_ok, verwijderd_fail, herschikt)``.
+    Slaat een handle over als de eerste XML-foto niet op het product staat.
+    """
+    items = list(plans.items())
+    total = len(items)
+    if total == 0:
+        return 0, 0, 0
+
+    lock = threading.Lock()
+    done = 0
+    del_ok = 0
+    del_fail = 0
+    reordered = 0
+
+    def run_one(item: tuple[str, dict[str, Any]]) -> tuple[int, int, int]:
+        nonlocal done, del_ok, del_fail, reordered
+        handle, plan = item
+        pid = str(plan.get("product_id") or "")
+        new_ids = {
+            norm: image_id
+            for (h, norm), image_id in added_ids.items()
+            if h == handle and image_id
+        }
+        ok_n = fail_n = re_n = 0
+        if not pid or not gallery_replace_is_safe(plan, new_ids):
+            if plan.get("delete_ids"):
+                print(
+                    f"  SKIP-DELETE {handle}: eerste XML-foto staat niet op het product",
+                    flush=True,
+                )
+            with lock:
+                done += 1
+            return 0, 0, 0
+
+        sess = session_for_thread()
+        with _product_post_lock(pid):
+            for image_id in plan.get("delete_ids") or []:
+                success, err = _retry_image_write(
+                    lambda iid=str(image_id): delete_product_image(sess, pid, iid)
+                )
+                if success:
+                    ok_n += 1
+                else:
+                    fail_n += 1
+                    print(
+                        f"  FAIL-DELETE {handle} id={pid} image={image_id}: {err}",
+                        flush=True,
+                    )
+            if plan.get("delete_ids") or gallery_needs_reorder(plan, new_ids):
+                order = gallery_target_order(plan, new_ids)
+                position_ok = True
+                for position, image_id in enumerate(order, start=1):
+                    success, err = _retry_image_write(
+                        lambda iid=str(image_id), pos=position: set_product_image_position(
+                            sess, pid, iid, pos
+                        )
+                    )
+                    if not success:
+                        position_ok = False
+                        print(
+                            f"  FAIL-POSITIE {handle} id={pid} image={image_id}: {err}",
+                            flush=True,
+                        )
+                        break
+                if position_ok and order:
+                    re_n = 1
+
+        with lock:
+            done += 1
+            del_ok += ok_n
+            del_fail += fail_n
+            reordered += re_n
+            if done % 200 == 0 or done == total:
+                print(
+                    f"  Galerij: {done}/{total} "
+                    f"(verwijderd {del_ok}, mislukt {del_fail}, herschikt {reordered})...",
+                    flush=True,
+                )
+        return ok_n, fail_n, re_n
+
+    w = max(1, min(workers, total))
+    with ThreadPoolExecutor(max_workers=w) as pool:
+        list(pool.map(run_one, items))
+
+    return del_ok, del_fail, reordered
 
 
 def build_tasks_payload(

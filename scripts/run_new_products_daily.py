@@ -109,8 +109,8 @@ def _latest_delta(brand: str) -> Path | None:
 
 
 def _sync_missing_images(py: str, brands: list[str], *, dry_run: bool) -> int:
-    """Voeg ontbrekende delta-foto’s toe aan bestaande Shopify-producten. Exit 0 tenzij hard fail."""
-    total_ok = total_fail = 0
+    """Voeg ontbrekende delta-foto’s toe en verwijder foto’s die niet meer in de CSV staan."""
+    total_ok = total_fail = total_replaced = 0
     by_brand: dict[str, dict[str, int]] = {}
     log_dir = ROOT / "output" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -144,25 +144,31 @@ def _sync_missing_images(py: str, brands: list[str], *, dry_run: bool) -> int:
             )
             by_brand[brand] = {"ok": 0, "fail": 0, "error": proc.returncode}
             continue
-        ok = fail = 0
+        ok = fail = replaced = 0
         combined = (proc.stdout or "") + (proc.stderr or "")
         m = re.search(
-            r"DIGEST_METRIC missing_images_ok=(\d+) missing_images_fail=(\d+)",
+            r"DIGEST_METRIC missing_images_ok=(\d+) missing_images_fail=(\d+)"
+            r"(?: images_replaced=(\d+))?(?: images_replaced_fail=(\d+))?",
             combined,
         )
         if m:
             ok, fail = int(m.group(1)), int(m.group(2))
+            replaced = int(m.group(3) or 0)
         else:
             m2 = re.search(r"Klaar:\s*OK=(\d+),\s*mislukt=(\d+)", combined)
             if m2:
                 ok, fail = int(m2.group(1)), int(m2.group(2))
         total_ok += ok
         total_fail += fail
-        by_brand[brand] = {"ok": ok, "fail": fail}
-        print(f"missing-images {brand}: ok={ok} fail={fail}", flush=True)
+        total_replaced += replaced
+        by_brand[brand] = {"ok": ok, "fail": fail, "replaced": replaced}
+        print(
+            f"missing-images {brand}: ok={ok} fail={fail} replaced={replaced}",
+            flush=True,
+        )
 
     print(
-        f"missing-images totaal: ok={total_ok} fail={total_fail}",
+        f"missing-images totaal: ok={total_ok} fail={total_fail} replaced={total_replaced}",
         flush=True,
     )
     IMAGES_STATS.write_text(
@@ -170,6 +176,7 @@ def _sync_missing_images(py: str, brands: list[str], *, dry_run: bool) -> int:
             {
                 "ok": total_ok,
                 "fail": total_fail,
+                "replaced": total_replaced,
                 "by_brand": by_brand,
                 "dry_run": dry_run,
             },

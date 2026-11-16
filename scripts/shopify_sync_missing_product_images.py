@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Eén doorloop: delta-CSV ↔ live Shopify → ontbrekende productafbeeldingen
-toevoegen (zelfde logica als shopify_compare_export_images + shopify_apply_missing_images).
+Eén doorloop: delta-CSV ↔ live Shopify.
 
-Per ontbrekende URL (t.o.v. CSV, genormaliseerde bestandsnaam):
-  - Zonder --skip-input: eerst lokaal bestand onder input/ matchen → ensure_image
-    (cache / CDN / Shopify Files-lookup / upload), daarna REST POST naar het product.
-  - Met --skip-input: POST met de CSV-URL (Shopify haalt zelf op).
+Per handle met minstens één echte foto in de CSV:
+  - ontbrekende bestandsnaam toevoegen;
+  - foto's waarvan de bestandsnaam niet meer in de CSV staat verwijderen;
+  - de CSV-volgorde aanhouden, eerste foto vooraan.
+
+Geen foto in de CSV voor een handle → galerij blijft staan.
+Verwijderen gebeurt pas als de eerste CSV-foto op het product staat
+(al aanwezig, of in deze run toegevoegd).
 
 Voorbeelden (vanaf projectroot):
 
@@ -31,15 +34,72 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import config  # noqa: E402
 
 from modules.shopify_export_images_lib import (  # noqa: E402
+    apply_gallery_cleanup,
     apply_missing_images_parallel,
     build_tasks_payload,
-    compare_csv_missing_images_against_live,
+    compare_csv_gallery_against_live,
     default_tasks_path,
     flatten_tasks_from_payload,
+    gallery_needs_reorder,
+    gallery_replace_is_safe,
     latest_product_csv,
-    load_tasks_json,
     save_tasks_json,
 )
+
+
+def _pretend_added(plan: dict) -> dict[str, str]:
+    """Dry-run: doe alsof elke ontbrekende XML-foto een id krijgt."""
+    keep = plan.get("keep_id_by_norm") or {}
+    return {
+        norm: f"new:{norm}"
+        for norm in plan.get("expected_norms") or []
+        if norm not in keep
+    }
+
+
+def _gallery_counts(plans: dict, added: dict[str, str] | None = None) -> tuple[int, int]:
+    """(te verwijderen foto's, te herschikken producten) gegeven geslaagde adds."""
+    delete_n = 0
+    reorder_n = 0
+    for handle, plan in plans.items():
+        if added is None:
+            new_ids = _pretend_added(plan)
+        else:
+            new_ids = {
+                norm: image_id
+                for (h, norm), image_id in added.items()
+                if h == handle and image_id
+            }
+        if not gallery_replace_is_safe(plan, new_ids):
+            continue
+        delete_n += len(plan.get("delete_ids") or [])
+        if gallery_needs_reorder(plan, new_ids):
+            reorder_n += 1
+    return delete_n, reorder_n
+
+
+def _print_stale_summary(plans: dict) -> None:
+    stale = [
+        (handle, plan)
+        for handle, plan in plans.items()
+        if plan.get("delete_ids")
+    ]
+    if not stale:
+        print("\nGeen foto's die niet meer in de CSV staan.", flush=True)
+        return
+    total = sum(len(plan.get("delete_ids") or []) for _h, plan in stale)
+    print(
+        f"\nFoto's niet meer in de CSV: {len(stale)} producten, {total} foto's.",
+        flush=True,
+    )
+    for handle, plan in stale[:25]:
+        print(
+            f"  {handle} (product id {plan.get('product_id') or '?'}): "
+            f"{len(plan.get('delete_ids') or [])} oude foto('s)",
+            flush=True,
+        )
+    if len(stale) > 25:
+        print(f"  ... en {len(stale) - 25} producten meer", flush=True)
 
 
 def _print_missing_summary(missing_report: list, not_in_shop: list) -> None:
@@ -76,8 +136,8 @@ def _print_missing_summary(missing_report: list, not_in_shop: list) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
-            "Vergelijk ALL-product-CSV met live Shopify en koppel ontbrekende afbeeldingen "
-            "(compare + apply in één script)."
+            "Vergelijk delta-CSV met live Shopify: ontbrekende foto's toevoegen "
+            "en foto's die niet meer in de CSV staan verwijderen."
         )
     )
     ap.add_argument(
@@ -179,8 +239,8 @@ def main() -> None:
     tasks_out = args.tasks_out if args.tasks_out is not None else default_tasks_path()
 
     print(f"CSV: {csv_path}", flush=True)
-    print("Stap 1/2: CSV ↔ live Shopify vergelijken...", flush=True)
-    missing_report, not_in_shop, expected_by_handle = compare_csv_missing_images_against_live(
+    print("Stap 1/3: CSV ↔ live Shopify vergelijken...", flush=True)
+    missing_report, not_in_shop, expected_by_handle, plans = compare_csv_gallery_against_live(
         csv_path,
         limit=args.limit or 0,
         rest_workers=args.workers,
@@ -193,41 +253,88 @@ def main() -> None:
         return
 
     payload = build_tasks_payload(csv_path, not_in_shop, missing_report)
+    payload["replacements"] = [
+        {
+            "handle": handle,
+            "product_id": plan.get("product_id"),
+            "delete_ids": plan.get("delete_ids") or [],
+            "missing_urls": plan.get("missing_urls") or [],
+        }
+        for handle, plan in plans.items()
+        if plan.get("delete_ids") or plan.get("missing_urls")
+    ]
     save_tasks_json(tasks_out, payload)
     print(f"Takenbestand: {tasks_out}", flush=True)
 
     _print_missing_summary(missing_report, not_in_shop)
+    _print_stale_summary(plans)
 
     if args.compare_only:
         print("\nKlaar (--compare-only: geen POST’s).", flush=True)
         return
 
-    tasks = flatten_tasks_from_payload(load_tasks_json(tasks_out))
+    tasks = flatten_tasks_from_payload(payload)
     n = len(tasks)
-    if n == 0:
-        print("\nGeen image-POST’s nodig.", flush=True)
+    would_delete, would_reorder = _gallery_counts(plans)
+    if n == 0 and would_delete == 0 and would_reorder == 0:
+        print("\nGalerij komt al overeen met de CSV.", flush=True)
+        print(
+            "DIGEST_METRIC missing_images_ok=0 missing_images_fail=0 "
+            "images_replaced=0 images_replaced_fail=0",
+            flush=True,
+        )
         return
 
     if args.dry_run:
-        print(f"\nDry-run: zou {n} image-POST’s uitvoeren (geen wijzigingen).", flush=True)
+        print(
+            f"\nDry-run: zou {n} image-POST’s uitvoeren, "
+            f"{would_delete} oude foto's verwijderen, "
+            f"{would_reorder} galerijen herschikken (geen wijzigingen).",
+            flush=True,
+        )
         return
 
     prefer_input = not args.skip_input
+    added_ids: dict[tuple[str, str], str] = {}
+    ok = fail = 0
+    if n:
+        print(
+            f"\nStap 2/3: {n} image(s) koppelen "
+            f"(apply-workers={args.apply_workers}, "
+            f"{'lokale input + ensure_image waar mogelijk' if prefer_input else 'alleen CSV-URL’s'})...",
+            flush=True,
+        )
+        ok, fail = apply_missing_images_parallel(
+            tasks,
+            args.apply_workers,
+            input_dir=args.input_dir,
+            prefer_input=prefer_input,
+            added_ids=added_ids,
+        )
+    else:
+        print("\nStap 2/3: geen nieuwe foto's om toe te voegen.", flush=True)
+
     print(
-        f"\nStap 2/2: {n} image(s) koppelen "
-        f"(apply-workers={args.apply_workers}, "
-        f"{'lokale input + ensure_image waar mogelijk' if prefer_input else 'alleen CSV-URL’s'})...",
+        f"\nStap 3/3: oude foto's verwijderen en XML-volgorde zetten "
+        f"({len(plans)} producten met een afwijkende galerij)...",
         flush=True,
     )
-    ok, fail = apply_missing_images_parallel(
-        tasks,
+    deleted_ok, deleted_fail, reordered = apply_gallery_cleanup(
+        plans,
+        added_ids,
         args.apply_workers,
-        input_dir=args.input_dir,
-        prefer_input=prefer_input,
     )
-    print(f"\nKlaar: OK={ok}, mislukt={fail}.", flush=True)
-    # Stabiele regel voor daily_actions_digest / run_new_products_daily
-    print(f"DIGEST_METRIC missing_images_ok={ok} missing_images_fail={fail}", flush=True)
+    print(
+        f"\nKlaar: toegevoegd OK={ok}, mislukt={fail}, "
+        f"verwijderd={deleted_ok}, verwijderen mislukt={deleted_fail}, "
+        f"herschikt={reordered}.",
+        flush=True,
+    )
+    print(
+        f"DIGEST_METRIC missing_images_ok={ok} missing_images_fail={fail} "
+        f"images_replaced={deleted_ok} images_replaced_fail={deleted_fail}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

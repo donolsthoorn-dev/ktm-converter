@@ -425,11 +425,14 @@ def _parse_metrics(wf: str, text: str) -> dict[str, int]:
                     m["created"] = ok_sum
         # Ontbrekende foto’s op bestaande producten (na PIM-refresh)
         for g in re.finditer(
-            r"DIGEST_METRIC missing_images_ok=(\d+) missing_images_fail=(\d+)",
+            r"DIGEST_METRIC missing_images_ok=(\d+) missing_images_fail=(\d+)"
+            r"(?: images_replaced=(\d+))?(?: images_replaced_fail=(\d+))?",
             text,
         ):
             m["images_ok"] = m.get("images_ok", 0) + int(g.group(1))
             m["images_fail"] = m.get("images_fail", 0) + int(g.group(2))
+            if g.group(3):
+                m["images_replaced"] = m.get("images_replaced", 0) + int(g.group(3))
         if "images_ok" not in m:
             for g in re.finditer(r"Klaar:\s*OK=(\d+),\s*mislukt=(\d+)", text):
                 m["images_ok"] = m.get("images_ok", 0) + int(g.group(1))
@@ -618,6 +621,14 @@ def _metrics_to_items(wf: str, totals: dict[str, int]) -> list[DigestItem]:
                     GROUP_KTM,
                     f"Extra foto’s toegevoegd {_nl_num(totals['images_ok'])}",
                     43,
+                )
+            )
+        if totals.get("images_replaced"):
+            out.append(
+                DigestItem(
+                    GROUP_KTM,
+                    f"Oude foto’s vervangen {_nl_num(totals['images_replaced'])}",
+                    44,
                 )
             )
     elif wf == "ktm_ymm_delivery.yml":
