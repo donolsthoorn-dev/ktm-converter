@@ -40,7 +40,7 @@ Geeft een categorie aan producten die er nog geen hebben. Een categorie die al i
 
 ### 06:00 — Nieuwe producten (PIM)
 
-Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s, zet nieuwe producten in Shopify, vult ontbrekende foto’s op bestaande producten, plus YMM/complementary (ook zonder nieuwe handles). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily` (crons 04:00 / 05:30 / 08:00 UTC; watchdog elk uur 05–11 UTC als er nog geen succes was). Catalog-mirror wordt tot 3× geprobeerd; bij blijvende fout gaat YMM toch door. Daarna controle op pending YMM-diffs + backfill van lege velden. Eigen concurrency-groep (wordt niet gecanceld door uurlijkse prijsjobs); blokkeert andere KTM Shopify-writes via Supabase soft lock + wacht tot lopende schrijfjobs klaar zijn. Motox niet. Foto-bijwerkingen verschijnen in de ochtenddigest.
+Haalt PIM-zips van de FTP als die veranderd zijn, maakt delta’s, zet nieuwe producten in Shopify, vult ontbrekende foto’s op bestaande producten, plus YMM/complementary (ook zonder nieuwe handles). Zijn de zips hetzelfde als gisteren, dan stopt de job in seconden. Draait via de VPS. Workflow: `ktm_new_products_daily` (crons 04:00 / 05:30 / 08:00 UTC; watchdog elk uur 05–11 UTC als er nog geen succes was). Catalog-mirror wordt tot 3× geprobeerd; bij blijvende fout gaat YMM toch door. Na de canonical sync zet de VPS de vlag `output/logs/ymm_catalog_dirty`; de job `garage` deployt dan de motorlijst naar Vercel. Daarna controle op pending YMM-diffs + backfill van lege velden. Eigen concurrency-groep (wordt niet gecanceld door uurlijkse prijsjobs); blokkeert andere KTM Shopify-writes via Supabase soft lock + wacht tot lopende schrijfjobs klaar zijn. Motox niet. Foto-bijwerkingen verschijnen in de ochtenddigest.
 
 ### 07:00 — Prijzen en levertijd
 
@@ -54,9 +54,9 @@ Dezelfde controle als om 00:15. Ook om 12:15 en 18:15.
 
 Controleert of er producten zijn die YMM-bijwerking kunnen krijgen (canonical diff), pusht die, en vult daarna lege Shopify-velden bij (backfill). Maximaal 500 per run. Workflow: `ktm_ymm_delivery` (dagelijks 05:15 UTC).
 
-### 06:45 — KTM garage-filter
+### 11:30 — KTM garage-filter
 
-Bouwt de motorlijst en de compacte fitment-index opnieuw uit Supabase (`canonical_product_fits_on`) en deployt die naar Vercel (`ktm-garage`). Zo blijven nieuwe onderdelen in het motorfilter zichtbaar. Workflow: `ktm_garage_fitment_deploy.yml`. Vereist secret `VERCEL_TOKEN`.
+Vangnet om 10:30 UTC (11:30 in de winter, 12:30 in de zomer). Bouwt de motorlijst en de compacte fitment-index opnieuw uit Supabase (`canonical_product_fits_on`) en deployt die naar Vercel (`ktm-garage`). Dezelfde deploy draait eerder die ochtend al, meteen nadat de PIM-job de XML naar die tabel heeft geschreven. De kiezer in de shop leest `/apps/garage/vehicles` op die deploy. Workflow: `ktm_garage_fitment_deploy.yml`. Vereist secret `VERCEL_TOKEN`. Geen Supabase-migratie: de tabel `canonical_product_fits_on` blijft de bron.
 
 ## Motox
 
@@ -88,6 +88,7 @@ Haalt de nieuwste Bihr-lijst op en werkt Motox bij:
 - doorverkopen (inventory policy) bijwerken als Bihr wel/geen voorraad meldt (Shopify-aantal blijft meestal 0)
 - een foto toevoegen als die er nog niet is
 - bijwerken op welke motor een onderdeel past, als dat leeg is of niet meer klopt
+- daarna, als er echt naar Shopify is geschreven, de Motox-garage opnieuw bouwen (motorlijst + filter) en naar Vercel deployen (`motox-garage`)
 - goederencode en land van herkomst bijwerken als die leeg zijn of niet meer kloppen
 
 Producten die niet in de Bihr-lijst staan, laat deze job met rust. Prijzen van KTM, Husqvarna, GasGas en WP volgen de ktm-shop via Synkro.

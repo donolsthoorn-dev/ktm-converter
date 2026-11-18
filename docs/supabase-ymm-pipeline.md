@@ -171,9 +171,13 @@ Optioneel later: oude `shopify_products`-spoken handmatig opruimen (niet verplic
 | Workflow | Wat | Wanneer |
 |----------|-----|---------|
 | **ktm_job_worker** | `shopify_catalog_mirror` | Nachtelijk / handmatig — catalogus spiegelen |
+| **ktm_new_products_daily** | XML → `canonical_product_fits_on`, daarna diff-push | Na een gewijzigde PIM-zip. Zet daarna de garage-vlag. |
+| **ktm_garage_fitment_deploy** | Motorlijst + fitment-index → Vercel | Na de vlag, en als vangnet om 10:30 UTC |
 | **ktm_ymm_delivery** | `ymm_ensure_updatable` (diff-push + backfill) | Dagelijks 05:15 UTC / handmatig (limit default 500) |
 
-Full push (na parser/summary-fix) en XML→Supabase-sync: via queue of `run_canonical_ymm_pipeline.py` (zie hieronder), niet via Actions.
+De garage leest `canonical_product_fits_on`. Daar is geen nieuwe tabel of kolom voor nodig. `ktm_ymm_delivery` pusht alleen wat al in die tabel staat en bouwt de motorlijst niet.
+
+XML→Supabase-sync draait in `ktm_new_products_daily` (`run_canonical_ymm_pipeline.py --sync-only --write`) zodra de PIM-zip veranderd is. Handmatig blijft hetzelfde commando.
 
 ### ktm_ymm_delivery (pending-check + diff-push + backfill)
 

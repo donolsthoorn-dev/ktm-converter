@@ -27,12 +27,8 @@ def main() -> int:
     run([sys.executable, str(ROOT / "scripts" / "export_ktm_vehicle_catalog.py")])
     run([sys.executable, str(ROOT / "scripts" / "build_ktm_fitment_index.py")])
     run([sys.executable, str(ROOT / "scripts" / "build_ktm_fitment_compact.py")])
-    # Sync catalog into theme extension assets for the garage picker.
-    dest = ROOT / "ktm" / "garage" / "extensions" / "motor-garage" / "assets" / "vehicles.json"
-    src = ROOT / "ktm" / "garage" / "catalog" / "vehicles.json"
-    if src.is_file() and dest.parent.is_dir():
-        dest.write_bytes(src.read_bytes())
-        print(f"catalog → {dest}", flush=True)
+    # De kiezer leest /apps/garage/vehicles op deze Vercel-deploy, niet het
+    # theme-asset vehicles.json. Dat asset gaat alleen mee bij shopify app deploy.
     run([sys.executable, str(STAGE_SCRIPT)])
     stage = ROOT / "ktm" / "garage" / "host" / "stage"
     stage.joinpath(".vercel").mkdir(parents=True, exist_ok=True)

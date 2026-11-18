@@ -910,7 +910,7 @@ def main() -> int:
 
     apply_plan(sess, url, headers, plan)
     print(f"Controleer: https://www.ktm-shop.nl/products/{plan['handle']}")
-    print("Let op: garage vehicles.json moet gedeployed worden voor live dropdown-jaren.")
+    print("Let op: live bouwjaren komen uit de Vercel-catalogus (scripts/deploy_ktm_garage_vercel.py).")
     return 0
 
 

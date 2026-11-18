@@ -14,6 +14,7 @@
 #   optioneel SHOPIFY_MOTOX_ADMIN_API_VERSION
 #
 # Schedule: 01:00 UTC ≈ 03:00 NL (zomer) / 02:00 (winter).
+# Na een echte schrijfrun (mode all of create_only) deployt job garage de motorlijst.
 # Of via Supabase workflow_dispatch (dispatch_log_id).
 
 name: motox_ebihr_sync
@@ -167,3 +168,52 @@ jobs:
             motox/e-bihr/output/sync/
           if-no-files-found: ignore
           retention-days: 14
+
+  garage:
+    needs: sync
+    if: >-
+      success() &&
+      (github.event_name == 'schedule' || inputs.apply == 'true') &&
+      (github.event_name == 'schedule' || inputs.mode == 'all' || inputs.mode == 'create_only' || inputs.mode == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: motox-garage-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: pip install "requests>=2.28,<3"
+
+      - name: Check secrets
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for k in SHOPIFY_MOTOX_ACCESS_TOKEN SHOPIFY_MOTOX_SHOP_DOMAIN VERCEL_TOKEN; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Secret $k ontbreekt"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Build + deploy motox-garage
+        env:
+          SHOPIFY_MOTOX_ACCESS_TOKEN: ${{ secrets.SHOPIFY_MOTOX_ACCESS_TOKEN }}
+          SHOPIFY_MOTOX_SHOP_DOMAIN: ${{ secrets.SHOPIFY_MOTOX_SHOP_DOMAIN }}
+          SHOPIFY_MOTOX_ADMIN_API_VERSION: ${{ secrets.SHOPIFY_MOTOX_ADMIN_API_VERSION }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: python3 scripts/deploy_motox_garage_vercel.py

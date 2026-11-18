@@ -1,17 +1,23 @@
 # KTM garage: catalogus + fitment.bin vernieuwen en naar Vercel deployen.
 #
-# Bron: Supabase canonical_product_fits_on (na YMM-push blijft die bron van waarheid).
+# Bron: Supabase canonical_product_fits_on (XML-sync, niet de Shopify-push).
 # Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VERCEL_TOKEN
 #
-# Schedule: 04:45 UTC ≈ 06:45 NL (zomer) / 05:45 (winter), na de YMM-push-nacht.
+# Schedule: 10:30 UTC ≈ 12:30 NL (zomer) / 11:30 (winter).
+# Vangnet. Dezelfde deploy draait ook aan het eind van ktm_new_products_daily,
+# zodra de XML naar canonical_product_fits_on is geschreven.
 # Handmatig: workflow_dispatch.
 
 name: ktm_garage_fitment_deploy
 
 on:
   schedule:
-    - cron: "45 4 * * *"
+    - cron: "30 10 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: ktm-garage-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:

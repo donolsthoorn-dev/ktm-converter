@@ -10,6 +10,7 @@ Dagelijkse nieuwe-producten pipeline (VPS na PIM-refresh).
      — altijd na een echte PIM-refresh (ook bij created=0, voor fitment/EMPF-updates)
      — overgeslagen bij fingerprint-noop of dry-run (tenzij --force-downstream)
      — na YMM: controleer pending diffs + backfill lege velden
+     — na canonical sync: vlag output/logs/ymm_catalog_dirty (garage-deploy)
 
   python3 scripts/run_new_products_daily.py
   python3 scripts/run_new_products_daily.py --skip-pim --brands hsq --dry-run-import
@@ -42,6 +43,7 @@ UNCHANGED_FLAG = ROOT / "output" / "logs" / "weekly_source_unchanged"
 IMPORT_STATS = ROOT / "output" / "logs" / "last_delta_import_stats.json"
 IMAGES_STATS = ROOT / "output" / "logs" / "last_missing_images_stats.json"
 LOG_DIR = ROOT / "output" / "logs"
+YMM_CATALOG_DIRTY = LOG_DIR / "ymm_catalog_dirty"
 
 
 def _ok_marker_path() -> Path:
@@ -68,6 +70,17 @@ def _mark_ok(*, pim_refreshed: bool, created: int | None) -> None:
         encoding="utf-8",
     )
     print(f"OK-marker: {path}", flush=True)
+
+
+def _mark_catalog_dirty() -> None:
+    """Canonical fits_on is bijgewerkt. De garage-job deployt daarna de motorlijst."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    YMM_CATALOG_DIRTY.write_text(
+        datetime.now(timezone.utc).isoformat() + "\n",
+        encoding="utf-8",
+    )
+    print(f"YMM-catalogusvlag: {YMM_CATALOG_DIRTY}", flush=True)
+
 
 _PRODUCTS_DIR = {
     "ktm": ROOT / "output" / "products",
@@ -367,6 +380,7 @@ def main() -> int:
         rc = _run([py, "scripts/run_canonical_ymm_pipeline.py", "--sync-only", "--write"])
         if rc != 0:
             return rc
+        _mark_catalog_dirty()
         rc = _run([py, "scripts/run_canonical_ymm_pipeline.py", "--push-only", "--write"])
         if rc != 0:
             return rc

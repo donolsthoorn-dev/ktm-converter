@@ -1,6 +1,8 @@
 # Dagelijkse nieuwe producten: PIM (XML+PHO) op VPS → rebuild → API-import → YMM → complementary.
 # FTP-fingerprint: ongewijzigde PIM-zips → noop in seconden (geen Shopify-writes).
 # Na echte PIM-refresh altijd YMM/complementary (ook bij 0 nieuwe producten).
+# Na canonical sync zet de VPS output/logs/ymm_catalog_dirty; job garage
+# deployt dan ktm-garage (zelfde concurrency als ktm_garage_fitment_deploy).
 # Meerdere crons (04:00 / 05:30 / 08:00 UTC): GHA-schedules missen soms; backup-runs
 # skippen via VPS OK-marker als de pipeline vandaag al substantieel slaagde.
 #
@@ -212,3 +214,67 @@ jobs:
           python3 scripts/gha_ktm_new_products_write_guard.py release \
             --log-id "${{ steps.lock.outputs.log_id }}" \
             "${EXTRA[@]}"
+
+  garage:
+    needs: daily
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency:
+      group: ktm-garage-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: pip install "requests>=2.28,<3"
+
+      - name: Deploy ktm-garage when the YMM catalog changed
+        env:
+          SSH_KEY: ${{ secrets.MOTOX_VPS_SSH_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_KEY:-}" ]; then
+            echo "::error::Secret MOTOX_VPS_SSH_KEY ontbreekt of is leeg."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/ktm_vps
+          chmod 600 ~/.ssh/ktm_vps
+          SSH_OPTS=(
+            -i "$HOME/.ssh/ktm_vps"
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=accept-new
+          )
+          HOST="motoxshop@149.210.206.111"
+          FLAG="/home/motoxshop/ktm_project/output/logs/ymm_catalog_dirty"
+          STAMP="$(ssh "${SSH_OPTS[@]}" "$HOST" "if [ -f '$FLAG' ]; then cat '$FLAG'; else echo __NONE__; fi")"
+          if [ "$STAMP" = "__NONE__" ]; then
+            echo "Geen YMM-catalogusvlag — garage-deploy overgeslagen."
+            exit 0
+          fi
+          echo "YMM-catalogusvlag: ${STAMP}"
+          python3 scripts/deploy_ktm_garage_vercel.py
+          ssh "${SSH_OPTS[@]}" "$HOST" "python3 - <<'PY'
+from pathlib import Path
+flag = Path('$FLAG')
+seen = '''$STAMP'''.strip()
+current = flag.read_text(encoding='utf-8').strip() if flag.is_file() else ''
+if current == seen:
+    flag.unlink()
+    print('vlag weg')
+else:
+    print('vlag vernieuwd, laten staan')
+PY"

@@ -2,7 +2,6 @@
 {
   "loggedIn": {% if customer %}true{% else %}false{% endif %},
   "proxyPath": "/apps/garage",
-  "catalogUrl": {{ 'vehicles.json' | asset_url | json }},
   "copy": {
     "stripEmpty": {{ 'garage.strip_empty' | t | json }},
     "stripSet": {{ 'garage.strip_set' | t | json }},

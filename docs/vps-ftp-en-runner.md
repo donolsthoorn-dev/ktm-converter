@@ -60,6 +60,7 @@ Workflow: `.github/workflows/ktm_new_products_daily.yml`
 - Schedule: 04:00 / 05:30 / 08:00 UTC (+ watchdog 05–11 UTC)
 - Secret: `MOTOX_VPS_SSH_KEY` (zelfde als Putoline)
 - Concurrency: `ktm-new-products-daily` + Supabase soft lock (migratie 039)
+- Na YMM-sync: vlag `output/logs/ymm_catalog_dirty`; de GitHub-job `garage` deployt dan ktm-garage en haalt de vlag weg
 - Na YMM-push: `ymm_ensure_updatable.py` (pending diffs + backfill lege velden)
 
 Handmatig: Actions → **ktm_new_products_daily** → Run workflow.
