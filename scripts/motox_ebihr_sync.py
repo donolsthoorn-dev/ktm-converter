@@ -36,7 +36,9 @@ geen leverbare variant over, dan gaat het product op draft.
   # Alleen ontbrekende images backfill + publiceren op alle kanalen:
   python3 scripts/motox_ebihr_sync.py --raw-dir ... --apply --images-only --max-image-backfill 50
 
-Prijzen: standaard alleen delta (Bihr ≠ huidige Motox-prijs uit cache).
+Prijzen: elke bestaande Motox-variant met een Bihr-partnummer, ook buiten
+het aanmaakfilter. Delta (Bihr-adviesprijs incl. btw ≠ cache). KTM,
+Husqvarna, GasGas en WP blijven op de ktm-shop-prijs.
   --force-all-prices  schrijft alle matched prijzen opnieuw (oude gedrag)
 
 Inventory policy: standaard delta (Bihr-stock ≠ Motox-cache CONTINUE/DENY).
@@ -63,6 +65,10 @@ from modules.ebihr.article_numbers import plan_article_update  # noqa: E402
 from modules.ebihr.build_products import (  # noqa: E402
     build_product_groups,
     inventory_policy_from_bihr_stock,
+)
+from modules.ebihr.price_targets import (  # noqa: E402
+    retail_prices_by_partnumber,
+    select_price_updates,
 )
 from modules.ebihr.discontinued import (  # noqa: E402
     catalog_part_status,
@@ -92,17 +98,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger("motox_ebihr_sync")
-
-
-def _normalize_price(value: str | None) -> str:
-    """Normaliseer prijs voor vergelijking (2 decimalen). Leeg → ''."""
-    raw = (value or "").strip().replace(",", ".")
-    if not raw:
-        return ""
-    try:
-        return f"{float(raw):.2f}"
-    except ValueError:
-        return raw
 
 
 def _normalize_inventory_policy(value: str | None) -> str:
@@ -326,6 +321,7 @@ def main() -> int:
     sku_to_pid = idx["sku_to_product_id"]
     sku_to_vid = idx.get("sku_to_variant_id") or {}
     sku_to_shop_price = idx.get("sku_to_price") or {}
+    sku_to_vendor = idx.get("sku_to_vendor") or {}
     sku_to_shop_policy = idx.get("sku_to_inventory_policy") or {}
     sku_to_customs = idx.get("sku_to_customs") or {}
     sku_to_article = idx.get("sku_to_article") or {}
@@ -806,38 +802,27 @@ def main() -> int:
         else:
             log.info("Prijs-modus: force-all (geen delta)")
 
-        sku_price: dict[str, str] = {}
-        for g in groups:
-            for v in g["variants"]:
-                sku = (v.get("sku") or "").strip()
-                price = (v.get("price") or "").strip()
-                if sku and price:
-                    sku_price[sku] = price
-                    sku_price[sku.upper()] = price
-
-        by_pid: dict[str, list[tuple[str, str]]] = {}
-        for sku, price in list(sku_price.items()):
-            if sku != sku.upper() and sku.upper() in sku_price and sku != sku.upper():
-                continue
-            vid = sku_to_vid.get(sku) or sku_to_vid.get(sku.upper())
-            pid = sku_to_pid.get(sku) or sku_to_pid.get(sku.upper())
-            if not vid or not pid:
-                continue
-            bihr_n = _normalize_price(price)
-            if not bihr_n:
-                continue
-            price_checked += 1
-            if use_delta:
-                shop_raw = (
-                    sku_to_shop_price.get(sku)
-                    or sku_to_shop_price.get(sku.upper())
-                    or ""
-                )
-                shop_n = _normalize_price(shop_raw)
-                if shop_n and shop_n == bihr_n:
-                    price_unchanged += 1
-                    continue
-            by_pid.setdefault(pid, []).append((vid, bihr_n))
+        desired = retail_prices_by_partnumber(prices)
+        log.info(
+            "Prijsbron: volledige Bihr-prijslijst (%s adviesprijzen), "
+            "ook producten buiten het aanmaakfilter",
+            len(desired),
+        )
+        by_pid, price_stats = select_price_updates(
+            desired,
+            sku_to_vid=sku_to_vid,
+            sku_to_pid=sku_to_pid,
+            sku_to_shop_price=sku_to_shop_price,
+            sku_to_vendor=sku_to_vendor,
+            use_delta=use_delta,
+        )
+        price_checked = price_stats["checked"]
+        price_unchanged = price_stats["unchanged"]
+        if price_stats["skipped_oem"]:
+            log.info(
+                "OEM-prijzen overgeslagen (ktm-shop.nl): %s",
+                price_stats["skipped_oem"],
+            )
 
         n_price_products = 0
         for pid, pairs in by_pid.items():

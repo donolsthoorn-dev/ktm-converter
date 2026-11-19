@@ -11,7 +11,7 @@ Nachtelijke (of handmatige) job schrijft **direct naar Motox Shopify**:
 1. Bihr V3 + VSE ophalen
 2. New-only producten **aanmaken** (met images) + publiceren op **alle sales channels**
 3. Bestaande producten **zonder afbeelding**: images backfill als Bihr ze nu wel heeft, daarna opnieuw publiceren op alle kanalen
-4. **Prijzen (delta):** alleen SKUs waar Bihr-prijs ≠ huidige Motox-prijs (uit cache); `--force-all-prices` voor alles
+4. **Prijzen (delta):** elke bestaande Motox-variant met een Bihr-partnummer krijgt de adviesprijs incl. btw, ook als het product buiten het aanmaakfilter valt (zoals olie zonder offroad-fitment). Alleen schrijven waar die prijs afwijkt van de cache. KTM, Husqvarna, GasGas en WP blijven op de ktm-shop-prijs. `--force-all-prices` schrijft alles opnieuw
 5. **Inventory policy (delta):** Bihr stock `Value` → Shopify `inventoryPolicy` (`CONTINUE` bij Value>0, `DENY` bij 0). Een variant die uit de Bihr-catalogus verdwijnt, of discontinued is zonder voorraadregel, gaat ook op `DENY` — alleen op producten die nog minstens één Bihr-partnummer hebben. Blijft er geen leverbare variant over (in de catalogus én niet discontinued), dan gaat het product op draft. Tijdelijk voorraad 0 blijft in de shop, alleen niet bestelbaar. Motox-qty blijft meestal 0. `--force-all-stock-policies` / `--stock-policy-only` beschikbaar
 6. **Metafields** `global.fits_on` (+ summary/year/make/model) op nieuwe producten, en op bestaande producten als de passendheid leeg is of afwijkt van VSE
 7. **Douane:** Bihr `CommodityCode` en `CountryOfOrigin` op nieuwe producten meteen, en op bestaande producten als de goederencode of het land van herkomst leeg is of afwijkt

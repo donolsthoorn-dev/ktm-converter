@@ -11,6 +11,7 @@ Caches:
   cache/motox/shopify_sku_to_product_id.json — sku -> product id
   cache/motox/shopify_sku_to_variant_id.json — sku -> variant id
   cache/motox/shopify_sku_to_price.json      — sku -> current Shopify price (string)
+  cache/motox/shopify_sku_to_vendor.json     — sku -> Shopify vendor
   cache/motox/shopify_sku_to_inventory_policy.json — sku -> CONTINUE|DENY
   cache/motox/shopify_sku_to_customs.json    — sku -> {hs, country}
   cache/motox/shopify_sku_to_article.json    — sku -> article_numbers JSON
@@ -41,6 +42,7 @@ PRODUCTS_INDEX_FILE = CACHE_DIR / "shopify_products_index.json"
 SKU_TO_PRODUCT_ID_FILE = CACHE_DIR / "shopify_sku_to_product_id.json"
 SKU_TO_VARIANT_ID_FILE = CACHE_DIR / "shopify_sku_to_variant_id.json"
 SKU_TO_PRICE_FILE = CACHE_DIR / "shopify_sku_to_price.json"
+SKU_TO_VENDOR_FILE = CACHE_DIR / "shopify_sku_to_vendor.json"
 SKU_TO_INVENTORY_POLICY_FILE = CACHE_DIR / "shopify_sku_to_inventory_policy.json"
 SKU_TO_CUSTOMS_FILE = CACHE_DIR / "shopify_sku_to_customs.json"
 SKU_TO_ARTICLE_FILE = CACHE_DIR / "shopify_sku_to_article.json"
@@ -56,6 +58,7 @@ _BULK_QUERY = """{
         id
         handle
         title
+        vendor
         status
         featuredImage {
           id
@@ -341,6 +344,7 @@ def _parse_bulk(path: Path) -> dict[str, dict]:
                         obj.get("handle") or ""
                     ),
                     "title": (obj.get("title") or "").strip(),
+                    "vendor": (obj.get("vendor") or "").strip(),
                     "status": (obj.get("status") or "").strip().upper(),
                     "has_image": bool(feat and (feat.get("id") if isinstance(feat, dict) else feat)),
                     "fits_on_hash": _fits_on_hash((obj.get("metafield") or {}).get("value")),
@@ -422,6 +426,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     sku_to_pid: dict[str, str] = {}
     sku_to_vid: dict[str, str] = {}
     sku_to_price: dict[str, str] = {}
+    sku_to_vendor: dict[str, str] = {}
     sku_to_inventory_policy: dict[str, str] = {}
     sku_to_customs: dict[str, dict[str, str]] = {}
     sku_to_article: dict[str, str] = {}
@@ -441,6 +446,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                 "ref_tags": list(p.get("ref_tags") or []),
             }
             handle_to_pid[handle] = pid
+        vendor = (p.get("vendor") or "").strip()
         for entry in p.get("skus") or []:
             # back-compat: plain string or dict
             if isinstance(entry, str):
@@ -478,6 +484,11 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
                     sku_to_price[s] = price
                 if s.upper() not in sku_to_price:
                     sku_to_price[s.upper()] = price
+            if vendor:
+                if s not in sku_to_vendor:
+                    sku_to_vendor[s] = vendor
+                if s.upper() not in sku_to_vendor:
+                    sku_to_vendor[s.upper()] = vendor
             if inv_policy in ("CONTINUE", "DENY"):
                 if s not in sku_to_inventory_policy:
                     sku_to_inventory_policy[s] = inv_policy
@@ -500,6 +511,9 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
     SKU_TO_PRICE_FILE.write_text(
         json.dumps(sku_to_price, ensure_ascii=False), encoding="utf-8"
     )
+    SKU_TO_VENDOR_FILE.write_text(
+        json.dumps(sku_to_vendor, ensure_ascii=False), encoding="utf-8"
+    )
     SKU_TO_INVENTORY_POLICY_FILE.write_text(
         json.dumps(sku_to_inventory_policy, ensure_ascii=False), encoding="utf-8"
     )
@@ -519,6 +533,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
+        "sku_to_vendor": len(sku_to_vendor),
         "sku_to_inventory_policy": len(sku_to_inventory_policy),
         "sku_to_customs": len(sku_to_customs),
         "sku_to_article": len(sku_to_article),
@@ -529,6 +544,7 @@ def _write_caches_from_products(products: dict[str, dict]) -> dict:
         f"Motox-cache geschreven: {summary['products']} producten, "
         f"{summary['skus']} SKUs, {summary['sku_to_variant_id']} variant-ids, "
         f"{summary['sku_to_price']} prijzen, "
+        f"{summary['sku_to_vendor']} vendors, "
         f"{summary['sku_to_inventory_policy']} inventory policies → {CACHE_DIR}",
         flush=True,
     )
@@ -575,6 +591,7 @@ def load_motox_indexes() -> dict:
       sku_to_product_id: dict[str, str]
       sku_to_variant_id: dict[str, str]
       sku_to_price: dict[str, str]
+      sku_to_vendor: dict[str, str]
       sku_to_inventory_policy: dict[str, str]
       sku_to_customs: dict[str, dict]
       sku_to_article: dict[str, str]
@@ -586,6 +603,7 @@ def load_motox_indexes() -> dict:
     sku_to_pid = _load_json(SKU_TO_PRODUCT_ID_FILE, {})
     sku_to_vid = _load_json(SKU_TO_VARIANT_ID_FILE, {})
     sku_to_price = _load_json(SKU_TO_PRICE_FILE, {})
+    sku_to_vendor = _load_json(SKU_TO_VENDOR_FILE, {})
     sku_to_inventory_policy = _load_json(SKU_TO_INVENTORY_POLICY_FILE, {})
     sku_to_customs = _load_json(SKU_TO_CUSTOMS_FILE, {})
     sku_to_article = _load_json(SKU_TO_ARTICLE_FILE, {})
@@ -608,6 +626,7 @@ def load_motox_indexes() -> dict:
         "sku_to_product_id": len(sku_to_pid),
         "sku_to_variant_id": len(sku_to_vid),
         "sku_to_price": len(sku_to_price),
+        "sku_to_vendor": len(sku_to_vendor) if isinstance(sku_to_vendor, dict) else 0,
         "sku_to_inventory_policy": (
             len(sku_to_inventory_policy) if isinstance(sku_to_inventory_policy, dict) else 0
         ),
@@ -624,6 +643,7 @@ def load_motox_indexes() -> dict:
         "sku_to_product_id": sku_to_pid,
         "sku_to_variant_id": sku_to_vid,
         "sku_to_price": sku_to_price,
+        "sku_to_vendor": sku_to_vendor if isinstance(sku_to_vendor, dict) else {},
         "sku_to_inventory_policy": (
             sku_to_inventory_policy if isinstance(sku_to_inventory_policy, dict) else {}
         ),
