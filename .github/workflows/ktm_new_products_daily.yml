@@ -267,5 +267,5 @@ jobs:
           fi
           echo "YMM-catalogusvlag: ${STAMP}"
           python3 scripts/deploy_ktm_garage_vercel.py
-          # Eén regel: een heredoc op kolom 0 maakt het workflowbestand ongeldig.
-          ssh "${SSH_OPTS[@]}" "$HOST" python3 -c "from pathlib import Path; p=Path('''$FLAG'''); seen='''$STAMP'''.strip(); cur=p.read_text(encoding='utf-8').strip() if p.is_file() else ''; p.unlink() if cur==seen else None; print('vlag weg' if cur==seen else 'vlag vernieuwd, laten staan')"
+          # Eén ssh-argument: losse python -c verliest de quotes op de remote shell.
+          ssh "${SSH_OPTS[@]}" "$HOST" "python3 -c \"from pathlib import Path; p=Path('$FLAG'); seen='$STAMP'.strip(); cur=p.read_text(encoding='utf-8').strip() if p.is_file() else ''; p.unlink() if cur==seen else None; print('vlag weg' if cur==seen else 'vlag vernieuwd, laten staan')\""

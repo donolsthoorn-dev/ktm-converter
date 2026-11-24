@@ -8,6 +8,7 @@ alwaysApply: true
 Een ongeldig workflowbestand op `main` zet het schema uit. GitHub bewaart de vorige versie niet. `ktm_new_products_daily` start dan niet, en `ktm_new_products_watchdog` faalt met `Workflow does not have 'workflow_dispatch' trigger` (HTTP 422). Dat gebeurde op 18 november 2026.
 
 - Na een wijziging in `.github/workflows/`: `python3 scripts/lint_github_workflows.py` moet slagen. Dezelfde check draait als workflow `workflow_lint`.
-- Geen heredoc of scriptregels op kolom 0 in een `run: |`-blok. Dat sluit het blok en maakt het hele bestand ongeldig. Houd de body ingesprongen, of gebruik één `python3 -c`-regel.
+- Geen heredoc of scriptregels op kolom 0 in een `run: |`-blok. Dat sluit het blok en maakt het hele bestand ongeldig.
+- Een remote opdracht is één gequote `ssh`-argument. `ssh host python3 -c "..."` verliest de quotes; de shell stopt dan met exit 2, ook als de deploy al gelukt is.
 - `ktm_new_products_daily.yml` houdt `schedule` én `workflow_dispatch`. De watchdog start hem via de API.
 - Een job die op de runner een projectscript draait dat `lxml` nodig heeft (Motox-garage, via `modules.xml_loader`) installeert `pip install -r requirements.txt`. Alleen `requests` is dan niet genoeg.
