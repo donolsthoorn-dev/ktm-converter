@@ -65,6 +65,8 @@ Workflow: `.github/workflows/ktm_new_products_daily.yml`
 
 Handmatig: Actions → **ktm_new_products_daily** → Run workflow.
 
+Een ongeldig workflowbestand op `main` zet dit schema uit. GitHub draait de vorige versie dan niet door, en de watchdog faalt met HTTP 422. Controle: `python3 scripts/lint_github_workflows.py` (ook workflow `workflow_lint` bij elke push). Geen scriptregels op kolom 0 in een `run: |`-blok. De Motox-garage-job installeert `requirements.txt` (`lxml`), niet alleen `requests`.
+
 ## Schijf
 
 - Merk-voor-merk zip ophalen → extract → zip weg

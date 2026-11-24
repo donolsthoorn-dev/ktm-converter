@@ -1,0 +1,35 @@
+# Vangt een ongeldig workflowbestand vóór het schema op main stilvalt.
+# 18 nov 2026: een heredoc op kolom 0 zette ktm_new_products_daily uit.
+# shellcheck staat uit: dit controleert het workflowbestand, niet bestaande shell.
+
+name: workflow_lint
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: actionlint
+        run: |
+          set -euo pipefail
+          bash <(curl -sL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -shellcheck= -pyflakes=
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Workflow-afspraken
+        run: |
+          set -euo pipefail
+          pip install "pyyaml>=6,<7"
+          python3 scripts/lint_github_workflows.py

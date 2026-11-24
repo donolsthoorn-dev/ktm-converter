@@ -62,7 +62,12 @@ jobs:
         run: |
           set -euo pipefail
           REF="${GITHUB_REF_NAME:-main}"
-          gh api --method POST \
+          if ! out="$(gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/ktm_new_products_daily.yml/dispatches" \
-            -f "ref=${REF}"
+            -f "ref=${REF}" 2>&1)"; then
+            printf '%s\n' "$out"
+            echo "::error::ktm_new_products_daily is niet gestart. Staat er workflow_dispatch in de fout, dan is het workflowbestand op main ongeldig en lopen de schema's niet. python3 scripts/lint_github_workflows.py moet slagen."
+            exit 1
+          fi
+          printf '%s\n' "$out"
           echo "Triggered ktm_new_products_daily on ${REF}"

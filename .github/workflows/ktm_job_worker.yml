@@ -28,8 +28,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install requests
-        run: pip install "requests>=2.28,<3"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Queue shopify_catalog_mirror
         env:
