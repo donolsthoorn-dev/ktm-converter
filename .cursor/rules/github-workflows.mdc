@@ -10,5 +10,6 @@ Een ongeldig workflowbestand op `main` zet het schema uit. GitHub bewaart de vor
 - Na een wijziging in `.github/workflows/`: `python3 scripts/lint_github_workflows.py` moet slagen. Dezelfde check draait als workflow `workflow_lint`.
 - Geen heredoc of scriptregels op kolom 0 in een `run: |`-blok. Dat sluit het blok en maakt het hele bestand ongeldig.
 - Een remote opdracht is één gequote `ssh`-argument. `ssh host python3 -c "..."` verliest de quotes; de shell stopt dan met exit 2, ook als de deploy al gelukt is.
+- "Re-run failed jobs" gebruikt het workflowbestand van die run. Een fix op `main` komt daar niet in; start een nieuwe run.
 - `ktm_new_products_daily.yml` houdt `schedule` én `workflow_dispatch`. De watchdog start hem via de API.
 - Een job die op de runner een projectscript draait dat `lxml` nodig heeft (Motox-garage, via `modules.xml_loader`) installeert `pip install -r requirements.txt`. Alleen `requests` is dan niet genoeg.

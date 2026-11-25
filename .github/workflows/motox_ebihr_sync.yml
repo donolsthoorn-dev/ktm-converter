@@ -68,9 +68,14 @@ on:
         description: "Supabase workflow_dispatch_log.id"
         required: false
         default: ""
+      garage_only:
+        description: "Alleen motox-garage deployen, geen Bihr-sync"
+        type: boolean
+        default: false
 
 jobs:
   sync:
+    if: github.event_name == 'schedule' || inputs.garage_only != true
     runs-on: ubuntu-latest
     timeout-minutes: 360
     # Dry-run hoeft niet te wachten op andere Shopify-write jobs.
@@ -172,9 +177,10 @@ jobs:
   garage:
     needs: sync
     if: >-
-      success() &&
-      (github.event_name == 'schedule' || inputs.apply == 'true') &&
-      (github.event_name == 'schedule' || inputs.mode == 'all' || inputs.mode == 'create_only' || inputs.mode == '')
+      always() &&
+      (needs.sync.result == 'success' || needs.sync.result == 'skipped') &&
+      (github.event_name == 'schedule' || inputs.apply == 'true' || inputs.garage_only == true) &&
+      (github.event_name == 'schedule' || inputs.mode == 'all' || inputs.mode == 'create_only' || inputs.mode == '' || inputs.garage_only == true)
     runs-on: ubuntu-latest
     timeout-minutes: 180
     concurrency:
